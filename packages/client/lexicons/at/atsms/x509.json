@@ -1,0 +1,40 @@
+{
+  "lexicon": 1,
+  "id": "at.atsms.x509",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "X.509 certificate record for AT SMS secure messaging",
+      "key": "literal:root|string",
+      "record": {
+        "type": "object",
+        "required": ["certificate", "certificateType", "createdAt"],
+        "properties": {
+          "certificate": {
+            "type": "string",
+            "description": "The X.509 certificate in PEM format"
+          },
+          "certificateType": {
+            "type": "string",
+            "description": "Type of certificate: 'root' or 'endpoint'",
+            "enum": ["root", "endpoint"]
+          },
+          "serialNumber": {
+            "type": "string",
+            "description": "Serial number of the certificate (for endpoint certificates)"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Expiration date of the certificate (ISO 8601 format)"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Timestamp when this record was created (ISO 8601 format)"
+          }
+        }
+      }
+    }
+  }
+}
