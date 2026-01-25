@@ -1,5 +1,6 @@
 /**
- * Endpoint Certificate class for self-signed RSA certificates
+ * P-256 Endpoint Certificate class for self-signed ECDSA certificates
+ * Uses P-256 (prime256v1/secp256r1) for signing with ECDH for encryption
  */
 
 import {
@@ -16,12 +17,13 @@ import type { ATSMSCertificateType } from "../types";
 import { ATSMSCertificate } from "./certificate";
 
 /**
- * Endpoint Certificate class - self-signed RSA certificates
+ * P-256 Endpoint Certificate class - self-signed ECDSA certificates
+ * Uses P-256 for both signing (ECDSA) and key agreement (ECDH)
  */
-export class ATSMSEndpointCertificate extends ATSMSCertificate {
+export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
   /**
-   * Generate a new self-signed endpoint certificate
-   * Uses RSA-2048 for key generation and RSA-PSS-SHA256 for signing
+   * Generate a new self-signed P-256 endpoint certificate
+   * Uses ECDSA with P-256 curve for signing
    *
    * @param did - Decentralized identifier (e.g., 'did:plc:xyz123')
    * @param domain - Domain name / handle (e.g., 'alice.bsky.social')
@@ -33,7 +35,7 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
     domain: string,
     email: string,
     validityDays = 3652, // Default to ten years
-  ): Promise<ATSMSEndpointCertificate> {
+  ): Promise<ATSMSP256EndpointCertificate> {
     // Validate parameters to prevent common errors
     if (
       typeof validityDays !== "number" ||
@@ -68,37 +70,32 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
       );
     }
 
-    // Generate RSA key pair for endpoint certificate (2048 bit)
-    const rsaAlg = {
-      name: "RSA-PSS",
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: "SHA-256",
+    // Generate P-256 key pair for endpoint certificate
+    const ecAlg = {
+      name: "ECDSA",
+      namedCurve: "P-256",
     };
 
-    const rsaKeys = (await cryptoProvider.subtle.generateKey(rsaAlg, true, [
+    const ecKeys = (await cryptoProvider.subtle.generateKey(ecAlg, true, [
       "sign",
       "verify",
     ])) as CryptoKeyPair;
 
-    // Create self-signed certificate with RSA-PSS
+    // Create self-signed certificate with ECDSA
     const cert = await X509CertificateGenerator.createSelfSigned(
       {
         name: `CN=${did}`,
         notBefore: new Date(),
         notAfter: new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000),
         signingAlgorithm: {
-          name: "RSA-PSS",
+          name: "ECDSA",
           hash: "SHA-256",
-          saltLength: 32,
-        } as RsaPssParams,
-        keys: rsaKeys,
+        } as EcdsaParams,
+        keys: ecKeys,
         extensions: [
           new BasicConstraintsExtension(false, undefined, true), // CA=false
           new KeyUsagesExtension(
-            KeyUsageFlags.digitalSignature |
-              KeyUsageFlags.keyEncipherment |
-              KeyUsageFlags.dataEncipherment,
+            KeyUsageFlags.digitalSignature | KeyUsageFlags.keyAgreement, // keyAgreement for ECDH
             true,
           ),
           new ExtendedKeyUsageExtension(
@@ -118,17 +115,17 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
     // Export private key to PEM
     const privateKeyBuffer = await cryptoProvider.subtle.exportKey(
       "pkcs8",
-      rsaKeys.privateKey,
+      ecKeys.privateKey,
     );
     const privateKeyPEM = ATSMSCertificate.arrayBufferToPEM(
       privateKeyBuffer,
       "PRIVATE KEY",
     );
 
-    // Create endpoint certificate instance
-    const endpointCert = new ATSMSEndpointCertificate(
+    // Create P-256 endpoint certificate instance
+    const endpointCert = new ATSMSP256EndpointCertificate(
       cert.rawData,
-      rsaKeys.privateKey,
+      ecKeys.privateKey,
       privateKeyPEM,
     );
 
@@ -136,33 +133,33 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
   }
 
   /**
-   * Create an ATSMSEndpointCertificate from DER-encoded bytes (public certificate only)
+   * Create an ATSMSP256EndpointCertificate from DER-encoded bytes (public certificate only)
    */
-  static fromDER(derBytes: Uint8Array): ATSMSEndpointCertificate {
-    return new ATSMSEndpointCertificate(derBytes, undefined, undefined);
+  static fromDER(derBytes: Uint8Array): ATSMSP256EndpointCertificate {
+    return new ATSMSP256EndpointCertificate(derBytes, undefined, undefined);
   }
 
   /**
-   * Create an ATSMSEndpointCertificate from PEM (certificate only, no private key)
+   * Create an ATSMSP256EndpointCertificate from PEM (certificate only, no private key)
    */
-  static fromPEM(certPEM: string): ATSMSEndpointCertificate {
+  static fromPEM(certPEM: string): ATSMSP256EndpointCertificate {
     const derBytes = ATSMSCertificate.pemToDER(certPEM);
-    return new ATSMSEndpointCertificate(derBytes, undefined, undefined);
+    return new ATSMSP256EndpointCertificate(derBytes, undefined, undefined);
   }
 
   /**
-   * Create an ATSMSEndpointCertificate from PEM with private key
+   * Create an ATSMSP256EndpointCertificate from PEM with private key
    */
   static async fromPEMWithKey(
     certPEM: string,
     privateKeyPEM: string,
-  ): Promise<ATSMSEndpointCertificate> {
+  ): Promise<ATSMSP256EndpointCertificate> {
     const derBytes = ATSMSCertificate.pemToDER(certPEM);
 
-    // Client certificates always use RSA
+    // P-256 certificates use ECDSA
     const alg = {
-      name: "RSASSA-PKCS1-v1_5",
-      hash: "SHA-256",
+      name: "ECDSA",
+      namedCurve: "P-256",
     };
     const privateKey = await ATSMSCertificate.importPrivateKeyPEM(
       privateKeyPEM,
@@ -170,7 +167,7 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
     );
 
     // Create certificate instance and verify the private key matches
-    const cert = new ATSMSEndpointCertificate(
+    const cert = new ATSMSP256EndpointCertificate(
       derBytes,
       privateKey,
       privateKeyPEM,
@@ -188,6 +185,13 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
   }
 
   /**
+   * Get the algorithm type for this certificate
+   */
+  getAlgorithm(): "P256" {
+    return "P256";
+  }
+
+  /**
    * Verify that this certificate is self-signed
    * Returns true if the certificate's signature can be verified with its own public key
    */
@@ -196,36 +200,37 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
   }
 
   /**
-   * Get the RSA public key for encryption
+   * Get the P-256 public key for ECDH key agreement (encryption)
+   * The same key is used for both signing and key agreement
    */
   async getPublicKeyForEncryption(): Promise<CryptoKey> {
-    // Import the public key specifically for RSA-OAEP encryption
+    // Import the public key specifically for ECDH key agreement
     const publicKey = await this.getPublicKey();
 
-    // Export and re-import with RSA-OAEP algorithm
+    // Export and re-import with ECDH algorithm
     const exported = await cryptoProvider.subtle.exportKey("spki", publicKey);
 
     return cryptoProvider.subtle.importKey(
       "spki",
       exported,
       {
-        name: "RSA-OAEP",
-        hash: "SHA-256",
+        name: "ECDH",
+        namedCurve: "P-256",
       },
       true,
-      ["encrypt"],
+      [], // deriveBits will be used on the private key side
     );
   }
 
   /**
-   * Get the RSA private key for decryption
+   * Get the P-256 private key for ECDH key agreement (decryption)
    */
   async getPrivateKeyForDecryption(): Promise<CryptoKey> {
     if (!this._privateKey) {
       throw new Error("Private key not available for decryption");
     }
 
-    // Export and re-import with RSA-OAEP algorithm
+    // Export and re-import with ECDH algorithm
     const exported = await cryptoProvider.subtle.exportKey(
       "pkcs8",
       this._privateKey,
@@ -235,11 +240,45 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
       "pkcs8",
       exported,
       {
-        name: "RSA-OAEP",
-        hash: "SHA-256",
+        name: "ECDH",
+        namedCurve: "P-256",
       },
       true,
-      ["decrypt"],
+      ["deriveBits", "deriveKey"],
     );
+  }
+
+  /**
+   * Verify that a private key matches the certificate's public key
+   * Override for EC keys
+   */
+  protected async verifyPrivateKeyMatchesCert(
+    privateKey: CryptoKey,
+  ): Promise<boolean> {
+    try {
+      const privateKeyData = await cryptoProvider.subtle.exportKey(
+        "jwk",
+        privateKey,
+      );
+      const certPublicKey = await this.publicKey.export(cryptoProvider as any);
+      const certPublicKeyData = await cryptoProvider.subtle.exportKey(
+        "jwk",
+        certPublicKey,
+      );
+
+      if (privateKeyData.kty === "EC" && certPublicKeyData.kty === "EC") {
+        // For EC keys, compare x and y coordinates
+        return (
+          privateKeyData.x === certPublicKeyData.x &&
+          privateKeyData.y === certPublicKeyData.y &&
+          privateKeyData.crv === certPublicKeyData.crv
+        );
+      }
+
+      return false;
+    } catch (error) {
+      console.error("Error verifying private key matches certificate:", error);
+      return false;
+    }
   }
 }

@@ -3,28 +3,31 @@
  * Extends X509Certificate from @peculiar/x509 to add private key management
  */
 
-import { X509Certificate } from '@peculiar/x509'
-import * as asn1js from 'asn1js'
-import * as pkijs from 'pkijs'
+import { X509Certificate } from "@peculiar/x509";
+import * as asn1js from "asn1js";
+import * as pkijs from "pkijs";
 
-import { cryptoProvider } from '../crypto-provider'
-import type { ATSMSCertificateType } from '../types'
-
+import { cryptoProvider } from "../crypto-provider";
+import type { ATSMSCertificateType } from "../types";
 
 // Initialize PKI.js with crypto provider
-pkijs.setEngine('webcrypto', cryptoProvider as any, new pkijs.CryptoEngine({
-  name: 'webcrypto',
-  crypto: cryptoProvider as any,
-  subtle: cryptoProvider.subtle
-}))
+pkijs.setEngine(
+  "webcrypto",
+  cryptoProvider as any,
+  new pkijs.CryptoEngine({
+    name: "webcrypto",
+    crypto: cryptoProvider as any,
+    subtle: cryptoProvider.subtle,
+  }),
+);
 
 /**
  * Abstract base class for X.509 certificates
  * Extends X509Certificate and adds private key management
  */
 export abstract class ATSMSCertificate extends X509Certificate {
-  protected _privateKey?: CryptoKey
-  protected privateKeyPEM?: string
+  protected _privateKey?: CryptoKey;
+  protected privateKeyPEM?: string;
 
   /**
    * Get the private key for this certificate
@@ -32,9 +35,11 @@ export abstract class ATSMSCertificate extends X509Certificate {
    */
   public get privateKeyValue(): CryptoKey {
     if (!this._privateKey) {
-      throw new Error('No private key available for this certificate. Load the certificate with its private key.')
+      throw new Error(
+        "No private key available for this certificate. Load the certificate with its private key.",
+      );
     }
-    return this._privateKey
+    return this._privateKey;
   }
 
   /**
@@ -43,11 +48,11 @@ export abstract class ATSMSCertificate extends X509Certificate {
   protected constructor(
     rawData: ArrayBuffer | Uint8Array | string,
     privateKey?: CryptoKey,
-    privateKeyPEM?: string // Root cert has special logic to handle private secp256k1 key import. We keep also the PEM so we don't have to also write special export logic.
+    privateKeyPEM?: string, // Root cert has special logic to handle private secp256k1 key import. We keep also the PEM so we don't have to also write special export logic.
   ) {
-    super(rawData as any)
-    this._privateKey = privateKey
-    this.privateKeyPEM = privateKeyPEM
+    super(rawData as any);
+    this._privateKey = privateKey;
+    this.privateKeyPEM = privateKeyPEM;
   }
 
   /**
@@ -55,7 +60,7 @@ export abstract class ATSMSCertificate extends X509Certificate {
    * This is a static factory method that must be implemented by subclasses
    */
   static fromDER(_derBytes: Uint8Array): ATSMSCertificate {
-    throw new Error('fromDER must be implemented by subclasses')
+    throw new Error("fromDER must be implemented by subclasses");
   }
 
   /**
@@ -64,11 +69,11 @@ export abstract class ATSMSCertificate extends X509Certificate {
   protected static pemToDER(certPEM: string): Uint8Array {
     // Remove PEM headers and decode base64
     const base64 = certPEM
-      .replace(/-----BEGIN CERTIFICATE-----/g, '')
-      .replace(/-----END CERTIFICATE-----/g, '')
-      .replace(/\s/g, '')
+      .replace(/-----BEGIN CERTIFICATE-----/g, "")
+      .replace(/-----END CERTIFICATE-----/g, "")
+      .replace(/\s/g, "");
 
-    return Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+    return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
   }
 
   /**
@@ -76,45 +81,53 @@ export abstract class ATSMSCertificate extends X509Certificate {
    */
   protected static async importPrivateKeyPEM(
     privateKeyPEM: string,
-    algorithm: any
+    algorithm: any,
   ): Promise<CryptoKey> {
     const base64 = privateKeyPEM
-      .replace(/-----BEGIN .*-----/g, '')
-      .replace(/-----END .*-----/g, '')
-      .replace(/\s/g, '')
+      .replace(/-----BEGIN .*-----/g, "")
+      .replace(/-----END .*-----/g, "")
+      .replace(/\s/g, "");
 
-    const der = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+    const der = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 
     return await cryptoProvider.subtle.importKey(
-      'pkcs8',
+      "pkcs8",
       der,
       algorithm,
       true,
-      ['sign']
-    )
+      ["sign"],
+    );
   }
 
   /**
    * Verify that a private key matches the certificate's public key
    */
   protected async verifyPrivateKeyMatchesCert(
-    privateKey: CryptoKey
+    privateKey: CryptoKey,
   ): Promise<boolean> {
     try {
       // For RSA keys (endpoint certificates), do normal verification
-      const privateKeyData = await cryptoProvider.subtle.exportKey('jwk', privateKey)
-      const certPublicKey = await this.publicKey.export(cryptoProvider as any)
-      const certPublicKeyData = await cryptoProvider.subtle.exportKey('jwk', certPublicKey)
+      const privateKeyData = await cryptoProvider.subtle.exportKey(
+        "jwk",
+        privateKey,
+      );
+      const certPublicKey = await this.publicKey.export(cryptoProvider as any);
+      const certPublicKeyData = await cryptoProvider.subtle.exportKey(
+        "jwk",
+        certPublicKey,
+      );
 
-      if (privateKeyData.kty === 'RSA' && certPublicKeyData.kty === 'RSA') {
-        return privateKeyData.n === certPublicKeyData.n &&
-               privateKeyData.e === certPublicKeyData.e
+      if (privateKeyData.kty === "RSA" && certPublicKeyData.kty === "RSA") {
+        return (
+          privateKeyData.n === certPublicKeyData.n &&
+          privateKeyData.e === certPublicKeyData.e
+        );
       }
 
-      return false
+      return false;
     } catch (error) {
-      console.error('Error verifying private key matches certificate:', error)
-      return false
+      console.error("Error verifying private key matches certificate:", error);
+      return false;
     }
   }
 
@@ -122,41 +135,43 @@ export abstract class ATSMSCertificate extends X509Certificate {
    * Get the common name (CN) from the subject
    */
   get commonName(): string {
-    const cnAttr = this.subject.split(',').find(part => part.trim().startsWith('CN='))
-    return cnAttr ? cnAttr.split('=')[1].trim() : ''
+    const cnAttr = this.subject
+      .split(",")
+      .find((part) => part.trim().startsWith("CN="));
+    return cnAttr ? cnAttr.split("=")[1].trim() : "";
   }
 
   /**
    * Get the domain (alias for commonName in AT-SMS context)
    */
   get domain(): string {
-    return this.commonName
+    return this.commonName;
   }
 
   /**
    * Get the raw PEM certificate (convenience method)
    */
   get certificatePEM(): string {
-    return this.toString('pem')
+    return this.toString("pem");
   }
 
   /**
    * Get the public key
    */
   async getPublicKey(): Promise<CryptoKey> {
-    return this.publicKey.export(cryptoProvider as any)
+    return this.publicKey.export(cryptoProvider as any);
   }
 
   /**
    * Get the SHA-256 fingerprint
    */
   async getFingerprint(): Promise<string> {
-    const hash = await cryptoProvider.subtle.digest('SHA-256', this.rawData)
-    const hashArray = new Uint8Array(hash)
+    const hash = await cryptoProvider.subtle.digest("SHA-256", this.rawData);
+    const hashArray = new Uint8Array(hash);
     return Array.from(hashArray)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join(':')
-      .toUpperCase()
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(":")
+      .toUpperCase();
   }
 
   /**
@@ -165,27 +180,30 @@ export abstract class ATSMSCertificate extends X509Certificate {
   get did(): string | undefined {
     try {
       const sanExt = this.extensions.find(
-        ext => ext.type === '2.5.29.17' // subjectAltName OID
-      )
+        (ext) => ext.type === "2.5.29.17", // subjectAltName OID
+      );
 
-      if (!sanExt || !sanExt.value) return undefined
+      if (!sanExt || !sanExt.value) return undefined;
 
       // Parse the SAN extension value to extract URLs and DNS names
-      const der = new Uint8Array(sanExt.value)
-      const asn1 = asn1js.fromBER(der.buffer)
+      const der = new Uint8Array(sanExt.value);
+      const asn1 = asn1js.fromBER(der.buffer);
 
-      if (asn1.offset === -1) return undefined
+      if (asn1.offset === -1) return undefined;
 
       // Look for URLs (tag 6) or DNS names (tag 2) in the GeneralNames sequence
-      const sequence = asn1.result as any
+      const sequence = asn1.result as any;
       if (sequence.valueBlock && sequence.valueBlock.value) {
         for (const item of sequence.valueBlock.value) {
           // URL has tag 6, DNS name has tag 2
-          if (item.idBlock && (item.idBlock.tagNumber === 6 || item.idBlock.tagNumber === 2)) {
-            const valueHex = item.valueBlock.valueHex
-            const valueStr = new TextDecoder().decode(new Uint8Array(valueHex))
-            if (valueStr.startsWith('did:')) {
-              return valueStr
+          if (
+            item.idBlock &&
+            (item.idBlock.tagNumber === 6 || item.idBlock.tagNumber === 2)
+          ) {
+            const valueHex = item.valueBlock.valueHex;
+            const valueStr = new TextDecoder().decode(new Uint8Array(valueHex));
+            if (valueStr.startsWith("did:")) {
+              return valueStr;
             }
           }
         }
@@ -194,7 +212,7 @@ export abstract class ATSMSCertificate extends X509Certificate {
       // Failed to parse SAN extension
     }
 
-    return undefined
+    return undefined;
   }
 
   /**
@@ -203,28 +221,28 @@ export abstract class ATSMSCertificate extends X509Certificate {
   get email(): string | undefined {
     try {
       const sanExt = this.extensions.find(
-        ext => ext.type === '2.5.29.17' // subjectAltName OID
-      )
+        (ext) => ext.type === "2.5.29.17", // subjectAltName OID
+      );
 
-      if (!sanExt || !sanExt.value) return undefined
+      if (!sanExt || !sanExt.value) return undefined;
 
       // Parse the SAN extension value to extract email addresses
-      const der = new Uint8Array(sanExt.value)
-      const asn1 = asn1js.fromBER(der.buffer)
+      const der = new Uint8Array(sanExt.value);
+      const asn1 = asn1js.fromBER(der.buffer);
 
-      if (asn1.offset === -1) return undefined
+      if (asn1.offset === -1) return undefined;
 
       // Look for RFC822 names (email, tag 1) in the GeneralNames sequence
-      const sequence = asn1.result as any
+      const sequence = asn1.result as any;
       if (sequence.valueBlock && sequence.valueBlock.value) {
         for (const item of sequence.valueBlock.value) {
           // RFC822 name (email) has tag 1
           if (item.idBlock && item.idBlock.tagNumber === 1) {
-            const valueHex = item.valueBlock.valueHex
-            const valueStr = new TextDecoder().decode(new Uint8Array(valueHex))
+            const valueHex = item.valueBlock.valueHex;
+            const valueStr = new TextDecoder().decode(new Uint8Array(valueHex));
             // Basic email validation
-            if (valueStr.includes('@')) {
-              return valueStr
+            if (valueStr.includes("@")) {
+              return valueStr;
             }
           }
         }
@@ -233,7 +251,7 @@ export abstract class ATSMSCertificate extends X509Certificate {
       // Failed to parse SAN extension
     }
 
-    return undefined
+    return undefined;
   }
 
   /**
@@ -241,37 +259,37 @@ export abstract class ATSMSCertificate extends X509Certificate {
    * @returns The private key PEM string if available, undefined otherwise
    */
   get certificatePrivateKeyPEM(): string | undefined {
-    return this.privateKeyPEM
+    return this.privateKeyPEM;
   }
 
   /**
    * Check if the certificate has an associated private key
    */
   hasPrivateKey(): boolean {
-    return this._privateKey !== undefined
+    return this._privateKey !== undefined;
   }
 
   /**
    * Check if the certificate is expired
    */
   isExpired(): boolean {
-    const now = new Date()
-    return now > this.notAfter
+    const now = new Date();
+    return now > this.notAfter;
   }
 
   /**
    * Check if the certificate is not yet valid
    */
   isNotYetValid(): boolean {
-    const now = new Date()
-    return now < this.notBefore
+    const now = new Date();
+    return now < this.notBefore;
   }
 
   /**
    * Check if the certificate is currently valid
    */
   isValid(): boolean {
-    return !this.isExpired() && !this.isNotYetValid()
+    return !this.isExpired() && !this.isNotYetValid();
   }
 
   /**
@@ -282,40 +300,45 @@ export abstract class ATSMSCertificate extends X509Certificate {
       if (!issuerCert) {
         // Self-signed verification
         return await this.verify({
-          publicKey: await this.getPublicKey()
-        })
+          publicKey: await this.getPublicKey(),
+        });
       } else {
         // Verify against issuer
         return await this.verify({
-          publicKey: await issuerCert.getPublicKey()
-        })
+          publicKey: await issuerCert.getPublicKey(),
+        });
       }
     } catch {
-      return false
+      return false;
     }
   }
 
   /**
    * Convert ArrayBuffer to PEM format
    */
-  protected static arrayBufferToPEM(buffer: ArrayBuffer, label: string): string {
-    const bytes = new Uint8Array(buffer)
-    const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('')
-    const base64 = btoa(binary)
-    const lines = base64.match(/.{1,64}/g) || []
-    return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----\n`
+  protected static arrayBufferToPEM(
+    buffer: ArrayBuffer,
+    label: string,
+  ): string {
+    const bytes = new Uint8Array(buffer);
+    const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join(
+      "",
+    );
+    const base64 = btoa(binary);
+    const lines = base64.match(/.{1,64}/g) || [];
+    return `-----BEGIN ${label}-----\n${lines.join("\n")}\n-----END ${label}-----\n`;
   }
 
   /**
    * Get the certificate type
    */
-  abstract getType(): ATSMSCertificateType
+  abstract getType(): ATSMSCertificateType;
 
   /**
    * Check if this is a self-signed certificate (simplified version)
    */
   isSimpleSelfSigned(): boolean {
-    return this.subject === this.issuer
+    return this.subject === this.issuer;
   }
 
   /**
@@ -326,17 +349,22 @@ export abstract class ATSMSCertificate extends X509Certificate {
   get isCA(): boolean {
     // Self-signed endpoint certificates are NOT CA certificates
     // This always returns false for endpoint certificates
-    return false
+    return false;
   }
 
   /**
    * Export the private key using standard Web Crypto API
    */
-  async exportPrivateKey(format: 'pkcs8' | 'raw' = 'pkcs8'): Promise<ArrayBuffer> {
+  async exportPrivateKey(
+    format: "pkcs8" | "raw" = "pkcs8",
+  ): Promise<ArrayBuffer> {
     if (!this._privateKey) {
-      throw new Error('No private key available to export')
+      throw new Error("No private key available to export");
     }
 
-    return await cryptoProvider.subtle.exportKey(format as any, this._privateKey) as Promise<ArrayBuffer>
+    return (await cryptoProvider.subtle.exportKey(
+      format as any,
+      this._privateKey,
+    )) as Promise<ArrayBuffer>;
   }
 }

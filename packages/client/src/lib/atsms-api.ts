@@ -15,15 +15,15 @@ import {
   type ATSMSSendRecipient,
   type ATSMSStatsResponse,
   type ATSMSTransportMessage,
-} from './types'
+} from "./types";
 
 export class ATSMSApiClient {
-  public config: ATSMSConfig
-  private authToken?: string
+  public config: ATSMSConfig;
+  private authToken?: string;
   // private mailgun: any
 
   constructor(config: ATSMSConfig) {
-    this.config = config
+    this.config = config;
 
     // Initialize Mailgun client - commented out but preserved
     /*
@@ -39,7 +39,7 @@ export class ATSMSApiClient {
    * Set the JWT authentication token
    */
   setAuthToken(token: string): void {
-    this.authToken = token
+    this.authToken = token;
   }
 
   /**
@@ -47,11 +47,11 @@ export class ATSMSApiClient {
    */
   private getAuthHeaders(): Record<string, string> {
     if (!this.authToken) {
-      return {}
+      return {};
     }
     return {
-      'Authorization': `Bearer ${this.authToken}`
-    }
+      Authorization: `Bearer ${this.authToken}`,
+    };
   }
 
   /**
@@ -65,55 +65,60 @@ export class ATSMSApiClient {
     did: string,
     certSerial: string,
     afterSequence?: number,
-    limit?: number
+    limit?: number,
   ): Promise<ATSMSListMessagesResponse> {
     try {
-      const url = new URL(`${this.config.apiUrl}/messages/${did}/${certSerial}/list`)
+      const url = new URL(
+        `${this.config.apiUrl}/messages/${did}/${certSerial}/list`,
+      );
       if (afterSequence !== undefined) {
-        url.searchParams.set('after', afterSequence.toString())
+        url.searchParams.set("after", afterSequence.toString());
       }
       if (limit !== undefined) {
-        url.searchParams.set('limit', limit.toString())
+        url.searchParams.set("limit", limit.toString());
       }
 
-      const response = await fetch(
-        url.toString(),
-        {
-          headers: this.getAuthHeaders()
-        }
-      )
+      const response = await fetch(url.toString(), {
+        headers: this.getAuthHeaders(),
+      });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status} ${response.statusText}`)
+        throw new Error(`API error: ${response.status} ${response.statusText}`);
       }
 
-      return await response.json() as ATSMSListMessagesResponse
+      return (await response.json()) as ATSMSListMessagesResponse;
     } catch (error) {
-      throw new Error(`Failed to list messages: ${error}`)
+      throw new Error(`Failed to list messages: ${error}`);
     }
   }
 
   /**
    * Download raw message (without decryption)
    */
-  async downloadMessage(did: string, certSerial: string, messageId: string): Promise<ATSMSTransportMessage> {
+  async downloadMessage(
+    did: string,
+    certSerial: string,
+    messageId: string,
+  ): Promise<ATSMSTransportMessage> {
     try {
       const response = await fetch(
         `${this.config.apiUrl}/messages/${did}/${certSerial}/${messageId}`,
         {
-          headers: this.getAuthHeaders()
-        }
-      )
+          headers: this.getAuthHeaders(),
+        },
+      );
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status} ${response.statusText}`)
+        throw new Error(`API error: ${response.status} ${response.statusText}`);
       }
 
       // TODO: Fix this to use an API interface
-      const downloadedMessage = await response.json() as { message: ATSMSTransportMessage }
-      return downloadedMessage.message as ATSMSTransportMessage
+      const downloadedMessage = (await response.json()) as {
+        message: ATSMSTransportMessage;
+      };
+      return downloadedMessage.message as ATSMSTransportMessage;
     } catch (error) {
-      throw new Error(`Failed to download message: ${error}`)
+      throw new Error(`Failed to download message: ${error}`);
     }
   }
 
@@ -125,41 +130,49 @@ export class ATSMSApiClient {
       const response = await fetch(
         `${this.config.apiUrl}/messages/${did}/${certSerial}/stats`,
         {
-          method: 'GET',
-          headers: this.getAuthHeaders()
-        }
-      )
+          method: "GET",
+          headers: this.getAuthHeaders(),
+        },
+      );
 
       if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Failed to get stats: ${response.status} ${response.statusText} - ${errorText}`)
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to get stats: ${response.status} ${response.statusText} - ${errorText}`,
+        );
       }
 
-      return await response.json() as ATSMSStatsResponse
+      return (await response.json()) as ATSMSStatsResponse;
     } catch (error) {
-      throw new Error(`Failed to get stats: ${error}`)
+      throw new Error(`Failed to get stats: ${error}`);
     }
   }
 
   /**
    * Delete a message
    */
-  async deleteMessage(did: string, certSerial: string, messageId: string): Promise<void> {
+  async deleteMessage(
+    did: string,
+    certSerial: string,
+    messageId: string,
+  ): Promise<void> {
     try {
       const response = await fetch(
         `${this.config.apiUrl}/messages/${did}/${certSerial}/${messageId}`,
         {
-          method: 'DELETE',
-          headers: this.getAuthHeaders()
-        }
-      )
+          method: "DELETE",
+          headers: this.getAuthHeaders(),
+        },
+      );
 
       if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Failed to delete message: ${response.status} ${response.statusText} - ${errorText}`)
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to delete message: ${response.status} ${response.statusText} - ${errorText}`,
+        );
       }
     } catch (error) {
-      throw new Error(`Failed to delete message: ${error}`)
+      throw new Error(`Failed to delete message: ${error}`);
     }
   }
 
@@ -176,14 +189,14 @@ export class ATSMSApiClient {
    */
   async sendMessage(
     _recipients: ATSMSSendRecipient[],
-    _encryptedContent: string
+    _encryptedContent: string,
   ): Promise<ATSMSSendMessageResponse> {
     // Stub: HTTPS send endpoint not yet implemented on server
     // When implemented, it should POST to /send-message with the new format
     throw new Error(
-      'HTTPS send-message endpoint not yet implemented. ' +
-      'Use WebSocket send instead (transport layer will handle this automatically).'
-    )
+      "HTTPS send-message endpoint not yet implemented. " +
+        "Use WebSocket send instead (transport layer will handle this automatically).",
+    );
 
     // Future implementation (when server supports it):
     /*
@@ -221,32 +234,35 @@ export class ATSMSApiClient {
    */
   async sendMessageLegacy(
     recipientDID: string,
-    encryptedContent: string
+    encryptedContent: string,
   ): Promise<void> {
     try {
       // Use the old /send-message endpoint (if still supported)
-      const url = `${this.config.apiUrl}/send-message`
+      const url = `${this.config.apiUrl}/send-message`;
 
       const response = await fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          ...this.getAuthHeaders()
+          "Content-Type": "application/json",
+          ...this.getAuthHeaders(),
         },
         body: JSON.stringify({
           did: recipientDID,
-          encryptedContent: encryptedContent
+          encryptedContent: encryptedContent,
         }),
-      })
+      });
 
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`API error response: ${response.status} ${response.statusText} ${errorText}`)
-        throw new Error(`API error: ${response.status} ${response.statusText} ${errorText}`)
+        const errorText = await response.text();
+        console.error(
+          `API error response: ${response.status} ${response.statusText} ${errorText}`,
+        );
+        throw new Error(
+          `API error: ${response.status} ${response.statusText} ${errorText}`,
+        );
       }
     } catch (error) {
-      throw new Error(`Failed to send message: ${error}`)
+      throw new Error(`Failed to send message: ${error}`);
     }
   }
-
 }

@@ -11,7 +11,7 @@
  * - Connection state management
  */
 
-import type { ATSMSApiClient } from './atsms-api'
+import type { ATSMSApiClient } from "./atsms-api";
 import type {
   ATSMSListMessagesOptions,
   ATSMSListMessagesResponse,
@@ -19,39 +19,48 @@ import type {
   ATSMSSendRecipient,
   ATSMSStatsResponse,
   ATSMSTransportLayerConfig,
-  ATSMSTransportMessage} from './types'
-import type { ATSMSWebSocketClient } from './websocket-client'
+  ATSMSTransportMessage,
+} from "./types";
+import type { ATSMSWebSocketClient } from "./websocket-client";
 
 /**
  * Unified transport layer that abstracts HTTP and WebSocket
  */
 export class ATSMSTransportLayer {
-  private config: ATSMSTransportLayerConfig
-  private preferWebSocket: boolean
+  private config: ATSMSTransportLayerConfig;
+  private preferWebSocket: boolean;
 
   constructor(config: ATSMSTransportLayerConfig) {
-    this.config = config
-    this.preferWebSocket = config.preferWebSocket ?? true
+    this.config = config;
+    this.preferWebSocket = config.preferWebSocket ?? true;
   }
 
   /**
    * Check if WebSocket is available and connected
    */
   private get canUseWebSocket(): boolean {
-    return !!this.config.wsClient && this.config.wsClient.isConnected()
+    return !!this.config.wsClient && this.config.wsClient.isConnected();
   }
 
   /**
    * List messages from the inbox
    * Uses WebSocket if available, falls back to HTTP
    */
-  async listMessages(options: ATSMSListMessagesOptions = {}): Promise<ATSMSListMessagesResponse> {
+  async listMessages(
+    options: ATSMSListMessagesOptions = {},
+  ): Promise<ATSMSListMessagesResponse> {
     if (this.preferWebSocket && this.canUseWebSocket) {
       try {
-        return await this.config.wsClient!.listMessages(options.after, options.limit)
+        return await this.config.wsClient!.listMessages(
+          options.after,
+          options.limit,
+        );
       } catch (error) {
         // Fallback to HTTP on WebSocket error
-        console.warn('WebSocket listMessages failed, falling back to HTTP:', error)
+        console.warn(
+          "WebSocket listMessages failed, falling back to HTTP:",
+          error,
+        );
       }
     }
 
@@ -60,8 +69,8 @@ export class ATSMSTransportLayer {
       this.config.did,
       this.config.certSerial,
       options.after,
-      options.limit
-    )
+      options.limit,
+    );
   }
 
   /**
@@ -71,11 +80,14 @@ export class ATSMSTransportLayer {
   async getMessage(messageId: string): Promise<ATSMSTransportMessage> {
     if (this.preferWebSocket && this.canUseWebSocket) {
       try {
-        const response = await this.config.wsClient!.getMessage(messageId)
-        return response.message
+        const response = await this.config.wsClient!.getMessage(messageId);
+        return response.message;
       } catch (error) {
         // Fallback to HTTP on WebSocket error
-        console.warn('WebSocket getMessage failed, falling back to HTTP:', error)
+        console.warn(
+          "WebSocket getMessage failed, falling back to HTTP:",
+          error,
+        );
       }
     }
 
@@ -83,8 +95,8 @@ export class ATSMSTransportLayer {
     return await this.config.httpClient.downloadMessage(
       this.config.did,
       this.config.certSerial,
-      messageId
-    )
+      messageId,
+    );
   }
 
   /**
@@ -94,11 +106,14 @@ export class ATSMSTransportLayer {
   async deleteMessage(messageId: string): Promise<void> {
     if (this.preferWebSocket && this.canUseWebSocket) {
       try {
-        await this.config.wsClient!.deleteMessage(messageId)
-        return
+        await this.config.wsClient!.deleteMessage(messageId);
+        return;
       } catch (error) {
         // Fallback to HTTP on WebSocket error
-        console.warn('WebSocket deleteMessage failed, falling back to HTTP:', error)
+        console.warn(
+          "WebSocket deleteMessage failed, falling back to HTTP:",
+          error,
+        );
       }
     }
 
@@ -106,8 +121,8 @@ export class ATSMSTransportLayer {
     await this.config.httpClient.deleteMessage(
       this.config.did,
       this.config.certSerial,
-      messageId
-    )
+      messageId,
+    );
   }
 
   /**
@@ -117,18 +132,18 @@ export class ATSMSTransportLayer {
   async getStats(): Promise<ATSMSStatsResponse> {
     if (this.preferWebSocket && this.canUseWebSocket) {
       try {
-        return await this.config.wsClient!.getStats()
+        return await this.config.wsClient!.getStats();
       } catch (error) {
         // Fallback to HTTP on WebSocket error
-        console.warn('WebSocket getStats failed, falling back to HTTP:', error)
+        console.warn("WebSocket getStats failed, falling back to HTTP:", error);
       }
     }
 
     // Use HTTP
     return await this.config.httpClient.getStats(
       this.config.did,
-      this.config.certSerial
-    )
+      this.config.certSerial,
+    );
   }
 
   /**
@@ -139,18 +154,30 @@ export class ATSMSTransportLayer {
    * @param encryptedContent - Base64-encoded encrypted message content
    * @returns Send results for each recipient
    */
-  async sendMessage(recipients: ATSMSSendRecipient[], encryptedContent: string): Promise<ATSMSSendMessageResponse> {
+  async sendMessage(
+    recipients: ATSMSSendRecipient[],
+    encryptedContent: string,
+  ): Promise<ATSMSSendMessageResponse> {
     if (this.preferWebSocket && this.canUseWebSocket) {
       try {
-        return await this.config.wsClient!.sendMessage(recipients, encryptedContent)
+        return await this.config.wsClient!.sendMessage(
+          recipients,
+          encryptedContent,
+        );
       } catch (error) {
         // Fallback to HTTP on WebSocket error
-        console.warn('WebSocket sendMessage failed, falling back to HTTP:', error)
+        console.warn(
+          "WebSocket sendMessage failed, falling back to HTTP:",
+          error,
+        );
       }
     }
 
     // Use HTTP (currently a stub that throws error)
-    return await this.config.httpClient.sendMessage(recipients, encryptedContent)
+    return await this.config.httpClient.sendMessage(
+      recipients,
+      encryptedContent,
+    );
   }
 
   /**
@@ -158,34 +185,34 @@ export class ATSMSTransportLayer {
    * Useful when WebSocket connection state changes
    */
   setWebSocketClient(wsClient: ATSMSWebSocketClient | null): void {
-    this.config.wsClient = wsClient || undefined
+    this.config.wsClient = wsClient || undefined;
   }
 
   /**
    * Update preference for WebSocket transport
    */
   setPreferWebSocket(prefer: boolean): void {
-    this.preferWebSocket = prefer
+    this.preferWebSocket = prefer;
   }
 
   /**
    * Check if currently using WebSocket for operations
    */
   isUsingWebSocket(): boolean {
-    return this.preferWebSocket && this.canUseWebSocket
+    return this.preferWebSocket && this.canUseWebSocket;
   }
 
   /**
    * Get the underlying HTTP client (for advanced use cases)
    */
   get httpClient(): ATSMSApiClient {
-    return this.config.httpClient
+    return this.config.httpClient;
   }
 
   /**
    * Get the underlying WebSocket client (for advanced use cases)
    */
   get wsClient(): ATSMSWebSocketClient | undefined {
-    return this.config.wsClient
+    return this.config.wsClient;
   }
 }

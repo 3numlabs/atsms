@@ -2,343 +2,377 @@
  * Tests for ATSMSApiClient
  */
 
-import {beforeEach, describe, expect, test} from 'bun:test'
+import { beforeEach, describe, expect, test } from "bun:test";
 
-import {ATSMSApiClient} from '../lib/atsms-api.js'
-import {type ATSMSConfig, type ATSMSSendRecipient} from '../lib/types.js'
+import { ATSMSApiClient } from "../lib/atsms-api.js";
+import { type ATSMSConfig, type ATSMSSendRecipient } from "../lib/types.js";
 
-describe('ATSMSApiClient', () => {
-  let client: ATSMSApiClient
+describe("ATSMSApiClient", () => {
+  let client: ATSMSApiClient;
   const testConfig: ATSMSConfig = {
-    apiUrl: 'https://test.api.acme.xyz'
-  }
+    apiUrl: "https://test.api.acme.xyz",
+  };
 
   beforeEach(() => {
-    client = new ATSMSApiClient(testConfig)
-  })
+    client = new ATSMSApiClient(testConfig);
+  });
 
-  describe('Authentication', () => {
-    test('should set auth token', () => {
-      const token = 'test-jwt-token'
-      client.setAuthToken(token)
-      expect(client).toBeDefined()
-    })
+  describe("Authentication", () => {
+    test("should set auth token", () => {
+      const token = "test-jwt-token";
+      client.setAuthToken(token);
+      expect(client).toBeDefined();
+    });
 
-    test('should include auth headers when token is set', async () => {
-      const token = 'test-jwt-token'
-      client.setAuthToken(token)
-      
+    test("should include auth headers when token is set", async () => {
+      const token = "test-jwt-token";
+      client.setAuthToken(token);
+
       // Mock fetch to verify headers
-      const originalFetch = global.fetch
-      let capturedHeaders: HeadersInit | undefined
-      
+      const originalFetch = global.fetch;
+      let capturedHeaders: HeadersInit | undefined;
+
       global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-        capturedHeaders = init?.headers
-        return new Response(JSON.stringify({
-          messages: [],
-          latestSeq: 0,
-          hasMore: false,
-          totalCount: 0
-        }), {
-          status: 200,
-          headers: {'Content-Type': 'application/json'}
-        })
-      }
-      
-      try {
-        await client.listMessages('did:plc:test', 'cert-serial')
-        expect(capturedHeaders).toBeDefined()
-        expect((capturedHeaders as any)['Authorization']).toBe(`Bearer ${token}`)
-      } finally {
-        global.fetch = originalFetch
-      }
-    })
-  })
+        capturedHeaders = init?.headers;
+        return new Response(
+          JSON.stringify({
+            messages: [],
+            latestSeq: 0,
+            hasMore: false,
+            totalCount: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      };
 
-  describe('listMessages', () => {
-    test('should construct URL without after parameter when afterSequence is not provided', async () => {
-      client.setAuthToken('test-token')
-      
+      try {
+        await client.listMessages("did:plc:test", "cert-serial");
+        expect(capturedHeaders).toBeDefined();
+        expect((capturedHeaders as any)["Authorization"]).toBe(
+          `Bearer ${token}`,
+        );
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe("listMessages", () => {
+    test("should construct URL without after parameter when afterSequence is not provided", async () => {
+      client.setAuthToken("test-token");
+
       // Mock fetch to capture the URL
-      const originalFetch = global.fetch
-      let capturedUrl = ''
-      
+      const originalFetch = global.fetch;
+      let capturedUrl = "";
+
       global.fetch = async (input: RequestInfo | URL) => {
-        capturedUrl = input.toString()
-        return new Response(JSON.stringify({
-          messages: [],
-          latestSeq: 0,
-          hasMore: false,
-          totalCount: 0
-        }), {
-          status: 200,
-          headers: {'Content-Type': 'application/json'}
-        })
-      }
+        capturedUrl = input.toString();
+        return new Response(
+          JSON.stringify({
+            messages: [],
+            latestSeq: 0,
+            hasMore: false,
+            totalCount: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      };
 
       try {
-        await client.listMessages('did:plc:test', 'cert123')
-        expect(capturedUrl).toBe('https://test.api.acme.xyz/messages/did:plc:test/cert123/list')
+        await client.listMessages("did:plc:test", "cert123");
+        expect(capturedUrl).toBe(
+          "https://test.api.acme.xyz/messages/did:plc:test/cert123/list",
+        );
       } finally {
-        global.fetch = originalFetch
+        global.fetch = originalFetch;
       }
-    })
+    });
 
-    test('should construct URL with after parameter when afterSequence is provided', async () => {
-      client.setAuthToken('test-token')
-      
+    test("should construct URL with after parameter when afterSequence is provided", async () => {
+      client.setAuthToken("test-token");
+
       // Mock fetch to capture the URL
-      const originalFetch = global.fetch
-      let capturedUrl = ''
-      
+      const originalFetch = global.fetch;
+      let capturedUrl = "";
+
       global.fetch = async (input: RequestInfo | URL) => {
-        capturedUrl = input.toString()
-        return new Response(JSON.stringify({
-          messages: [],
-          latestSeq: 42,
-          hasMore: false,
-          totalCount: 0
-        }), {
-          status: 200,
-          headers: {'Content-Type': 'application/json'}
-        })
-      }
+        capturedUrl = input.toString();
+        return new Response(
+          JSON.stringify({
+            messages: [],
+            latestSeq: 42,
+            hasMore: false,
+            totalCount: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      };
 
       try {
-        await client.listMessages('did:plc:test', 'cert123', 42)
-        expect(capturedUrl).toBe('https://test.api.acme.xyz/messages/did:plc:test/cert123/list?after=42')
+        await client.listMessages("did:plc:test", "cert123", 42);
+        expect(capturedUrl).toBe(
+          "https://test.api.acme.xyz/messages/did:plc:test/cert123/list?after=42",
+        );
       } finally {
-        global.fetch = originalFetch
+        global.fetch = originalFetch;
       }
-    })
+    });
 
-    test('should handle afterSequence of 0', async () => {
-      client.setAuthToken('test-token')
-      
+    test("should handle afterSequence of 0", async () => {
+      client.setAuthToken("test-token");
+
       // Mock fetch to capture the URL
-      const originalFetch = global.fetch
-      let capturedUrl = ''
-      
+      const originalFetch = global.fetch;
+      let capturedUrl = "";
+
       global.fetch = async (input: RequestInfo | URL) => {
-        capturedUrl = input.toString()
-        return new Response(JSON.stringify({
-          messages: [],
-          latestSeq: 0,
-          hasMore: false,
-          totalCount: 0
-        }), {
-          status: 200,
-          headers: {'Content-Type': 'application/json'}
-        })
-      }
+        capturedUrl = input.toString();
+        return new Response(
+          JSON.stringify({
+            messages: [],
+            latestSeq: 0,
+            hasMore: false,
+            totalCount: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      };
 
       try {
-        await client.listMessages('did:plc:test', 'cert123', 0)
-        expect(capturedUrl).toBe('https://test.api.acme.xyz/messages/did:plc:test/cert123/list?after=0')
+        await client.listMessages("did:plc:test", "cert123", 0);
+        expect(capturedUrl).toBe(
+          "https://test.api.acme.xyz/messages/did:plc:test/cert123/list?after=0",
+        );
       } finally {
-        global.fetch = originalFetch
+        global.fetch = originalFetch;
       }
-    })
+    });
 
-    test('should handle API errors gracefully', async () => {
-      const originalFetch = global.fetch
-      
+    test("should handle API errors gracefully", async () => {
+      const originalFetch = global.fetch;
+
       global.fetch = async () => {
-        return new Response('Not Found', {
+        return new Response("Not Found", {
           status: 404,
-          statusText: 'Not Found'
-        })
-      }
-      
+          statusText: "Not Found",
+        });
+      };
+
       try {
         await expect(
-          client.listMessages('did:plc:test', 'cert-serial')
-        ).rejects.toThrow('Failed to list messages')
+          client.listMessages("did:plc:test", "cert-serial"),
+        ).rejects.toThrow("Failed to list messages");
       } finally {
-        global.fetch = originalFetch
+        global.fetch = originalFetch;
       }
-    })
-  })
+    });
+  });
 
-  describe('downloadMessage', () => {
-    test('should download message with correct URL', async () => {
-      const did = 'did:plc:test123'
-      const certSerial = 'test-cert-serial'
-      const messageId = 'msg-123'
-      
-      const originalFetch = global.fetch
-      let capturedUrl = ''
-      
+  describe("downloadMessage", () => {
+    test("should download message with correct URL", async () => {
+      const did = "did:plc:test123";
+      const certSerial = "test-cert-serial";
+      const messageId = "msg-123";
+
+      const originalFetch = global.fetch;
+      let capturedUrl = "";
+
       global.fetch = async (input: RequestInfo | URL) => {
-        capturedUrl = input.toString()
-        return new Response(JSON.stringify({
-          message: {
-            id: messageId,
-            content: 'encrypted-content'
-          }
-        }), {
-          status: 200,
-          headers: {'Content-Type': 'application/json'}
-        })
-      }
-      
-      try {
-        const result = await client.downloadMessage(did, certSerial, messageId)
-        expect(capturedUrl).toBe(`${testConfig.apiUrl}/messages/${did}/${certSerial}/${messageId}`)
-        expect(result.id).toBe(messageId)
-      } finally {
-        global.fetch = originalFetch
-      }
-    })
-  })
+        capturedUrl = input.toString();
+        return new Response(
+          JSON.stringify({
+            message: {
+              id: messageId,
+              content: "encrypted-content",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      };
 
-  describe('sendMessage', () => {
-    test('should throw error indicating HTTPS not implemented', async () => {
-      const recipients: ATSMSSendRecipient[] = [{
-        did: 'did:plc:recipient',
-        endpoints: [{
-          certSerial: '12345678',
-          email: 'user@example.com'
-        }]
-      }]
-      const encryptedContent = 'base64encodedcontent=='
+      try {
+        const result = await client.downloadMessage(did, certSerial, messageId);
+        expect(capturedUrl).toBe(
+          `${testConfig.apiUrl}/messages/${did}/${certSerial}/${messageId}`,
+        );
+        expect(result.id).toBe(messageId);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe("sendMessage", () => {
+    test("should throw error indicating HTTPS not implemented", async () => {
+      const recipients: ATSMSSendRecipient[] = [
+        {
+          did: "did:plc:recipient",
+          endpoints: [
+            {
+              certSerial: "12345678",
+              email: "user@example.com",
+            },
+          ],
+        },
+      ];
+      const encryptedContent = "base64encodedcontent==";
 
       // New sendMessage signature throws error for HTTPS (not yet implemented)
       await expect(
-        client.sendMessage(recipients, encryptedContent)
-      ).rejects.toThrow('HTTPS send-message endpoint not yet implemented')
-    })
+        client.sendMessage(recipients, encryptedContent),
+      ).rejects.toThrow("HTTPS send-message endpoint not yet implemented");
+    });
 
-    test('should accept new multi-recipient grouped format', async () => {
+    test("should accept new multi-recipient grouped format", async () => {
       const recipients: ATSMSSendRecipient[] = [
         {
-          did: 'did:plc:recipient1',
+          did: "did:plc:recipient1",
           endpoints: [
-            { certSerial: '12345678', email: 'user1@example.com' },
-            { certSerial: 'abcdef12', email: 'user1-backup@example.com' }
-          ]
+            { certSerial: "12345678", email: "user1@example.com" },
+            { certSerial: "abcdef12", email: "user1-backup@example.com" },
+          ],
         },
         {
-          did: 'did:plc:recipient2',
-          endpoints: [
-            { certSerial: '87654321', email: 'user2@example.com' }
-          ]
-        }
-      ]
-      const encryptedContent = 'base64encodedcontent=='
+          did: "did:plc:recipient2",
+          endpoints: [{ certSerial: "87654321", email: "user2@example.com" }],
+        },
+      ];
+      const encryptedContent = "base64encodedcontent==";
 
       // Should accept the new grouped format even though it throws (not implemented)
       await expect(
-        client.sendMessage(recipients, encryptedContent)
-      ).rejects.toThrow('HTTPS send-message endpoint not yet implemented')
-    })
-  })
+        client.sendMessage(recipients, encryptedContent),
+      ).rejects.toThrow("HTTPS send-message endpoint not yet implemented");
+    });
+  });
 
-  describe('sendMessageLegacy', () => {
-    test('should send message with correct payload using legacy method', async () => {
-      const recipientDID = 'did:plc:recipient'
-      const encryptedContent = 'base64encodedcontent=='
+  describe("sendMessageLegacy", () => {
+    test("should send message with correct payload using legacy method", async () => {
+      const recipientDID = "did:plc:recipient";
+      const encryptedContent = "base64encodedcontent==";
 
-      const originalFetch = global.fetch
-      let capturedBody: any
-      let capturedMethod: string | undefined
-      let capturedUrl = ''
+      const originalFetch = global.fetch;
+      let capturedBody: any;
+      let capturedMethod: string | undefined;
+      let capturedUrl = "";
 
       global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-        capturedUrl = input.toString()
-        capturedMethod = init?.method
-        capturedBody = init?.body ? JSON.parse(init.body as string) : undefined
-        return new Response('', {status: 200})
-      }
+        capturedUrl = input.toString();
+        capturedMethod = init?.method;
+        capturedBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response("", { status: 200 });
+      };
 
       try {
-        await client.sendMessageLegacy(recipientDID, encryptedContent)
-        expect(capturedUrl).toBe(`${testConfig.apiUrl}/send-message`)
-        expect(capturedMethod).toBe('POST')
+        await client.sendMessageLegacy(recipientDID, encryptedContent);
+        expect(capturedUrl).toBe(`${testConfig.apiUrl}/send-message`);
+        expect(capturedMethod).toBe("POST");
         expect(capturedBody).toEqual({
           did: recipientDID,
-          encryptedContent: encryptedContent
-        })
+          encryptedContent: encryptedContent,
+        });
       } finally {
-        global.fetch = originalFetch
+        global.fetch = originalFetch;
       }
-    })
+    });
 
-    test('should handle send errors in legacy method', async () => {
-      const originalFetch = global.fetch
+    test("should handle send errors in legacy method", async () => {
+      const originalFetch = global.fetch;
 
       global.fetch = async () => {
-        return new Response('Server Error', {
+        return new Response("Server Error", {
           status: 500,
-          statusText: 'Internal Server Error'
-        })
-      }
+          statusText: "Internal Server Error",
+        });
+      };
 
       try {
         await expect(
-          client.sendMessageLegacy('did:plc:test', 'content')
-        ).rejects.toThrow('Failed to send message')
+          client.sendMessageLegacy("did:plc:test", "content"),
+        ).rejects.toThrow("Failed to send message");
       } finally {
-        global.fetch = originalFetch
+        global.fetch = originalFetch;
       }
-    })
-  })
+    });
+  });
 
-  describe('deleteMessage', () => {
-    test('should delete message with correct URL and method', async () => {
-      const did = 'did:plc:test123'
-      const certSerial = 'test-cert-serial'
-      const messageId = 'msg-123'
-      
-      const originalFetch = global.fetch
-      let capturedUrl = ''
-      let capturedMethod: string | undefined
-      
+  describe("deleteMessage", () => {
+    test("should delete message with correct URL and method", async () => {
+      const did = "did:plc:test123";
+      const certSerial = "test-cert-serial";
+      const messageId = "msg-123";
+
+      const originalFetch = global.fetch;
+      let capturedUrl = "";
+      let capturedMethod: string | undefined;
+
       global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-        capturedUrl = input.toString()
-        capturedMethod = init?.method
-        return new Response('', {status: 200})
-      }
-      
-      try {
-        await client.deleteMessage(did, certSerial, messageId)
-        expect(capturedUrl).toBe(`${testConfig.apiUrl}/messages/${did}/${certSerial}/${messageId}`)
-        expect(capturedMethod).toBe('DELETE')
-      } finally {
-        global.fetch = originalFetch
-      }
-    })
-  })
+        capturedUrl = input.toString();
+        capturedMethod = init?.method;
+        return new Response("", { status: 200 });
+      };
 
-  describe('getStats', () => {
-    test('should get stats with correct URL', async () => {
-      const did = 'did:plc:test123'
-      const certSerial = 'test-cert-serial'
-      
-      const originalFetch = global.fetch
-      let capturedUrl = ''
-      
+      try {
+        await client.deleteMessage(did, certSerial, messageId);
+        expect(capturedUrl).toBe(
+          `${testConfig.apiUrl}/messages/${did}/${certSerial}/${messageId}`,
+        );
+        expect(capturedMethod).toBe("DELETE");
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe("getStats", () => {
+    test("should get stats with correct URL", async () => {
+      const did = "did:plc:test123";
+      const certSerial = "test-cert-serial";
+
+      const originalFetch = global.fetch;
+      let capturedUrl = "";
+
       global.fetch = async (input: RequestInfo | URL) => {
-        capturedUrl = input.toString()
-        return new Response(JSON.stringify({
-          messageCount: 10,
-          latestSeq: 42,
-          connectedClients: 3
-        }), {
-          status: 200,
-          headers: {'Content-Type': 'application/json'}
-        })
-      }
+        capturedUrl = input.toString();
+        return new Response(
+          JSON.stringify({
+            messageCount: 10,
+            latestSeq: 42,
+            connectedClients: 3,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      };
 
       try {
-        const stats = await client.getStats(did, certSerial)
-        expect(capturedUrl).toBe(`${testConfig.apiUrl}/messages/${did}/${certSerial}/stats`)
-        expect(stats.messageCount).toBe(10)
-        expect(stats.latestSeq).toBe(42)
-        expect(stats.connectedClients).toBe(3)
+        const stats = await client.getStats(did, certSerial);
+        expect(capturedUrl).toBe(
+          `${testConfig.apiUrl}/messages/${did}/${certSerial}/stats`,
+        );
+        expect(stats.messageCount).toBe(10);
+        expect(stats.latestSeq).toBe(42);
+        expect(stats.connectedClients).toBe(3);
       } finally {
-        global.fetch = originalFetch
+        global.fetch = originalFetch;
       }
-    })
-  })
-})
+    });
+  });
+});

@@ -1,0 +1,334 @@
+{
+  "_comment": "AT-SMS Test Vectors for S/MIME Encryption/Decryption",
+  "_generated": "2026-01-25T22:33:51.062Z",
+  "_version": "2.0",
+  "_description": [
+    "These test vectors verify S/MIME encryption compatibility for AT-SMS.",
+    "Version 2.0 adds P-256 ECDSA/ECDH support alongside RSA-2048.",
+    "Endpoint certificates are self-signed (no root CA).",
+    "All combinations of RSA and P-256 sender/receiver are tested."
+  ],
+  "participants": {
+    "rsa": {
+      "sender": {
+        "did": "did:plc:sender123456789",
+        "domain": "sender.test",
+        "email": "sender-rsa@atsms-test.example",
+        "algorithm": "RSA",
+        "endpointCertificate": {
+          "pem": "-----BEGIN CERTIFICATE-----\nMIIDvzCCAnegAwIBAgIQfsxWB615YYNaJ9ZNsKJISzA9BgkqhkiG9w0BAQowMKAN\nMAsGCWCGSAFlAwQCAaEaMBgGCSqGSIb3DQEBCDALBglghkgBZQMEAgGiAwIBIDAi\nMSAwHgYDVQQDExdkaWQ6cGxjOnNlbmRlcjEyMzQ1Njc4OTAeFw0yNjAxMjUyMjMz\nNTBaFw0zNjAxMjUyMjMzNTBaMCIxIDAeBgNVBAMTF2RpZDpwbGM6c2VuZGVyMTIz\nNDU2Nzg5MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5ZsyvXeKQ5vA\nOfZg/2U93C9eSG8JQSKsRWePYfR2DM/i4lQ3wZo05Zl9D77AuRFdEWLKPODIj1ON\nOhJdPHWS9aXiKUi5g9qdqr/2Svx/iVzbCYmTHzZWRXMzGR4bX5OWr/9Gn8zjfsng\n5gLPvKwsNzULB/QV1ztNjiI3se7qZ4+xioe+H6rtNkAsDXx6U+md2wYyjWuY0RzT\npH/B7M0QsYrB8kchqgGYyz5HMrpljB0p8nqGs9Jf92tQWzHGArO+e58LU2dc7fc/\nQn/N4A3imi7miH+9VJPjgQm++rBNgBG6XWk8jO/jSBup16PSXIgvVWpfUPIKpFRa\nrvBm8MxM4QIDAQABo4GQMIGNMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgSw\nMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjBOBgNVHREERzBFggtzZW5k\nZXIudGVzdIYXZGlkOnBsYzpzZW5kZXIxMjM0NTY3ODmBHXNlbmRlci1yc2FAYXRz\nbXMtdGVzdC5leGFtcGxlMD0GCSqGSIb3DQEBCjAwoA0wCwYJYIZIAWUDBAIBoRow\nGAYJKoZIhvcNAQEIMAsGCWCGSAFlAwQCAaIDAgEgA4IBAQAEW3neS9F/kXwOajCf\nv5Z8M9zNTMLrkv5LihQGvaIeZ5Y1QXhsm4yscK1/Gx/wwagizYB1NYvUQ+NdRnEL\nk+bZkxXwcqRxuAUM3IV5ZpcQhznqqlQaWKtkH0dmo+HaaN0+HTHwezUfdJ3QDCX3\nJmPNidzq5YdBlRpCwyZxoHBPhifSEI4zlElvUCqJWnCBcG5S/06kR6sNa9jB5XJV\nxRCgCFBw4Qt5avn33MIbRIAoLxYAewcqYkSFFEk4F8fCDMDPLrJSfFyz23HoYqii\nCeUg4NQzRjquR1a6H8HRprr0IshzKo0Q8OpWnaXhYYp7qV2uyIOX8JGp5Hn+iQmN\niHws\n-----END CERTIFICATE-----",
+          "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDlmzK9d4pDm8A5\n9mD/ZT3cL15IbwlBIqxFZ49h9HYMz+LiVDfBmjTlmX0PvsC5EV0RYso84MiPU406\nEl08dZL1peIpSLmD2p2qv/ZK/H+JXNsJiZMfNlZFczMZHhtfk5av/0afzON+yeDm\nAs+8rCw3NQsH9BXXO02OIjex7upnj7GKh74fqu02QCwNfHpT6Z3bBjKNa5jRHNOk\nf8HszRCxisHyRyGqAZjLPkcyumWMHSnyeoaz0l/3a1BbMcYCs757nwtTZ1zt9z9C\nf83gDeKaLuaIf71Uk+OBCb76sE2AEbpdaTyM7+NIG6nXo9JciC9Val9Q8gqkVFqu\n8GbwzEzhAgMBAAECggEACcNlbzKN1c2h6SUNn1aMAJigCvbzvwoNJr9eVLU7LtTJ\nKkQYAdq/jJLQA1MiaUwwd6yKene5d4S/QNymi8tZFip5WTWPM+jgIvJaM/qUJsBk\nzP1FXQKnvPjGz7bcxZ3mPrIda+6frtTBRC6S7Ewq7icKgspRgm8yX0ybryyAWapp\nJ4p9+HGpsT6DDrMZuaIKoG5Pjs8fMpfIGWyxpSVDX4dRWfiymDJi2+wzJuDzUUuA\n6EGHeRTe5oC8GYgkP5HUo3ZrZ3iJP3HI036UiWXT7B1LRRzxoP0Jcxq2GmrG0Ujb\nKysvHLzI/bSmukoFjrWz6cOnNLRCuwjzYCYAwIKCRQKBgQD93elBmhWsn9RCLQcR\nCLvlJr83s0Av4dYii0d/S7dQWzD/P9SZU+zOVj03ic68u/vS/gpklOTBZX3NiaAS\nSO3WuogZZNQEpxOUQBvgJNlugeF29VPzcxklqFnf9E78uIQ5XOMkKZn4c4mnJuE1\nlAJS1YSLd2WP0l4MtDFe2Lb8fQKBgQDniRm4TsY50jqOJ6NfcV6F4iVQIuLEtZaA\n2fHo2P4AwKoypt48d4Vu3Sv0WKVGLNwUQt9ETocaBd6qaQGuPYsvftnSgHW+qQrS\npUumoZCEXCtpPq7g1HFO7nd+dv4ax/8BWxGQWIFTHnYXFu9o7Zyb8hnHalnwIBkh\nBrj6UDvTNQKBgQD7juLtk674kKQ3MwE2mu39gyimHCR1jhavwk4F0NSEduiVdf3I\nNcaJLCGbIB5RHQHLsNpBkt0e2uAPRNnuZH/xcIMejrAdMCYRmHlG4ZzniSIOy8j1\ni08W5rywVBnVCU5UvTuDAQpGjM6RaNBvVAv9YwDlZlmoa2+wrPnjH2IrzQKBgQCY\nyYkWba0zVL5dNl0By38TnFMBGbRJGIczih6viBm9h2YIvMLkZf7AVOT/fku6DjpA\niIxqt+NBUeRI0bhRMb2aXvwAg9KvOT+yF2/firgiD+x5q+qc5LPM4WIrKvyt0ZI+\nY8koVq8omW5V+EWOGVaCNfW6+TxWT+glOhlw3OdNjQKBgDOQHMYx/TWJ83Om+rTw\nlrODsFD67okzGSnBRdvpHPbeCfwsiz2SweEQUc6f5Bgl++WyYnFgQM3KD0eQivWD\nl5KuI058lQv+/OLiwD82lPM8UiQyXInvY1x3cwmSIiebi1+cmV/hcUu4Nt88tVtJ\n379dCFl+reOo9H6gJglXA2g2\n-----END PRIVATE KEY-----\n",
+          "serialNumber": "7ecc5607ad7961835a27d64db0a2484b",
+          "notBefore": "2026-01-25T22:33:50.000Z",
+          "notAfter": "2036-01-25T22:33:50.000Z"
+        }
+      },
+      "receiver": {
+        "did": "did:plc:receiver987654321",
+        "domain": "receiver.test",
+        "email": "receiver-rsa@atsms-test.example",
+        "algorithm": "RSA",
+        "endpointCertificate": {
+          "pem": "-----BEGIN CERTIFICATE-----\nMIIDyjCCAoKgAwIBAgIRAPzXDhkdc+IM9v0hv2fBiPAwPQYJKoZIhvcNAQEKMDCg\nDTALBglghkgBZQMEAgGhGjAYBgkqhkiG9w0BAQgwCwYJYIZIAWUDBAIBogMCASAw\nJDEiMCAGA1UEAxMZZGlkOnBsYzpyZWNlaXZlcjk4NzY1NDMyMTAeFw0yNjAxMjUy\nMjMzNTFaFw0zNjAxMjUyMjMzNTFaMCQxIjAgBgNVBAMTGWRpZDpwbGM6cmVjZWl2\nZXI5ODc2NTQzMjEwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQD9X0LW\nWejCZ5djevkiUo++5czLglyvXs5+f+F0XCbzGdhDHWoAalJgOcB4gJiq/R8zpXaT\nb1eB/MSAqIYiHUI2QYS+iYe7s5vxkCzfNdxqfdMEIx1lqNn3+SyFyHgt7dvZN8V3\nWpAf/A7s/4kwwmVDrGm8tOyyDdnL2i1Btf0Sju9KwjiSliPG8fIPWwKkW25/BAFw\nHnsXpPXMJFnRnsncJHcnozcdJDpbpsyInVVjW1Fb2rIDHYOdeSUJ68hD/JPpkzqM\n1w/Sqy1HNAN8JNeM1n0J3NGISSwDyoPLCLCeRM41xlXpdbhk4wPUkzTXSu5D/lC/\nNIkhxK9RrwlgYl4NAgMBAAGjgZYwgZMwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8E\nBAMCBLAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMFQGA1UdEQRNMEuC\nDXJlY2VpdmVyLnRlc3SGGWRpZDpwbGM6cmVjZWl2ZXI5ODc2NTQzMjGBH3JlY2Vp\ndmVyLXJzYUBhdHNtcy10ZXN0LmV4YW1wbGUwPQYJKoZIhvcNAQEKMDCgDTALBglg\nhkgBZQMEAgGhGjAYBgkqhkiG9w0BAQgwCwYJYIZIAWUDBAIBogMCASADggEBADtf\nGJa9h60jbP6KriDWSfwyom4F4sKzxKg5e1n5/hyHNpfYuYY8NjVl+PrrmaeL6BQ2\nG8mc8DsJPfrlq6rrD5TXhhF0sQwCCd8f+Oio0n3O27Vn3jTgBongWo9dvqpW6Zu5\nud2vDkQeFFDtvHTinz0UDUTR/LzsdlebE5BfPOhR9xOR1kMr2jD0tjDxTXXA2vTK\n8VF6nGg+RDK5wuY5w5uudwM1TL8jVpYZq7968STDZzBvw4KSIwhxXm9X+/zHqUI2\n3yhn9OiRMGx6N9u158PbARaTbWBq28tLUoItqil+GCu/5imMqyWAJxiNcyWTbP7V\numtzUvqoU9bcrES7+LQ=\n-----END CERTIFICATE-----",
+          "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQD9X0LWWejCZ5dj\nevkiUo++5czLglyvXs5+f+F0XCbzGdhDHWoAalJgOcB4gJiq/R8zpXaTb1eB/MSA\nqIYiHUI2QYS+iYe7s5vxkCzfNdxqfdMEIx1lqNn3+SyFyHgt7dvZN8V3WpAf/A7s\n/4kwwmVDrGm8tOyyDdnL2i1Btf0Sju9KwjiSliPG8fIPWwKkW25/BAFwHnsXpPXM\nJFnRnsncJHcnozcdJDpbpsyInVVjW1Fb2rIDHYOdeSUJ68hD/JPpkzqM1w/Sqy1H\nNAN8JNeM1n0J3NGISSwDyoPLCLCeRM41xlXpdbhk4wPUkzTXSu5D/lC/NIkhxK9R\nrwlgYl4NAgMBAAECggEAE1If0SOjBawLlcjrVYwxLO/uGXiz46WZnnjW8t4SFEic\nvqVwD18MMA1HWYkI20UZC4GrFJwRcraZL2xqahCMG4IMgtEO+ie8lQOXAGBlkfNN\nU4vv8nAZSvkDxaHfVDVGpf5EPxE3W1EHvFfSGNdCDJKJr5umTv+SY6Kb/95GUZNQ\n4XO55+jrrfSqPLyfzUvXVCnyNm7bTCGlGDjoxR0LV6cXlrI44ZqA2/T5Ari0Ideh\nCdx8G+zX84K8DwNNBjeCVRKxriJODhfXNnl/OpZjkCndjeKRgOXhQ/KFfw502+QF\nt879SQoG/vqUwcRS0B/xPGKvboUqWy27qhGAW2wNiwKBgQD+uTMV15BJ4LPmjohF\njMUtwLdp6RLK+x4H3Hd/wf+49SyEcl3lu5ciu4QE7ctmnsEwtE9MZQWP6V2ukRvF\nX2aYXxrWyDBNalIz+amI+vfJ6BtZlYff8vN7DcwShzOD6k7Kuxoe3NOZ62XHvWcK\n2akJpbLXN7sjzBod0lPFb+k9SwKBgQD+pFPtFyKpNzzvBtyzNay1fHxducFmJGs0\nbfI2MGpOT8eNmX2V09DXDsQkXUmAMfSSjhwcXpoSRF/sGU9A+jobX5fUS0XoXvqG\nFJE62jnGb+vKqugLMqeRKJ2hANT/6fwG64MaB1C+z3eqKBKmSteIjJMmEnhNAq0c\nsAm30MtzBwKBgGNiGt5wxqksdMSF5AFO1TfusyEtgNmVdLgYer9sD7w4XHAotx4F\nPQieJPpPVUbqtfGsyCvEVpE5ugV8NFujx0G4CZ63aLErxHrm9BCv6rHqT5F6WBM2\nlWzziyXHfn//kVJkAeL8wcqSH5n4+hUvq1ZKQibaZben0KDGCU1FRrlVAoGAQhl9\n/6llwe8ozhNF7u8b6fBqiBnT7iO+AFoZ6Z8fuTxUXJlfVCkrqOeYWqgskC5ngjOJ\ncIPOErfU/oCDZiaONtTVoLH5b5xYA74LBO/o123uEynSGjYH8VJNuKFyqQuf9Fvm\nKDeF6kIImg7U6H28/SEggV2CBNuQ/EVmAGUeqrkCgYEA0gpWFrtK56yqsuuJBwr3\nJUIRJfzTPNmALdejPlqqLYDP2WofDQxgStiuKq/MedIeVbE/0O1FqIO77gVav5SC\nL/seKYR0uXy2bVvtoRK3jTpJy8HNO1Xm4lysUicu1/TkP5Mrg08jwHuLlm/UDCNz\nQzVSZrEh6eH57cH2cqIJzSI=\n-----END PRIVATE KEY-----\n",
+          "serialNumber": "fcd70e191d73e20cf6fd21bf67c188f0",
+          "notBefore": "2026-01-25T22:33:51.000Z",
+          "notAfter": "2036-01-25T22:33:51.000Z"
+        }
+      }
+    },
+    "p256": {
+      "sender": {
+        "did": "did:plc:sender123456789",
+        "domain": "sender.test",
+        "email": "sender-p256@atsms-test.example",
+        "algorithm": "P256",
+        "endpointCertificate": {
+          "pem": "-----BEGIN CERTIFICATE-----\nMIIB1TCCAXugAwIBAgIRAMJ4/kPsc+O9S8834be8XUwwCgYIKoZIzj0EAwIwIjEg\nMB4GA1UEAxMXZGlkOnBsYzpzZW5kZXIxMjM0NTY3ODkwHhcNMjYwMTI1MjIzMzUx\nWhcNMzYwMTI1MjIzMzUxWjAiMSAwHgYDVQQDExdkaWQ6cGxjOnNlbmRlcjEyMzQ1\nNjc4OTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABAHZt59A4IxI1v0mPaZ7HB8W\nXk7ywR5XXRJXd1M3Wn82AcOBQYa1n2wQc6503NRWnjQenfZSV8o8uUKb4WXXNZ+j\ngZEwgY4wDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCA4gwHQYDVR0lBBYwFAYI\nKwYBBQUHAwEGCCsGAQUFBwMCME8GA1UdEQRIMEaCC3NlbmRlci50ZXN0hhdkaWQ6\ncGxjOnNlbmRlcjEyMzQ1Njc4OYEec2VuZGVyLXAyNTZAYXRzbXMtdGVzdC5leGFt\ncGxlMAoGCCqGSM49BAMCA0gAMEUCIH08TQZe+j/ehoNhAlFl3DCY0lQeBpjHhZSa\nWxJ2x0eAAiEAj46iI0A2SbwBXxwGIBR7rkaDh0+vB5RYb4Fl7MoCVkg=\n-----END CERTIFICATE-----",
+          "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgs2y51mp7dnwnPkX0\nPb5SWALxAGa/ZDt+H2TvKW+YUwihRANCAAQB2befQOCMSNb9Jj2mexwfFl5O8sEe\nV10SV3dTN1p/NgHDgUGGtZ9sEHOudNzUVp40Hp32UlfKPLlCm+Fl1zWf\n-----END PRIVATE KEY-----\n",
+          "serialNumber": "c278fe43ec73e3bd4bcf37e1b7bc5d4c",
+          "notBefore": "2026-01-25T22:33:51.000Z",
+          "notAfter": "2036-01-25T22:33:51.000Z"
+        }
+      },
+      "receiver": {
+        "did": "did:plc:receiver987654321",
+        "domain": "receiver.test",
+        "email": "receiver-p256@atsms-test.example",
+        "algorithm": "P256",
+        "endpointCertificate": {
+          "pem": "-----BEGIN CERTIFICATE-----\nMIIB3jCCAYSgAwIBAgIQSeZsrBHWCSwBSL7PUomyyzAKBggqhkjOPQQDAjAkMSIw\nIAYDVQQDExlkaWQ6cGxjOnJlY2VpdmVyOTg3NjU0MzIxMB4XDTI2MDEyNTIyMzM1\nMVoXDTM2MDEyNTIyMzM1MVowJDEiMCAGA1UEAxMZZGlkOnBsYzpyZWNlaXZlcjk4\nNzY1NDMyMTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABObmNBF6RFmK4lAM/He3\n6kQ6Qbwb5X+G/w/kgAlvTPM5vyxz4zNPEQ4cvD9Un9Fga7UxShVxKkVL/pYAdmdd\nshGjgZcwgZQwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCA4gwHQYDVR0lBBYw\nFAYIKwYBBQUHAwEGCCsGAQUFBwMCMFUGA1UdEQROMEyCDXJlY2VpdmVyLnRlc3SG\nGWRpZDpwbGM6cmVjZWl2ZXI5ODc2NTQzMjGBIHJlY2VpdmVyLXAyNTZAYXRzbXMt\ndGVzdC5leGFtcGxlMAoGCCqGSM49BAMCA0gAMEUCIQDXOKlbnwiZHHTxnfQK8rte\nCcXcGUBx1S2SJPFjwO8BIQIgEBvyYM0vF+dgQtt8Bb+RWCnXbGRr5F3TMllDNXaX\nJb0=\n-----END CERTIFICATE-----",
+          "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgZSIp5h0ptdprD3uL\nh5ZTJlCQDrkuWo6OHkOi8MxjZmOhRANCAATm5jQRekRZiuJQDPx3t+pEOkG8G+V/\nhv8P5IAJb0zzOb8sc+MzTxEOHLw/VJ/RYGu1MUoVcSpFS/6WAHZnXbIR\n-----END PRIVATE KEY-----\n",
+          "serialNumber": "49e66cac11d6092c0148becf5289b2cb",
+          "notBefore": "2026-01-25T22:33:51.000Z",
+          "notAfter": "2036-01-25T22:33:51.000Z"
+        }
+      }
+    }
+  },
+  "message": {
+    "plainText": "Hello, this is a test message for AT-SMS encryption verification!",
+    "contentType": "atsms/text",
+    "content": "{\"text\":\"Hello, this is a test message for AT-SMS encryption verification!\"}",
+    "payloadJson": "{\"version\":\"1.0\",\"contentType\":\"atsms/text\",\"id\":\"Y5EM4jdSfZPjR\",\"content\":\"{\\\"text\\\":\\\"Hello, this is a test message for AT-SMS encryption verification!\\\"}\",\"senderId\":\"did:plc:sender123456789\",\"recipientIds\":[\"did:plc:receiver987654321\"],\"convoId\":\"test-conversation-123\",\"createdAt\":\"2026-01-25T22:33:51.018Z\"}",
+    "payload": {
+      "version": "1.0",
+      "contentType": "atsms/text",
+      "id": "Y5EM4jdSfZPjR",
+      "content": "{\"text\":\"Hello, this is a test message for AT-SMS encryption verification!\"}",
+      "senderId": "did:plc:sender123456789",
+      "recipientIds": [
+        "did:plc:receiver987654321"
+      ],
+      "convoId": "test-conversation-123",
+      "createdAt": "2026-01-25T22:33:51.018Z"
+    }
+  },
+  "cryptographic": {
+    "rsaToRsa": {
+      "_comment": "Sender: RSA, Receiver: RSA",
+      "signedMessage": {
+        "_description": "PKCS#7 SignedData containing the message payload, signed by sender",
+        "base64": "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",
+        "algorithm": "RSA-SHA256",
+        "format": "PKCS#7 SignedData (DER encoded)"
+      },
+      "encryptedMessage": {
+        "_description": "PKCS#7 EnvelopedData containing the signed message, encrypted for receiver",
+        "base64": "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",
+        "keyEncryptionAlgorithm": "RSA-OAEP with SHA-256",
+        "contentEncryptionAlgorithm": "AES-256-CBC",
+        "format": "PKCS#7 EnvelopedData (DER encoded)"
+      }
+    },
+    "p256ToP256": {
+      "_comment": "Sender: P256, Receiver: P256",
+      "signedMessage": {
+        "_description": "PKCS#7 SignedData containing the message payload, signed by sender",
+        "base64": "MIID+wYJKoZIhvcNAQcCoIID7DCCA+gCAQExDzANBglghkgBZQMEAgEFADCCAUwGCSqGSIb3DQEHAaCCAT0EggE5eyJ2ZXJzaW9uIjoiMS4wIiwiY29udGVudFR5cGUiOiJhdHNtcy90ZXh0IiwiaWQiOiJZNUVNNGpkU2ZaUGpSIiwiY29udGVudCI6IntcInRleHRcIjpcIkhlbGxvLCB0aGlzIGlzIGEgdGVzdCBtZXNzYWdlIGZvciBBVC1TTVMgZW5jcnlwdGlvbiB2ZXJpZmljYXRpb24hXCJ9Iiwic2VuZGVySWQiOiJkaWQ6cGxjOnNlbmRlcjEyMzQ1Njc4OSIsInJlY2lwaWVudElkcyI6WyJkaWQ6cGxjOnJlY2VpdmVyOTg3NjU0MzIxIl0sImNvbnZvSWQiOiJ0ZXN0LWNvbnZlcnNhdGlvbi0xMjMiLCJjcmVhdGVkQXQiOiIyMDI2LTAxLTI1VDIyOjMzOjUxLjAxOFoifaCCAdkwggHVMIIBe6ADAgECAhEAwnj+Q+xz471Lzzfht7xdTDAKBggqhkjOPQQDAjAiMSAwHgYDVQQDExdkaWQ6cGxjOnNlbmRlcjEyMzQ1Njc4OTAeFw0yNjAxMjUyMjMzNTFaFw0zNjAxMjUyMjMzNTFaMCIxIDAeBgNVBAMTF2RpZDpwbGM6c2VuZGVyMTIzNDU2Nzg5MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAdm3n0DgjEjW/SY9pnscHxZeTvLBHlddEld3UzdafzYBw4FBhrWfbBBzrnTc1FaeNB6d9lJXyjy5QpvhZdc1n6OBkTCBjjAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB/wQEAwIDiDAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwTwYDVR0RBEgwRoILc2VuZGVyLnRlc3SGF2RpZDpwbGM6c2VuZGVyMTIzNDU2Nzg5gR5zZW5kZXItcDI1NkBhdHNtcy10ZXN0LmV4YW1wbGUwCgYIKoZIzj0EAwIDSAAwRQIgfTxNBl76P96Gg2ECUWXcMJjSVB4GmMeFlJpbEnbHR4ACIQCPjqIjQDZJvAFfHAYgFHuuRoOHT68HlFhvgWXsygJWSDGBpDCBoQIBATA3MCIxIDAeBgNVBAMTF2RpZDpwbGM6c2VuZGVyMTIzNDU2Nzg5AhEAwnj+Q+xz471Lzzfht7xdTDANBglghkgBZQMEAgEFADAKBggqhkjOPQQDAgRIMEYCIQDTeYpFuRd1RpmfJnMZEIMDQq8FoNnTC3oBYXf1wiW8TwIhAJgel4NqesUu1LWHVhOgtRM+l9y0wqVKQXgw38cjeeTi",
+        "algorithm": "ECDSA-SHA256",
+        "format": "PKCS#7 SignedData (DER encoded)"
+      },
+      "encryptedMessage": {
+        "_description": "PKCS#7 EnvelopedData containing the signed message, encrypted for receiver",
+        "base64": "MIAGCSqGSIb3DQEHA6CAMIACAQIxggEnoYIBIwIBA6BboVkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzttNfLmoRTeZ/pgV5YQxPpFYfXiqQbCs+Ty5h12QGz1WyYkOxwb7AOUB1TAwc8TEpZxO64cAVhgEBAuIvf+xjKFCBEBzJpuoLYukeC9YRsDsqc5OTSo3cW5LYr1Ly4zr+XmsfoMXXwMdfl8P2LEMvpn4YdW6jet36ZDk43NeAhw1XcDRMBUGBiuBBAELATALBglghkgBZQMEAS0wZjBkMDgwJDEiMCAGA1UEAxMZZGlkOnBsYzpyZWNlaXZlcjk4NzY1NDMyMQIQSeZsrBHWCSwBSL7PUomyywQoE/SU0SSJpbkJ+5Z4xyL7wLt5GejpelI4tR8P6++n0OLIVnifdNfjtjCABgkqhkiG9w0BBwEwHQYJYIZIAWUDBAEqBBB9qgh//vqIS6d2cj+U7xVpoIAEggQANki6+hAKMoWLheHXsW6oN2r71PixwXzU4txCRZptGgecaWTnJ4wXxbJa/yu5aI2yv0O5EKdo/m36ruyP33u6Gqn538rFKMxcTR4Zma7qnA8jJd1F0K+QDmgRGV3pKtDfadZccUn290hWdz9X0qtVt0VT2iANouqqD/oxZktnYGLq2jFheuFOFgk5T01mt6X07i8lTN0O0vNxKFtZT5cV/p2vr5FaoYKMskxq6xwGDHvgnRt9HW4Boc78KQCYO+/tpu79t8/ZJ3hH3ocPN+9SgOn/kQ0gKCmMueky2Zea9Suqix4VD4SaGHrM9/PpUC+wYyW2nFxGPaotq6otKM2+kIiQaCbRdPaUA/TSgArKGsHe6WufhSvRrSJaPwpd/hsCyUjp6WI2Fr4/5Hyjoj/BBugGr74YhP7vFVLMbdsiBGOOFJ2t1Yll/pvwpzDB43ZIRleGo30MuMeEaHTtU6pJ0czMB+O1Dju/kH0Z5cDVbJigISfssAxjM/F1GmlDlfvzytFH1wFQrezPHKi7jbVZHD5oLdoOoGOro6dWWSUM80XOWi54WW671FwqS0/doCYKjodZbTFge1k20to3waRfdGKMuBJIlgjEdaPiAQUzU6lrFWLVeQx/dL1jScYhHhnYdWRH1wCS+HhNODJ6Km33bHjZKqmUzqmXiajrttskpsgsJKni/95iGO3Go6DwWoBehVY8My/bNsUf6nO9H4uwLqiWiuy9RQJUBF3p925LhowhPBmJAGC7h9NzTILPHfed5OiqZcX5bkjeByA+8C80aPVt3N9Vbv3QQ3R4qgZVs0woddF5L1WYXFdIRSBAOhjSuu2kYR7HcL6QNCsoHcYJe0FXOz08hlRWqCvtE3dzIrxB5vVkjMQNW26APDeEn/ZJWyKdkCn6c815moWv82K7mir2tgbqnstdQ0eYKWy+S8w9qPTLS3ZLyaQMIxVm2Oj58PVzBJ1syoNOaG1iAgba9Kg0lejr3myM8MqBbUizM24fayiARPGhozk+K9oRBUrKK0t7k933dirPNjwSXnJCa1dhBmnGFhyPNAtwhkzpyb7kkxYLWu227PrLTybKeK3U/SZaI/RKsyXC3C8FNB5jpIHsxkNTipg7YB0uqt/oGJ0Jo2c5nJ6qU7PZASajDbfAupz+RyMWjDvj7adQdBSvIhZ4ajobW2v07b/czmWaCo7HR4Pl0Pi+i3X2Li73XDkoSpscW1qc6WgU9ILL3p+droPDBsMA1syX1H5n0UU/wlI12Kzaz07k6S3jdQ6+YMOatAj2HQzEi6c18IWLu1KzR9Smb2xHR3MlPpiMmvku9U7JG3qwWK5Oqd9MeFTs522HcOl+Me01Dk17mK4nyPnKyAAAAAAAAAAAAAA=",
+        "keyEncryptionAlgorithm": "ECDH-ES with AES-256 key wrap",
+        "contentEncryptionAlgorithm": "AES-256-CBC",
+        "format": "PKCS#7 EnvelopedData (DER encoded)"
+      }
+    },
+    "rsaToP256": {
+      "_comment": "Sender: RSA, Receiver: P256",
+      "signedMessage": {
+        "_description": "PKCS#7 SignedData containing the message payload, signed by sender",
+        "base64": "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",
+        "algorithm": "RSA-SHA256",
+        "format": "PKCS#7 SignedData (DER encoded)"
+      },
+      "encryptedMessage": {
+        "_description": "PKCS#7 EnvelopedData containing the signed message, encrypted for receiver",
+        "base64": "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",
+        "keyEncryptionAlgorithm": "ECDH-ES with AES-256 key wrap",
+        "contentEncryptionAlgorithm": "AES-256-CBC",
+        "format": "PKCS#7 EnvelopedData (DER encoded)"
+      }
+    },
+    "p256ToRsa": {
+      "_comment": "Sender: P256, Receiver: RSA",
+      "signedMessage": {
+        "_description": "PKCS#7 SignedData containing the message payload, signed by sender",
+        "base64": "MIID+gYJKoZIhvcNAQcCoIID6zCCA+cCAQExDzANBglghkgBZQMEAgEFADCCAUwGCSqGSIb3DQEHAaCCAT0EggE5eyJ2ZXJzaW9uIjoiMS4wIiwiY29udGVudFR5cGUiOiJhdHNtcy90ZXh0IiwiaWQiOiJZNUVNNGpkU2ZaUGpSIiwiY29udGVudCI6IntcInRleHRcIjpcIkhlbGxvLCB0aGlzIGlzIGEgdGVzdCBtZXNzYWdlIGZvciBBVC1TTVMgZW5jcnlwdGlvbiB2ZXJpZmljYXRpb24hXCJ9Iiwic2VuZGVySWQiOiJkaWQ6cGxjOnNlbmRlcjEyMzQ1Njc4OSIsInJlY2lwaWVudElkcyI6WyJkaWQ6cGxjOnJlY2VpdmVyOTg3NjU0MzIxIl0sImNvbnZvSWQiOiJ0ZXN0LWNvbnZlcnNhdGlvbi0xMjMiLCJjcmVhdGVkQXQiOiIyMDI2LTAxLTI1VDIyOjMzOjUxLjAxOFoifaCCAdkwggHVMIIBe6ADAgECAhEAwnj+Q+xz471Lzzfht7xdTDAKBggqhkjOPQQDAjAiMSAwHgYDVQQDExdkaWQ6cGxjOnNlbmRlcjEyMzQ1Njc4OTAeFw0yNjAxMjUyMjMzNTFaFw0zNjAxMjUyMjMzNTFaMCIxIDAeBgNVBAMTF2RpZDpwbGM6c2VuZGVyMTIzNDU2Nzg5MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAdm3n0DgjEjW/SY9pnscHxZeTvLBHlddEld3UzdafzYBw4FBhrWfbBBzrnTc1FaeNB6d9lJXyjy5QpvhZdc1n6OBkTCBjjAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB/wQEAwIDiDAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwTwYDVR0RBEgwRoILc2VuZGVyLnRlc3SGF2RpZDpwbGM6c2VuZGVyMTIzNDU2Nzg5gR5zZW5kZXItcDI1NkBhdHNtcy10ZXN0LmV4YW1wbGUwCgYIKoZIzj0EAwIDSAAwRQIgfTxNBl76P96Gg2ECUWXcMJjSVB4GmMeFlJpbEnbHR4ACIQCPjqIjQDZJvAFfHAYgFHuuRoOHT68HlFhvgWXsygJWSDGBozCBoAIBATA3MCIxIDAeBgNVBAMTF2RpZDpwbGM6c2VuZGVyMTIzNDU2Nzg5AhEAwnj+Q+xz471Lzzfht7xdTDANBglghkgBZQMEAgEFADAKBggqhkjOPQQDAgRHMEUCIQD2R3luhuJxASz1bdkoh0LK11ZjLn7vhjLGIq1gRUnzkwIgOG0O0gKGe0KomBM3jWTLGTX4jw6mLA/epEm3d6YlFPo=",
+        "algorithm": "ECDSA-SHA256",
+        "format": "PKCS#7 SignedData (DER encoded)"
+      },
+      "encryptedMessage": {
+        "_description": "PKCS#7 EnvelopedData containing the signed message, encrypted for receiver",
+        "base64": "MIAGCSqGSIb3DQEHA6CAMIACAQIxggGEMIIBgAIBADA5MCQxIjAgBgNVBAMTGWRpZDpwbGM6cmVjZWl2ZXI5ODc2NTQzMjECEQD81w4ZHXPiDPb9Ib9nwYjwMDwGCSqGSIb3DQEBBzAvoA8wDQYJYIZIAWUDBAIBBQChHDAaBgkqhkiG9w0BAQgwDQYJYIZIAWUDBAIBBQAEggEAu6icxM2HTMAHAfaym5X0LS09H4YuUSW7qsBmGoX+gloARU0gIoTgAVbhh+fKCO/3RPD/L2N+Q6PwjsA/o9IleSR0mQPOXcUaxtkp72QivAMp1nCaMEyXKbhpW1eY1sW3PLTdd6zFuFXE1aQiQAPHZBxiN9B4jn5l9/5v0lr1c4VcMM5jU9TtJdoQLYIlfRCe251nN3UfY8LFhjgMnB2OHMLNDfnXiuNK9MbiR87PHlDOxIkS0ca9RgBot9yPmrvvXuRjc1nF6cx2DGxIppP4tTNO3/YKEE8ZAZK1d32ZyXcEAW5Ha9GUsHnt2bDv5ubLla2YUHOBP50Y6sPaEXrvEDCABgkqhkiG9w0BBwEwHQYJYIZIAWUDBAEqBBDH3O/VAToXEqoEwTSgglicoIAEggQA2ZPb1iRAIRbp3ASw0H4wG95EfLbHkNDTh2yYkHUTLdNbMcKjLQj83Kp8U7p49G3VRS4yXCKWL/qXXIv8lrBMKoJM4P/jBXGGz4HjOpmiXaH/xMUEMHxOivgr/N3p7qYNrrkrxZRjdQ7abtQlgZvaOkd0cGzAtjO+am2GDhBZcDNuRbwaqF0s7gR3WwQ7F4KG1kYG2+qXVmwHPsZ7PwpDQowzsammnWg4Uy1yaYLuFfYaFgNw+ShjHA1aRewR3IkzSpm27o370WPhCeHhUTgomhmGicZiNaJCLKyFO5cVa0ZlRNJ+2JSQlsuT230Ls5GT7d627uvT07cN9fiRZ3zVwBn2FRs/Pc+eiec1SOrEgvccmQcNMxEBZgvUjFEyOT4N6E0t4cm0U3nKSdi1l7E2wch2ITRiplnR6GjQS/HJp3PfXMvpHBusvFQwrMOgt4dJlRUTjKgFYJry25zWwqp35zu9bEotPlki4cfYqEN2j0r1Hcp+J+MpWaLh15V6TBgUv3p3FmvSLztpU5P6erRN8RUcjM+5P4lqPbfNSS0RSsr/WOTkZTYVvAqsPONMmvXdc69euaQK//tfYB0G8kLcv2HqCbCoQXfqQcQSw57yqiuCdsBsgCJkjv/PEY/KHtwdtO2LXnSu6dXrcwY515g0g6NE0ThMbzSUF8uVmu5QR9VC5X0+m0RdKlgpnlsRtKP5H5i9yiWkaw6R4nMPcqnm6Ojb49KLvvRDvyLHZlWUYg1ZE0HM6fXDsKUdD79uXQnVroekjpKCyxqu3PjWbUkIeOyEPpNFgVxjxZoEbx1QvmNPITrk+QjjrGPkhssOLPeSZ+yLdXs17bF2bBGK/fVg6hOkrNEPwGYffnLayAhE3N7DQTaVoGKA+Of/wlOVF0vv9khtzVsmWtGDP+dnAknA6esQMAazW34z/wwieM+90aoSJhX0wnOF9B/jlB9VKwPa93ivDrmyoymx0PezXjsSlsu7CdRpS56mLdX1KIADIIxGDThb/6D5OF+EA0EABQ2ajmwxuwkgBIricZJw10YYe5hC59yDdIq2KzHgsh8oKdxCMQFiSwZHuXA0BR7Qm9dfzbJOVPWlhgfnkoNwUyo0IoIVYt0AOKWNGgNqqk7QEEx9KgzoRevABFqHKoXYWAVgF/HhLMFIeFSjplqB4uTHWA0tI8wu2duSpEpAZc/GurQ/MoA7cebV6+nhr0LmhLVOCSwBq8/nhyLrFSwEdTYdc3EyGb5eUiYR8FeIIylIsleGjg5OTIAka+DzZ8td2QgWhLkoGdl0NVM62hbyRKbmKb+WBm0hwnBsAzUEkcKRSwMqMy8mCNIfuCNg0s/VTtplHYI4JveoQyVblLfAJdUd0AAAAAAAAAAAAAA=",
+        "keyEncryptionAlgorithm": "RSA-OAEP with SHA-256",
+        "contentEncryptionAlgorithm": "AES-256-CBC",
+        "format": "PKCS#7 EnvelopedData (DER encoded)"
+      }
+    }
+  },
+  "algorithms": {
+    "rsa": {
+      "endpointCertificate": {
+        "keyType": "RSA",
+        "keySize": 2048,
+        "signatureAlgorithm": "RSA-PSS with SHA-256 (self-signed)",
+        "usage": "Message signing and encryption"
+      },
+      "messageSignature": {
+        "algorithm": "RSA-SHA256",
+        "format": "PKCS#7 SignedData",
+        "hashAlgorithm": "SHA-256"
+      },
+      "messageEncryption": {
+        "keyEncryption": "RSA-OAEP",
+        "oaepHash": "SHA-256",
+        "contentEncryption": "AES-256-CBC",
+        "format": "PKCS#7 EnvelopedData (KeyTransRecipientInfo)"
+      }
+    },
+    "p256": {
+      "endpointCertificate": {
+        "keyType": "EC",
+        "curve": "P-256 (secp256r1/prime256v1)",
+        "signatureAlgorithm": "ECDSA with SHA-256 (self-signed)",
+        "usage": "Message signing and encryption (via ECDH)"
+      },
+      "messageSignature": {
+        "algorithm": "ECDSA-SHA256",
+        "format": "PKCS#7 SignedData",
+        "hashAlgorithm": "SHA-256"
+      },
+      "messageEncryption": {
+        "keyEncryption": "ECDH-ES (Ephemeral-Static)",
+        "keyDerivation": "HKDF with SHA-256",
+        "keyWrap": "AES-256 key wrap",
+        "contentEncryption": "AES-256-CBC",
+        "format": "PKCS#7 EnvelopedData (KeyAgreeRecipientInfo)"
+      }
+    }
+  },
+  "testCases": [
+    {
+      "name": "rsa_decrypt_and_verify",
+      "description": "Decrypt RSA-encrypted message and verify RSA signature (RSA -> RSA)",
+      "input": {
+        "encryptedMessage": "cryptographic.rsaToRsa.encryptedMessage.base64",
+        "receiverPrivateKey": "participants.rsa.receiver.endpointCertificate.privateKeyPem",
+        "receiverCertificate": "participants.rsa.receiver.endpointCertificate.pem"
+      },
+      "expectedOutput": {
+        "signerCertificate": "participants.rsa.sender.endpointCertificate.pem",
+        "decryptedContent": "message.payloadJson"
+      }
+    },
+    {
+      "name": "p256_decrypt_and_verify",
+      "description": "Decrypt ECDH-encrypted message and verify ECDSA signature (P256 -> P256)",
+      "input": {
+        "encryptedMessage": "cryptographic.p256ToP256.encryptedMessage.base64",
+        "receiverPrivateKey": "participants.p256.receiver.endpointCertificate.privateKeyPem",
+        "receiverCertificate": "participants.p256.receiver.endpointCertificate.pem"
+      },
+      "expectedOutput": {
+        "signerCertificate": "participants.p256.sender.endpointCertificate.pem",
+        "decryptedContent": "message.payloadJson"
+      }
+    },
+    {
+      "name": "mixed_rsa_to_p256",
+      "description": "RSA-signed message encrypted for P256 recipient (RSA signature, ECDH encryption)",
+      "input": {
+        "encryptedMessage": "cryptographic.rsaToP256.encryptedMessage.base64",
+        "receiverPrivateKey": "participants.p256.receiver.endpointCertificate.privateKeyPem",
+        "receiverCertificate": "participants.p256.receiver.endpointCertificate.pem"
+      },
+      "expectedOutput": {
+        "signerCertificate": "participants.rsa.sender.endpointCertificate.pem",
+        "decryptedContent": "message.payloadJson"
+      }
+    },
+    {
+      "name": "mixed_p256_to_rsa",
+      "description": "P256-signed message encrypted for RSA recipient (ECDSA signature, RSA-OAEP encryption)",
+      "input": {
+        "encryptedMessage": "cryptographic.p256ToRsa.encryptedMessage.base64",
+        "receiverPrivateKey": "participants.rsa.receiver.endpointCertificate.privateKeyPem",
+        "receiverCertificate": "participants.rsa.receiver.endpointCertificate.pem"
+      },
+      "expectedOutput": {
+        "signerCertificate": "participants.p256.sender.endpointCertificate.pem",
+        "decryptedContent": "message.payloadJson"
+      }
+    },
+    {
+      "name": "rsa_sign_message",
+      "description": "Sign a message payload using RSA private key",
+      "input": {
+        "payload": "message.payloadJson",
+        "senderPrivateKey": "participants.rsa.sender.endpointCertificate.privateKeyPem",
+        "senderCertificate": "participants.rsa.sender.endpointCertificate.pem"
+      },
+      "expectedOutput": {
+        "signedMessage": "cryptographic.rsaToRsa.signedMessage.base64"
+      },
+      "note": "Signature includes timestamp so output may differ, but must be verifiable"
+    },
+    {
+      "name": "p256_sign_message",
+      "description": "Sign a message payload using P-256 ECDSA private key",
+      "input": {
+        "payload": "message.payloadJson",
+        "senderPrivateKey": "participants.p256.sender.endpointCertificate.privateKeyPem",
+        "senderCertificate": "participants.p256.sender.endpointCertificate.pem"
+      },
+      "expectedOutput": {
+        "signedMessage": "cryptographic.p256ToP256.signedMessage.base64"
+      },
+      "note": "Signature includes timestamp so output may differ, but must be verifiable"
+    },
+    {
+      "name": "rsa_encrypt_for_recipient",
+      "description": "Encrypt signed message for RSA receiver using RSA-OAEP",
+      "input": {
+        "signedMessage": "cryptographic.rsaToRsa.signedMessage.base64",
+        "receiverCertificate": "participants.rsa.receiver.endpointCertificate.pem"
+      },
+      "expectedOutput": {
+        "encryptedMessage": "cryptographic.rsaToRsa.encryptedMessage.base64"
+      },
+      "note": "Encryption uses random IV so output will differ, but must be decryptable"
+    },
+    {
+      "name": "p256_encrypt_for_recipient",
+      "description": "Encrypt signed message for P-256 receiver using ECDH",
+      "input": {
+        "signedMessage": "cryptographic.p256ToP256.signedMessage.base64",
+        "receiverCertificate": "participants.p256.receiver.endpointCertificate.pem"
+      },
+      "expectedOutput": {
+        "encryptedMessage": "cryptographic.p256ToP256.encryptedMessage.base64"
+      },
+      "note": "Encryption uses ephemeral key so output will differ, but must be decryptable"
+    }
+  ],
+  "verification": {
+    "_comment": "Expected results after decryption and signature verification",
+    "rsaToRsa": {
+      "expectedSignerDid": "did:plc:sender123456789",
+      "expectedSignerEmail": "sender-rsa@atsms-test.example",
+      "expectedSignerCertSerial": "7ecc5607ad7961835a27d64db0a2484b"
+    },
+    "p256ToP256": {
+      "expectedSignerDid": "did:plc:sender123456789",
+      "expectedSignerEmail": "sender-p256@atsms-test.example",
+      "expectedSignerCertSerial": "c278fe43ec73e3bd4bcf37e1b7bc5d4c"
+    },
+    "rsaToP256": {
+      "expectedSignerDid": "did:plc:sender123456789",
+      "expectedSignerEmail": "sender-rsa@atsms-test.example",
+      "expectedSignerCertSerial": "7ecc5607ad7961835a27d64db0a2484b"
+    },
+    "p256ToRsa": {
+      "expectedSignerDid": "did:plc:sender123456789",
+      "expectedSignerEmail": "sender-p256@atsms-test.example",
+      "expectedSignerCertSerial": "c278fe43ec73e3bd4bcf37e1b7bc5d4c"
+    },
+    "expectedContent": "{\"text\":\"Hello, this is a test message for AT-SMS encryption verification!\"}",
+    "expectedPayload": {
+      "version": "1.0",
+      "contentType": "atsms/text",
+      "id": "Y5EM4jdSfZPjR",
+      "content": "{\"text\":\"Hello, this is a test message for AT-SMS encryption verification!\"}",
+      "senderId": "did:plc:sender123456789",
+      "recipientIds": [
+        "did:plc:receiver987654321"
+      ],
+      "convoId": "test-conversation-123",
+      "createdAt": "2026-01-25T22:33:51.018Z"
+    }
+  }
+}

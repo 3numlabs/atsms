@@ -6,32 +6,34 @@
  */
 
 // Export all types
-export * from './types'
+export * from "./types";
 
 // Export storage types and interfaces
-export { IndexedDBAdapter } from './storage/indexeddb-adapter'
-export * from './storage/interface'
-export { ATSMSStorageManager, type ATSMSStorageManagerConfig } from './storage/manager'
-export { SQLiteAdapter } from './storage/sqlite-adapter'
-export { payloadToLocalMessage } from './storage/types'
-export * from './storage/types'
+export { IndexedDBAdapter } from "./storage/indexeddb-adapter";
+export * from "./storage/interface";
+export {
+  ATSMSStorageManager,
+  type ATSMSStorageManagerConfig,
+} from "./storage/manager";
+export { SQLiteAdapter } from "./storage/sqlite-adapter";
+export { payloadToLocalMessage } from "./storage/types";
+export * from "./storage/types";
 
 // Export certificate classes
 export {
   ATSMSCertificate,
-  ATSMSEndpointCertificate
-} from './certificates/index'
+  ATSMSEndpointCertificate,
+} from "./certificates/index";
 
 // Export crypto operations
 export {
   decryptAndVerifyMessageSignature,
   encryptMessage,
-  signMessage
-} from './crypto'
+  signMessage,
+} from "./crypto";
 
 // Export crypto provider utilities
-export { setCryptoProvider } from './crypto-provider'
-
+export { setCryptoProvider } from "./crypto-provider";
 
 // Export message handling functions
 export {
@@ -41,31 +43,27 @@ export {
   extractP7MFromEmail,
   parseTextContent,
   parseWebRTCContent,
-  prepareMessageForSending} from './messages'
+  prepareMessageForSending,
+} from "./messages";
 
 // Export API client
-export { ATSMSApiClient } from './atsms-api'
+export { ATSMSApiClient } from "./atsms-api";
 
 // Export WebSocket client
 export {
   ATSMSWebSocketClient,
   type ATSMSWebSocketClientConfig,
-  type ATSMSWebSocketMessage
-} from './websocket-client'
+  type ATSMSWebSocketMessage,
+} from "./websocket-client";
 
 // Export Transport Layer
-export {
-  ATSMSTransportLayer
-} from './transport-layer'
+export { ATSMSTransportLayer } from "./transport-layer";
 
 // Export JWT authentication
-export {
-  generateJWT,
-  getTokenExpiration
-} from './jwt-auth'
+export { generateJWT, getTokenExpiration } from "./jwt-auth";
 
 // Export the ATSMSClient (main client class)
-export { ATSMSClient } from './atsms-client'
+export { ATSMSClient } from "./atsms-client";
 
 // Re-export commonly used types for convenience
 export type {
@@ -85,4 +83,5 @@ export type {
   ATSMSTransportLayerConfig,
   ATSMSTransportMessage,
   ATSMSTransportReceipt,
-  ATSMSWebRTCContent} from './types'
+  ATSMSWebRTCContent,
+} from "./types";

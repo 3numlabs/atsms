@@ -2,23 +2,30 @@
  * Shared types for AT-SMS Library
  */
 
-import type { ATSMSEndpointCertificate } from './certificates/index.js'
+import type { ATSMSAnyEndpointCertificate } from "./certificates/index.js";
 
 /**
  * AT-SMS Certificate Types
  * - 'endpoint': Self-signed endpoint certificate (one per device)
  * - 'root': Legacy type, kept for backwards compatibility with older databases
  */
-export type ATSMSCertificateType = 'endpoint' | 'root'
+export type ATSMSCertificateType = "endpoint" | "root";
+
+/**
+ * AT-SMS Certificate Algorithm Types
+ * - 'RSA': RSA-2048 with RSA-OAEP encryption (legacy)
+ * - 'P256': P-256 ECDSA with ECDH encryption (modern)
+ */
+export type ATSMSCertificateAlgorithm = "RSA" | "P256";
 
 /**
  * Result of decrypting and verifying an AT-SMS message signature
  */
 export interface ATSMSDecryptedMessage {
   /** The certificate of the message signer */
-  messageSigner: ATSMSEndpointCertificate
+  messageSigner: ATSMSAnyEndpointCertificate;
   /** The decrypted content as raw bytes */
-  decryptedContent: Uint8Array
+  decryptedContent: Uint8Array;
 }
 
 /**
@@ -26,14 +33,14 @@ export interface ATSMSDecryptedMessage {
  * This is the message format "on the wire" after decryption
  */
 export interface ATSMSMessagePayload {
-  version: string
-  contentType: string  // MIME type, e.g., "atsms/text"
-  id: string
-  content: string  // JSON-serialized content
-  senderId: string
-  recipientIds: string[]
-  convoId: string
-  createdAt: string
+  version: string;
+  contentType: string; // MIME type, e.g., "atsms/text"
+  id: string;
+  content: string; // JSON-serialized content
+  senderId: string;
+  recipientIds: string[];
+  convoId: string;
+  createdAt: string;
 }
 
 /**
@@ -41,8 +48,8 @@ export interface ATSMSMessagePayload {
  * This is what's inside the JSON-serialized content field
  */
 export interface ATSMSTextContent {
-  text: string
-  facets?: ATProtoFacet[]  // Optional AT Protocol facets
+  text: string;
+  facets?: ATProtoFacet[]; // Optional AT Protocol facets
 }
 
 /**
@@ -50,24 +57,24 @@ export interface ATSMSTextContent {
  * Used for WebRTC signaling (establishing audio/video calls)
  */
 export interface ATSMSWebRTCContent {
-  type: 'offer' | 'answer' | 'ice-candidate' | 'hangup'
+  type: "offer" | "answer" | "ice-candidate" | "hangup";
 
   // SDP for offer/answer
-  sdp?: string
+  sdp?: string;
 
   // ICE candidate data
   candidate?: {
-    candidate: string
-    sdpMid: string | null
-    sdpMLineIndex: number | null
-  }
+    candidate: string;
+    sdpMid: string | null;
+    sdpMLineIndex: number | null;
+  };
 
   // Call metadata
-  callId: string  // Unique identifier for this call session
-  mediaTypes?: ('audio' | 'video')[]  // What media tracks are offered
+  callId: string; // Unique identifier for this call session
+  mediaTypes?: ("audio" | "video")[]; // What media tracks are offered
 
   // Optional metadata
-  timestamp?: number  // When this signaling message was created
+  timestamp?: number; // When this signaling message was created
 }
 
 /**
@@ -76,29 +83,29 @@ export interface ATSMSWebRTCContent {
  */
 export interface ATProtoFacet {
   index: {
-    byteStart: number
-    byteEnd: number
-  }
+    byteStart: number;
+    byteEnd: number;
+  };
   features: Array<
-    | { $type: 'app.bsky.richtext.facet#mention'; did: string }
-    | { $type: 'app.bsky.richtext.facet#link'; uri: string }
-    | { $type: 'app.bsky.richtext.facet#tag'; tag: string }
-  >
+    | { $type: "app.bsky.richtext.facet#mention"; did: string }
+    | { $type: "app.bsky.richtext.facet#link"; uri: string }
+    | { $type: "app.bsky.richtext.facet#tag"; tag: string }
+  >;
 }
 
 // Transport receipt for tracking message origin and metadata
 // The AT-SMS Inbox Provider adds this to messages for troubleshooting spam
 export interface ATSMSTransportReceipt {
-  source: 'email' | 'api' // How the message was received
-  timestamp?: string // When received
-  from?: string // Sender info (for email)
-  to?: string // Recipient info (for email)
-  subject?: string // Subject (for email)
-  envelopeFrom?: string // Envelope from (for email)
-  receivedAt?: string // Receipt time
-  headers?: Record<string, string> // Email headers
-  method?: string // API method (for api)
-  clientIp?: string // Client IP (for api)
+  source: "email" | "api"; // How the message was received
+  timestamp?: string; // When received
+  from?: string; // Sender info (for email)
+  to?: string; // Recipient info (for email)
+  subject?: string; // Subject (for email)
+  envelopeFrom?: string; // Envelope from (for email)
+  receivedAt?: string; // Receipt time
+  headers?: Record<string, string>; // Email headers
+  method?: string; // API method (for api)
+  clientIp?: string; // Client IP (for api)
 }
 
 /**
@@ -106,9 +113,9 @@ export interface ATSMSTransportReceipt {
  * Returned by list operations
  */
 export interface ATSMSMessageMetadata {
-  id: string // Message ID (hash of encrypted content)
-  seq: number // Sequence number for ordering
-  storedAt: string // ISO timestamp when stored
+  id: string; // Message ID (hash of encrypted content)
+  seq: number; // Sequence number for ordering
+  storedAt: string; // ISO timestamp when stored
 }
 
 /**
@@ -116,24 +123,24 @@ export interface ATSMSMessageMetadata {
  * Returned by get/download operations
  */
 export interface ATSMSTransportMessage extends ATSMSMessageMetadata {
-  encryptedContent: string // Base64-encoded PKCS#7 content
+  encryptedContent: string; // Base64-encoded PKCS#7 content
 }
 
 /**
  * Extended transport message with debugging info
  */
 export interface ATSMSTransportMessageDebug extends ATSMSTransportMessage {
-  transportReceipt: ATSMSTransportReceipt // Transport metadata
+  transportReceipt: ATSMSTransportReceipt; // Transport metadata
 }
 
 export interface ATSMSConfig {
-  apiUrl: string
+  apiUrl: string;
 }
 
 export interface ATProtocolRecord {
-  rkey: string
-  value: any
-  cid?: string
+  rkey: string;
+  value: any;
+  cid?: string;
 }
 
 /**
@@ -141,11 +148,11 @@ export interface ATProtocolRecord {
  * Groups all endpoints (devices) for a single DID
  */
 export interface ATSMSSendRecipient {
-  did: string                    // Recipient's DID
+  did: string; // Recipient's DID
   endpoints: Array<{
-    certSerial: string  // Certificate serial number for this endpoint/device
-    email: string       // Email address for routing (DO-to-DO vs SMTP)
-  }>
+    certSerial: string; // Certificate serial number for this endpoint/device
+    email: string; // Email address for routing (DO-to-DO vs SMTP)
+  }>;
 }
 
 /**
@@ -154,12 +161,12 @@ export interface ATSMSSendRecipient {
  */
 export interface ATSMSSendMessageResponse {
   results: Array<{
-    did: string         // Recipient DID
-    certSerial: string  // Recipient certificate serial
-    email: string       // Recipient email
-    status: 'sent' | 'failed'  // Delivery status
-    error?: string      // Error message (if failed)
-  }>
+    did: string; // Recipient DID
+    certSerial: string; // Recipient certificate serial
+    email: string; // Recipient email
+    status: "sent" | "failed"; // Delivery status
+    error?: string; // Error message (if failed)
+  }>;
 }
 
 /**
@@ -167,19 +174,19 @@ export interface ATSMSSendMessageResponse {
  * Used to initialize ATSMSTransportLayer with HTTP and WebSocket clients
  */
 export interface ATSMSTransportLayerConfig {
-  did: string
-  certSerial: string
-  httpClient: any  // ATSMSApiClient (avoiding circular dependency)
-  wsClient?: any   // ATSMSWebSocketClient (avoiding circular dependency)
-  preferWebSocket?: boolean
+  did: string;
+  certSerial: string;
+  httpClient: any; // ATSMSApiClient (avoiding circular dependency)
+  wsClient?: any; // ATSMSWebSocketClient (avoiding circular dependency)
+  preferWebSocket?: boolean;
 }
 
 /**
  * Options for listing messages from inbox
  */
 export interface ATSMSListMessagesOptions {
-  after?: number   // Sequence number to fetch messages after (pagination)
-  limit?: number   // Maximum number of messages to return
+  after?: number; // Sequence number to fetch messages after (pagination)
+  limit?: number; // Maximum number of messages to return
 }
 
 /**
@@ -187,10 +194,10 @@ export interface ATSMSListMessagesOptions {
  * Used by both HTTP and WebSocket transports
  */
 export interface ATSMSListMessagesResponse {
-  messages: ATSMSMessageMetadata[]
-  latestSeq: number
-  hasMore: boolean
-  totalCount: number
+  messages: ATSMSMessageMetadata[];
+  latestSeq: number;
+  hasMore: boolean;
+  totalCount: number;
 }
 
 /**
@@ -198,7 +205,7 @@ export interface ATSMSListMessagesResponse {
  * Used by WebSocket transport
  */
 export interface ATSMSGetMessageResponse {
-  message: ATSMSTransportMessage
+  message: ATSMSTransportMessage;
 }
 
 /**
@@ -206,8 +213,8 @@ export interface ATSMSGetMessageResponse {
  * Used by WebSocket transport
  */
 export interface ATSMSDeleteMessageResponse {
-  success: boolean
-  messageId: string
+  success: boolean;
+  messageId: string;
 }
 
 /**
@@ -215,7 +222,7 @@ export interface ATSMSDeleteMessageResponse {
  * Used by both HTTP and WebSocket transports
  */
 export interface ATSMSStatsResponse {
-  messageCount: number
-  latestSeq: number
-  connectedClients: number
+  messageCount: number;
+  latestSeq: number;
+  connectedClients: number;
 }
