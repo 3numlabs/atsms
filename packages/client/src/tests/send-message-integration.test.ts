@@ -13,7 +13,7 @@ import {
   encryptMessage,
   signMessage} from '../lib/crypto.js'
 import {type ATSMSConfig} from '../lib/types.js'
-import { generateTestClientCertificate,generateTestRootCertificate } from './test-certificates.js'
+import { generateTestEndpointCertificate } from './test-certificates.js'
 
 describe('Send Message Integration', () => {
   let testDir: string
@@ -57,29 +57,23 @@ describe('Send Message Integration', () => {
     test('should sign and encrypt message correctly', async () => {
       // This test now focuses on the crypto operations directly
       // since ATSMSClient has been moved to CLI layer
-      
+
       // Create test certificates
       const certsDir = path.join(testDir, 'test-certs')
       mkdirSync(certsDir, {recursive: true})
-      
-      // Generate test certificates
-      const rootKeyPath = path.join(certsDir, 'root-ca-key.pem')
-      const rootCertPath = path.join(certsDir, 'root-ca.pem')
+
+      // Generate self-signed endpoint certificate
       const clientKeyPath = path.join(certsDir, 'client-key.pem')
       const clientCertPath = path.join(certsDir, 'client.pem')
-      
-      const rootResult = await generateTestRootCertificate('did:plc:testuser123', 'acme.xyz')
-      writeFileSync(rootCertPath, rootResult.cert, 'utf8')
-      writeFileSync(rootKeyPath, rootResult.privateKey, 'utf8')
-      
-      const clientResult = await generateTestClientCertificate(
-        rootResult,
+
+      const clientResult = await generateTestEndpointCertificate(
         'did:plc:testuser123',
-        'test.user'
+        'acme.xyz',
+        'test@acme.xyz'
       )
       writeFileSync(clientCertPath, clientResult.cert, 'utf8')
       writeFileSync(clientKeyPath, clientResult.privateKey, 'utf8')
-      
+
       // Test message payload creation (simple test payload, not full ATSMSMessagePayload)
       const messageText = 'Test message'
       const payload = {
@@ -92,7 +86,7 @@ describe('Send Message Integration', () => {
         },
         timestamp: new Date().toISOString(),
       }
-      
+
       // Test signing
       const clientCertPEM = await Bun.file(clientCertPath).text()
       const clientKeyPEM = await Bun.file(clientKeyPath).text()
@@ -102,19 +96,19 @@ describe('Send Message Integration', () => {
         JSON.stringify(payload),
         signerCert
       )
-      
+
       // signMessage returns Uint8Array
       expect(signedContent).toBeDefined()
       expect(signedContent).toBeInstanceOf(Uint8Array)
       expect(signedContent.length).toBeGreaterThan(0)
-      
+
       // Test encryption - create Certificate object
       const endpointCert = ATSMSEndpointCertificate.fromPEM(clientCertPEM)
       const encryptedContent = await encryptMessage(
         signedContent,
         [endpointCert]
       )
-      
+
       expect(encryptedContent).toBeDefined()
       expect(encryptedContent).toBeInstanceOf(Uint8Array)
       expect(encryptedContent.length).toBeGreaterThan(0)

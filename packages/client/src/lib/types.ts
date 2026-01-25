@@ -6,10 +6,10 @@ import type { ATSMSEndpointCertificate } from './certificates/index.js'
 
 /**
  * AT-SMS Certificate Types
- * - 'root': Self-signed root CA certificate (one per DID)
- * - 'endpoint': Endpoint certificate signed by root (one per device)
+ * - 'endpoint': Self-signed endpoint certificate (one per device)
+ * - 'root': Legacy type, kept for backwards compatibility with older databases
  */
-export type ATSMSCertificateType = 'root' | 'endpoint'
+export type ATSMSCertificateType = 'endpoint' | 'root'
 
 /**
  * Result of decrypting and verifying an AT-SMS message signature

@@ -320,9 +320,13 @@ export abstract class ATSMSCertificate extends X509Certificate {
 
   /**
    * Check if this is a CA certificate
+   * Note: In the current architecture, all endpoint certificates are self-signed
+   * but they are NOT CA certificates (BasicConstraints: CA=false)
    */
   get isCA(): boolean {
-    return this.isSimpleSelfSigned() && this.getType() === 'root'
+    // Self-signed endpoint certificates are NOT CA certificates
+    // This always returns false for endpoint certificates
+    return false
   }
 
   /**

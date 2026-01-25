@@ -7,19 +7,17 @@ import {afterAll, beforeAll, describe, expect, test} from 'bun:test'
 import {existsSync, mkdirSync, readFileSync, rmSync,writeFileSync} from 'fs'
 import path from 'path'
 
-import { ATSMSEndpointCertificate,ATSMSRootCertificate } from '../lib/certificates/index.js'
+import { ATSMSEndpointCertificate } from '../lib/certificates/index.js'
 import {
   decryptAndVerifyMessageSignature,
   encryptMessage,
   signMessage} from '../lib/crypto.js'
-import { generateTestClientCertificate,generateTestRootCertificate } from './test-certificates.js'
+import { generateTestEndpointCertificate } from './test-certificates.js'
 
 describe('Crypto Functions', () => {
   let testDir: string
   let testDID: string
   let testHandle: string
-  let rootCertPEM: string
-  let rootKeyPEM: string
   let clientCertPEM: string
   let clientKeyPEM: string
 
@@ -34,13 +32,8 @@ describe('Crypto Functions', () => {
     }
     mkdirSync(testDir, {recursive: true})
 
-    // Generate certificates for all tests
-    const rootResult = await generateTestRootCertificate(testDID, 'acme.xyz')
-    rootCertPEM = rootResult.cert
-    rootKeyPEM = rootResult.privateKey
-
-    const clientResult = await generateTestClientCertificate(
-      rootResult,
+    // Generate self-signed endpoint certificate
+    const clientResult = await generateTestEndpointCertificate(
       testDID,
       testHandle
     )
@@ -48,8 +41,6 @@ describe('Crypto Functions', () => {
     clientKeyPEM = clientResult.privateKey
 
     // Write to files for tests that need them
-    writeFileSync(path.join(testDir, 'root-cert.pem'), rootCertPEM, 'utf8')
-    writeFileSync(path.join(testDir, 'root-key.pem'), rootKeyPEM, 'utf8')
     writeFileSync(path.join(testDir, 'client-cert.pem'), clientCertPEM, 'utf8')
     writeFileSync(path.join(testDir, 'client-key.pem'), clientKeyPEM, 'utf8')
   })
@@ -62,107 +53,19 @@ describe('Crypto Functions', () => {
   })
 
   describe('Certificate Generation', () => {
-    let rootKeyPath: string
-    let rootCertPath: string
     let clientKeyPath: string
     let clientCertPath: string
 
     beforeAll(() => {
-      rootKeyPath = path.join(testDir, 'root-key.pem')
-      rootCertPath = path.join(testDir, 'root-cert.pem')
       clientKeyPath = path.join(testDir, 'client-key.pem')
       clientCertPath = path.join(testDir, 'client-cert.pem')
     })
 
-    test('should generate K-256 root certificate', async () => {
-      const result = await generateTestRootCertificate(testDID, 'acme.xyz')
+    test('should generate self-signed RSA endpoint certificate', async () => {
+      const result = await generateTestEndpointCertificate(testDID, testHandle)
 
       expect(result.cert).toBeTruthy()
       expect(result.privateKey).toBeTruthy()
-
-      // Write to files for subsequent tests
-      writeFileSync(rootCertPath, result.cert, 'utf8')
-      writeFileSync(rootKeyPath, result.privateKey, 'utf8')
-
-      // Verify files exist
-      expect(existsSync(rootCertPath)).toBe(true)
-      expect(existsSync(rootKeyPath)).toBe(true)
-
-      // Verify certificate format
-      expect(result.cert).toContain('BEGIN CERTIFICATE')
-      expect(result.cert).toContain('END CERTIFICATE')
-
-      // Verify private key format
-      expect(result.privateKey).toContain('BEGIN PRIVATE KEY')
-      expect(result.privateKey).toContain('END PRIVATE KEY')
-
-      // Parse and verify certificate details
-      const rootCert = await ATSMSRootCertificate.fromPEMWithKey(result.cert, result.privateKey)
-      expect(rootCert.subject).toContain(testDID)
-      expect(rootCert.getType()).toBe('root')
-
-      // Verify it's a CA certificate
-      expect(rootCert.isCA).toBe(true)
-    })
-
-    test('should verify root certificate uses K-256 (secp256k1) with openssl', async () => {
-      const result = await generateTestRootCertificate(testDID, 'acme.xyz')
-      
-      // Write certificate to temp file
-      const tempCertPath = path.join(testDir, 'test-k256-cert.pem')
-      writeFileSync(tempCertPath, result.cert, 'utf8')
-      
-      // Use openssl to check the certificate's public key algorithm
-      const { exec } = await import('child_process')
-      const { promisify } = await import('util')
-      const execAsync = promisify(exec)
-      
-      try {
-        // Get certificate details including the public key info
-        const { stdout } = await execAsync(`openssl x509 -in ${tempCertPath} -text -noout`)
-        
-        // Check for secp256k1 - OpenSSL shows this as "ASN1 OID: secp256k1"
-        const hasSecp256k1 = stdout.includes('ASN1 OID: secp256k1') || 
-                             stdout.includes('secp256k1')
-        
-        if (!hasSecp256k1) {
-          console.error('Certificate does not use secp256k1. OpenSSL output:')
-          console.error(stdout)
-        }
-        
-        expect(hasSecp256k1).toBe(true)
-        
-        // Also verify it's an EC key (not RSA or other)
-        expect(stdout).toContain('Public Key Algorithm: id-ecPublicKey')
-      } catch (error) {
-        console.error('OpenSSL verification failed:', error)
-        throw error
-      }
-    })
-
-    test('should generate RSA client certificate signed by root', async () => {
-      // Use the pre-generated root certificate from the test certificates
-      const rootResult = await generateTestRootCertificate(testDID, 'acme.xyz')
-      const result = await generateTestClientCertificate(
-        rootResult,
-        testDID,
-        testHandle
-      )
-      
-      // Write to files for subsequent tests so other tests still work
-      writeFileSync(rootCertPath, rootResult.cert, 'utf8')
-      writeFileSync(rootKeyPath, rootResult.privateKey, 'utf8')
-
-      expect(result.cert).toBeTruthy()
-      expect(result.privateKey).toBeTruthy()
-
-      // Write to files for subsequent tests
-      writeFileSync(clientCertPath, result.cert, 'utf8')
-      writeFileSync(clientKeyPath, result.privateKey, 'utf8')
-
-      // Verify files exist
-      expect(existsSync(clientCertPath)).toBe(true)
-      expect(existsSync(clientKeyPath)).toBe(true)
 
       // Verify certificate format
       expect(result.cert).toContain('BEGIN CERTIFICATE')
@@ -174,25 +77,59 @@ describe('Crypto Functions', () => {
 
       // Parse and verify certificate details
       const endpointCert = await ATSMSEndpointCertificate.fromPEMWithKey(result.cert, result.privateKey)
-      expect(endpointCert.subject).toContain(testHandle)
+      expect(endpointCert.subject).toContain(testDID)
       expect(endpointCert.getType()).toBe('endpoint')
 
-      // Verify serial number is present
-      expect(endpointCert.serialNumber).toBeTruthy()
-      expect(endpointCert.serialNumber.length).toBeGreaterThan(0) // Variable length hex string
-
-      // Verify it's not a CA certificate
+      // Verify it's NOT a CA certificate
       expect(endpointCert.isCA).toBe(false)
+
+      // Verify it's self-signed
+      expect(endpointCert.isSimpleSelfSigned()).toBe(true)
+    })
+
+    test('should verify endpoint certificate uses RSA with openssl', async () => {
+      const result = await generateTestEndpointCertificate(testDID, testHandle)
+
+      // Write certificate to temp file
+      const tempCertPath = path.join(testDir, 'test-rsa-cert.pem')
+      writeFileSync(tempCertPath, result.cert, 'utf8')
+
+      // Use openssl to check the certificate's public key algorithm
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      try {
+        // Get certificate details including the public key info
+        const { stdout } = await execAsync(`openssl x509 -in ${tempCertPath} -text -noout`)
+
+        // Check for RSA key
+        const hasRSA = stdout.includes('RSA') ||
+                       stdout.includes('rsaEncryption') ||
+                       stdout.includes('rsassaPss')
+
+        if (!hasRSA) {
+          console.error('Certificate does not use RSA. OpenSSL output:')
+          console.error(stdout)
+        }
+
+        expect(hasRSA).toBe(true)
+      } catch (error) {
+        console.error('OpenSSL verification failed:', error)
+        throw error
+      }
     })
 
     test('should extract certificate information', () => {
-      const clientCertPEM = readFileSync(clientCertPath, 'utf8')
-      const endpointCert = ATSMSEndpointCertificate.fromPEM(clientCertPEM)
+      const endpointCertPEM = readFileSync(clientCertPath, 'utf8')
+      const endpointCert = ATSMSEndpointCertificate.fromPEM(endpointCertPEM)
 
       expect(endpointCert.serialNumber).toBeTruthy()
       expect(endpointCert.notAfter).toBeTruthy()
-      expect(endpointCert.subject).toContain(`CN=${testHandle}`)
-      expect(endpointCert.issuer).toContain(`CN=${testDID}`)
+      // For self-signed certs, subject contains the DID
+      expect(endpointCert.subject).toContain(testDID)
+      // For self-signed certs, issuer equals subject
+      expect(endpointCert.issuer).toContain(testDID)
 
       // Verify date format
       expect(endpointCert.notAfter.getTime()).toBeGreaterThan(Date.now())
@@ -254,7 +191,7 @@ describe('Crypto Functions', () => {
 
       // Decrypt and verify
       const clientCertWithKey = await ATSMSEndpointCertificate.fromPEMWithKey(clientCertPEM, clientKeyPEM)
-      
+
       const result = await decryptAndVerifyMessageSignature(
         encryptedContent,
         clientCertWithKey
@@ -314,11 +251,9 @@ describe('Crypto Functions', () => {
     })
 
     test('should encrypt for multiple recipients', async () => {
-      // Generate a second client certificate for testing
-      const rootResult = await generateTestRootCertificate(testDID, 'acme.xyz')
-      const recipient2Result = await generateTestClientCertificate(
-        rootResult,
-        testDID,
+      // Generate a second endpoint certificate for testing
+      const recipient2Result = await generateTestEndpointCertificate(
+        'did:plc:recipient2',
         'recipient2.acme.xyz'
       )
 
@@ -340,7 +275,7 @@ describe('Crypto Functions', () => {
       // Encrypt for multiple recipients - create Certificate objects
       const endpointCert = ATSMSEndpointCertificate.fromPEM(clientCertPEM)
       const recipient2Cert = ATSMSEndpointCertificate.fromPEM(recipient2Result.cert)
-      
+
       const encryptedContent = await encryptMessage(
         signedContent,
         [endpointCert, recipient2Cert]
@@ -348,7 +283,7 @@ describe('Crypto Functions', () => {
 
       // Both recipients should be able to decrypt
       const clientCertWithKey = await ATSMSEndpointCertificate.fromPEMWithKey(clientCertPEM, clientKeyPEM)
-      
+
       const result1 = await decryptAndVerifyMessageSignature(
         encryptedContent,
         clientCertWithKey
@@ -356,7 +291,7 @@ describe('Crypto Functions', () => {
       const decrypted1 = new TextDecoder().decode(result1.decryptedContent)
 
       const recipient2CertWithKey = await ATSMSEndpointCertificate.fromPEMWithKey(recipient2Result.cert, recipient2Result.privateKey)
-      
+
       const result2 = await decryptAndVerifyMessageSignature(
         encryptedContent,
         recipient2CertWithKey
@@ -370,8 +305,8 @@ describe('Crypto Functions', () => {
 
   describe('Error Handling', () => {
     test('should throw error for invalid certificate', () => {
-      expect(() => 
-        ClientCertificate.fromPEM('invalid certificate data')
+      expect(() =>
+        ATSMSEndpointCertificate.fromPEM('invalid certificate data')
       ).toThrow()
     })
 
@@ -395,10 +330,8 @@ invalid key data
       const clientKeyPEM = readFileSync(path.join(testDir, 'client-key.pem'), 'utf8')
 
       // Generate another certificate
-      const rootResult = await generateTestRootCertificate(testDID, 'acme.xyz')
-      const wrongRecipientResult = await generateTestClientCertificate(
-        rootResult,
-        testDID,
+      const wrongRecipientResult = await generateTestEndpointCertificate(
+        'did:plc:wrong',
         'wrong.acme.xyz'
       )
 
@@ -419,7 +352,7 @@ invalid key data
 
       // Try to decrypt with wrong recipient's key
       const wrongRecipientCert = await ATSMSEndpointCertificate.fromPEMWithKey(wrongRecipientResult.cert, wrongRecipientResult.privateKey)
-      
+
       expect(
         decryptAndVerifyMessageSignature(
           encryptedContent,

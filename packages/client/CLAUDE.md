@@ -8,10 +8,10 @@ AT-SMS (AT Protocol Secure Messaging Service) is a TypeScript library for end-to
 
 **Key technologies:**
 - AT Protocol for decentralized identity (DIDs) and certificate storage in the PDS
-- X.509 certificates for per-client per-endpoint device identity and key management
+- X.509 self-signed RSA certificates for per-device endpoint identity and key management
 - S/MIME (PKCS#7) for message encryption/signing as a base level of encryption support
 - WebCrypto API for cross-platform cryptography
-- secp256k1 (k256) for ECDSA operations
+- RSA-PSS with SHA-256 for certificate signing
 
 ## Common Commands
 
@@ -63,9 +63,9 @@ The project includes three CLI tools for different purposes:
 
 ```bash
 # 1. atsms.ts - Stateless testing & artifact generation
-bun src/client/atsms.ts init --handle alice.bsky.social --root-cert ./root.pem --root-key ./root-key.pem --client-cert ./client.pem --client-key ./client-key.pem --email alice@example.com
+bun src/client/atsms.ts init --handle alice.bsky.social --endpoint-cert ./client.pem --endpoint-key ./client-key.pem --email alice@example.com
 bun src/client/atsms.ts send --handle alice.bsky.social --sender-cert ./client.pem --sender-key ./client-key.pem --recipient bob.bsky.social --message "Hello"
-bun src/client/atsms.ts receive --handle alice.bsky.social --client-cert ./client.pem --client-key ./client-key.pem --output-dir ./messages
+bun src/client/atsms.ts receive --handle alice.bsky.social --endpoint-cert ./client.pem --endpoint-key ./client-key.pem --output-dir ./messages
 
 # 2. api-client.ts - Lightweight API testing with cached credentials
 bun src/client/api-client.ts list alice.bsky.social
@@ -83,15 +83,17 @@ bun run chat
 ### Core Components
 
 **Certificate System** (`src/lib/certificates/`):
-- `ATSMSRootCertificate`: Self-signed K-256 CA for each user (root certificate per DID)
-- `ATSMSEndpointCertificate`: RSA per-device endpoint identity signed by root, used for message encryption and API authentication
+- `ATSMSEndpointCertificate`: Self-signed RSA-2048 per-device endpoint identity, used for message encryption and API authentication
+  - Subject and Issuer: `CN=<did>` (self-signed)
+  - Signature: RSA-PSS with SHA-256
+  - Extensions: BasicConstraints (CA=false), KeyUsage, ExtendedKeyUsage, SubjectAltName
 - `ATSMSCertificate`: Base abstract class with X.509 operations
   - `.did` getter: Extracts DID from Subject Alternative Name (SAN) extension
   - `.email` getter: Extracts email from SAN extension (RFC822 name)
   - `.serialNumber` getter: Returns certificate serial number
 - All certificates stored in AT Protocol records (`at.atsms.x509` collection)
 - Private keys ONLY stored locally, never in PDS
-- **Method signature**: `generateSignedEndpointCertificate(email, validityDays, did?, domain?)` - did/domain extracted from root cert automatically
+- **Method signature**: `ATSMSEndpointCertificate.generate(did, domain, email, validityDays?)` - creates self-signed certificate
 
 **Cryptographic Operations** (`src/lib/crypto.ts`, `src/lib/crypto-oaep.ts`):
 - `encryptMessage()`: PKCS#7 enveloped-data encryption for multiple recipients (each device cert for the user DID)
@@ -418,7 +420,7 @@ bun test src/tests/atsms-client-integration.test.ts
 ## Important Patterns
 
 - **Crypto provider must be set early**: Call `setCryptoProvider()` before any crypto operations in browser environments
-- **Certificate validation**: Always verify certificate chains when receiving messages
+- **Certificate validation**: Endpoint certificates are self-signed; verify signature using the certificate's own public key
 - **Error handling**: Certificate operations return `null` for missing/invalid certs (not exceptions)
 - **Platform detection**: Use `typeof window !== 'undefined'` for browser detection
 - **Private key security**: Never serialize or transmit private keys; keep them in local storage only
@@ -431,9 +433,9 @@ bun test src/tests/atsms-client-integration.test.ts
   - If there is a compelling reason to break this rule (e.g., dynamic platform-specific imports), document it clearly at the top of the file with a comment explaining why.
   - Exception: CLI tools may use dynamic imports for optional dependencies, but this must be noted.
 - **Type naming**: All AT-SMS specific types must use the `ATSMS` prefix for consistency and namespace clarity:
-  - Certificate types: `ATSMSCertificate`, `ATSMSRootCertificate`, `ATSMSEndpointCertificate`
+  - Certificate types: `ATSMSCertificate`, `ATSMSEndpointCertificate`
   - WebSocket types: `ATSMSWebSocketMessage`, `ATSMSWebSocketClientConfig`
   - Storage types: `ATSMSStorageManagerConfig`
   - Message types: All types in `types.ts` use `ATSMS` prefix
 - **No duplicate types**: Types should be defined once in `src/lib/types.ts` and imported where needed
-- **Removed types**: `ClientCertParams` removed - use direct parameters in `generateSignedEndpointCertificate()`
+- **Removed types**: `ATSMSRootCertificate` removed - endpoint certificates are now self-signed

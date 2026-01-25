@@ -12,7 +12,7 @@ import { AtpAgent } from '@atproto/api'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 
 import { ATSMSClient } from '../lib/atsms-client.js'
-import { ATSMSEndpointCertificate,ATSMSRootCertificate } from '../lib/certificates/index.js'
+import { ATSMSEndpointCertificate } from '../lib/certificates/index.js'
 import { generateJWT } from '../lib/jwt-auth.js'
 import { ATSMSWebSocketClient } from '../lib/websocket-client.js'
 
@@ -27,7 +27,6 @@ describe.skipIf(!ATSMS_TEST_HANDLE || !ATSMS_TEST_PASSWORD)(
     let agent: AtpAgent
     let did: string
     let atsmsClient: ATSMSClient
-    let rootCert: ATSMSRootCertificate
     let endpointCert: ATSMSEndpointCertificate
     let certSerial: string
     let wsClient: ATSMSWebSocketClient | null = null
@@ -46,23 +45,17 @@ describe.skipIf(!ATSMS_TEST_HANDLE || !ATSMS_TEST_PASSWORD)(
       // Create ATSMS client
       atsmsClient = new ATSMSClient(agent, did)
 
-      // Always generate fresh certificates for testing (with private keys)
-      console.log('Generating fresh test certificates...')
-      rootCert = await ATSMSRootCertificate.generate(did, ATSMS_TEST_HANDLE!)
-
-      // Generate client certificate
-      endpointCert = await rootCert.generateSignedEndpointCertificate({
-        did: did,
-        domain: ATSMS_TEST_HANDLE!
-      })
+      // Generate fresh self-signed endpoint certificate for testing
+      console.log('Generating fresh test certificate...')
+      const email = `test@${ATSMS_TEST_HANDLE!}`
+      endpointCert = await ATSMSEndpointCertificate.generate(did, ATSMS_TEST_HANDLE!, email)
       certSerial = endpointCert.serialNumber
 
-      // Store certificates in PDS
-      console.log('Storing certificates in PDS...')
-      await atsmsClient.storeRootCertificate(rootCert)
+      // Store certificate in PDS
+      console.log('Storing certificate in PDS...')
       await atsmsClient.storeEndpointCertificate(endpointCert)
 
-      console.log(`Generated certificates, serial: ${certSerial}`)
+      console.log(`Generated certificate, serial: ${certSerial}`)
     }, 60000) // 60 second timeout for setup
 
     afterAll(async () => {

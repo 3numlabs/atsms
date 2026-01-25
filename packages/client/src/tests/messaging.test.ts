@@ -13,7 +13,7 @@ import {
   encryptMessage,
   signMessage} from '../lib/crypto.js'
 import {extractP7MFromEmail} from '../lib/messages.js'
-import { generateTestClientCertificate,generateTestRootCertificate } from './test-certificates.js'
+import { generateTestEndpointCertificate } from './test-certificates.js'
 
 // Helper function to generate UUIDs for tests
 function generateUUID(): string {
@@ -58,17 +58,11 @@ describe('MessageManager P7M Handling', () => {
     const handleDir = path.join(testDir, handle)
     mkdirSync(handleDir, {recursive: true})
 
-    const rootKeyPath = path.join(handleDir, 'root-key.pem')
-    const rootCertPath = path.join(handleDir, 'root-cert.pem')
     const clientKeyPath = path.join(handleDir, 'client-key.pem')
     const clientCertPath = path.join(handleDir, 'client-cert.pem')
 
-    // Generate test certificates using P-256 (works in Bun)
-    const rootCert = await generateTestRootCertificate(did, 'acme.xyz')
-    writeFileSync(rootCertPath, rootCert.cert, 'utf8')
-    writeFileSync(rootKeyPath, rootCert.privateKey, 'utf8')
-    
-    const endpointCert = await generateTestClientCertificate(rootCert, did, handle)
+    // Generate self-signed endpoint certificate
+    const endpointCert = await generateTestEndpointCertificate(did, handle)
     writeFileSync(clientCertPath, endpointCert.cert, 'utf8')
     writeFileSync(clientKeyPath, endpointCert.privateKey, 'utf8')
   }
@@ -144,7 +138,7 @@ describe('MessageManager P7M Handling', () => {
         testMessage,
         signerCert,
       )
-      
+
       // Create Certificate object for encryption
       const recipientCert = ATSMSEndpointCertificate.fromPEM(recipientClientCertPEM)
       const encryptedContent = await encryptMessage(signedContent, [
@@ -455,11 +449,6 @@ Content-Transfer-Encoding: base64\r
         path.join(senderDir, 'client-key.pem'),
         'utf8',
       )
-      // Read sender root cert (not used in this test but kept for completeness)
-      readFileSync(
-        path.join(senderDir, 'root-cert.pem'),
-        'utf8',
-      )
 
       const recipientClientCertPEM = readFileSync(
         path.join(recipientDir, 'client-cert.pem'),
@@ -487,7 +476,7 @@ Content-Transfer-Encoding: base64\r
 
       // Step 3: Decrypt and verify (recipient)
       const recipientCertWithKey = await ATSMSEndpointCertificate.fromPEMWithKey(recipientClientCertPEM, recipientClientKeyPEM)
-      
+
       const result = await decryptAndVerifyMessageSignature(
         encryptedContent,
         recipientCertWithKey
@@ -502,7 +491,7 @@ Content-Transfer-Encoding: base64\r
     })
 
     test('should handle cross-certificate validation', async () => {
-      // Test that a message signed by sender can be verified using sender's root cert
+      // Test that a message signed by sender can be verified
       const testMessage = JSON.stringify(
         {
           id: generateUUID(),
@@ -535,7 +524,7 @@ Content-Transfer-Encoding: base64\r
         'utf8',
       )
 
-      // Sign with sender, encrypt for recipient, decrypt with recipient, verify with sender's root
+      // Sign with sender, encrypt for recipient, decrypt with recipient
       const signerCert = await ATSMSEndpointCertificate.fromPEMWithKey(senderClientCertPEM, senderClientKeyPEM)
       const signedContent = await signMessage(
         testMessage,
@@ -546,9 +535,9 @@ Content-Transfer-Encoding: base64\r
         recipientCert,
       ])
 
-      // This should work - using sender's root cert to verify sender's signature
+      // Decrypt and verify
       const recipientCertWithKey = await ATSMSEndpointCertificate.fromPEMWithKey(recipientClientCertPEM, recipientClientKeyPEM)
-      
+
       const result = await decryptAndVerifyMessageSignature(
         encryptedContent,
         recipientCertWithKey
@@ -604,9 +593,9 @@ Content-Transfer-Encoding: base64\r
       const encryptedContent = await encryptMessage(signedContent, [
         recipientCert,
       ])
-      
+
       const recipientCertWithKey = await ATSMSEndpointCertificate.fromPEMWithKey(recipientClientCertPEM, recipientClientKeyPEM)
-      
+
       const result = await decryptAndVerifyMessageSignature(
         encryptedContent,
         recipientCertWithKey
@@ -662,9 +651,9 @@ Content-Transfer-Encoding: base64\r
       const encryptedContent = await encryptMessage(signedContent, [
         recipientCert,
       ])
-      
+
       const recipientCertWithKey = await ATSMSEndpointCertificate.fromPEMWithKey(recipientClientCertPEM, recipientClientKeyPEM)
-      
+
       const result = await decryptAndVerifyMessageSignature(
         encryptedContent,
         recipientCertWithKey

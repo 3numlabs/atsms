@@ -13,7 +13,6 @@ import { z } from 'zod'
 import { ATSMSApiClient } from '../atsms-api'
 import { type ATSMSClient } from '../atsms-client'
 import {
-  type ATSMSCertificate,
   type ATSMSEndpointCertificate
 } from '../certificates/index'
 import {
@@ -60,7 +59,6 @@ export interface ATSMSStorageManagerConfig {
 export interface CertificateCache {
   did: string
   handle?: string
-  rootCert: ATSMSCertificate | null
   endpointCerts: ATSMSEndpointCertificate[]
 }
 
@@ -709,7 +707,8 @@ export class ATSMSStorageManager {
     )
 
     // 2. Extract and verify sender
-    const verifiedSender = decrypted.messageSigner.issuer.replace(/^CN=/, '')
+    // For self-signed certificates, the DID is in the subject CN (same as issuer)
+    const verifiedSender = decrypted.messageSigner.subject.replace(/^CN=/, '')
     const contentText = new TextDecoder().decode(decrypted.decryptedContent)
     const messageData = JSON.parse(contentText)
 
@@ -1039,7 +1038,6 @@ export class ATSMSStorageManager {
 
     const cache: CertificateCache = {
       did,
-      rootCert: certs.rootCert,
       endpointCerts: certs.endpointCerts,
     }
 

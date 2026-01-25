@@ -5,10 +5,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { decodeJwt, decodeProtectedHeader } from 'jose'
 
-import {
-  ATSMSEndpointCertificate,
-  ATSMSRootCertificate,
-} from '../lib/certificates/index.js'
+import { ATSMSEndpointCertificate } from '../lib/certificates/index.js'
 import { generateJWT, getTokenExpiration } from '../lib/jwt-auth.js'
 
 describe('JWT Authentication', () => {
@@ -18,9 +15,8 @@ describe('JWT Authentication', () => {
   const testDomain = 'atsms.example.com'
 
   beforeAll(async () => {
-    // Generate test certificates
-    const rootCert = await ATSMSRootCertificate.generate(testDid, testDomain)
-    endpointCert = await rootCert.generateSignedEndpointCertificate(testEmail, 365)
+    // Generate self-signed endpoint certificate
+    endpointCert = await ATSMSEndpointCertificate.generate(testDid, testDomain, testEmail, 365)
   })
 
   test('generates valid JWT with certificate', async () => {

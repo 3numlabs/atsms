@@ -8,7 +8,7 @@ import {existsSync, mkdirSync, readFileSync, rmSync,writeFileSync} from 'fs'
 import path from 'path'
 import {promisify} from 'util'
 
-import { generateTestRootCertificate } from './test-certificates.js'
+import { generateTestEndpointCertificate } from './test-certificates.js'
 
 const execAsync = promisify(exec)
 
@@ -16,8 +16,8 @@ describe('Certificate Validation', () => {
   let testDir: string
   let testDID: string
   let _testHandle: string
-  let rootCertPath: string
-  let rootKeyPath: string
+  let certPath: string
+  let keyPath: string
 
   beforeAll(async () => {
     testDir = path.join(process.cwd(), 'test-cert-validation')
@@ -30,13 +30,13 @@ describe('Certificate Validation', () => {
     }
     mkdirSync(testDir, {recursive: true})
 
-    rootCertPath = path.join(testDir, 'root-cert.pem')
-    rootKeyPath = path.join(testDir, 'root-key.pem')
+    certPath = path.join(testDir, 'endpoint-cert.pem')
+    keyPath = path.join(testDir, 'endpoint-key.pem')
 
     // Generate a test certificate
-    const result = await generateTestRootCertificate(testDID, 'acme.xyz')
-    writeFileSync(rootCertPath, result.cert, 'utf8')
-    writeFileSync(rootKeyPath, result.privateKey, 'utf8')
+    const result = await generateTestEndpointCertificate(testDID, 'acme.xyz')
+    writeFileSync(certPath, result.cert, 'utf8')
+    writeFileSync(keyPath, result.privateKey, 'utf8')
   })
 
   afterAll(() => {
@@ -48,18 +48,18 @@ describe('Certificate Validation', () => {
 
   test('should generate a valid X.509 certificate that OpenSSL can parse', async () => {
     // Verify files exist
-    expect(existsSync(rootCertPath)).toBe(true)
-    expect(existsSync(rootKeyPath)).toBe(true)
+    expect(existsSync(certPath)).toBe(true)
+    expect(existsSync(keyPath)).toBe(true)
 
     // Verify PEM format
-    const certPEM = readFileSync(rootCertPath, 'utf8')
+    const certPEM = readFileSync(certPath, 'utf8')
     expect(certPEM).toContain('-----BEGIN CERTIFICATE-----')
     expect(certPEM).toContain('-----END CERTIFICATE-----')
 
     try {
       // Use OpenSSL to verify the certificate is valid
       const {stdout} = await execAsync(
-        `openssl x509 -in ${rootCertPath} -noout -text`,
+        `openssl x509 -in ${certPath} -noout -text`,
       )
 
       // If we get here without an error, the certificate is valid
@@ -67,20 +67,21 @@ describe('Certificate Validation', () => {
       expect(stdout).toContain('Subject:')
       expect(stdout).toContain('Issuer:')
 
-      // Check for secp256k1 curve
-      const hasSecp256k1 =
-        stdout.includes('secp256k1') ||
-        stdout.includes('1.3.132.0.10') ||
-        stdout.includes('ASN1 OID: secp256k1')
+      // Check for RSA key (self-signed endpoint certificates use RSA)
+      const hasRSA =
+        stdout.includes('RSA') ||
+        stdout.includes('rsaEncryption') ||
+        stdout.includes('rsassaPss')
 
-      if (hasSecp256k1) {
-        console.log('✓ Certificate uses secp256k1 curve')
+      if (hasRSA) {
+        console.log('✓ Certificate uses RSA key')
       } else {
         console.log('Certificate content for debugging:')
         console.log(stdout)
-        console.log('Certificate may not be using secp256k1 curve')
+        console.log('Certificate may not be using RSA key')
       }
-    } catch (error) {
+    } catch (error: any) {
+      const certPEM = readFileSync(certPath, 'utf8')
       console.error('OpenSSL error:', error)
       console.error('Certificate content:')
       console.error(certPEM)
@@ -92,10 +93,10 @@ describe('Certificate Validation', () => {
     }
   })
 
-  test('should generate a certificate with correct subject and issuer', async () => {
+  test('should generate a certificate with correct subject and issuer (self-signed)', async () => {
     try {
       const {stdout} = await execAsync(
-        `openssl x509 -in ${rootCertPath} -noout -subject -issuer`,
+        `openssl x509 -in ${certPath} -noout -subject -issuer`,
       )
 
       // Check that the subject and issuer contain our DID
@@ -115,7 +116,7 @@ describe('Certificate Validation', () => {
 
       expect(subjectCN).toBe(testDID)
       expect(issuerCN).toBe(testDID) // Self-signed
-    } catch (error) {
+    } catch (error: any) {
       throw new Error(
         `Failed to extract subject/issuer from certificate: ${error.message}`,
       )
@@ -125,7 +126,7 @@ describe('Certificate Validation', () => {
   test('should generate a certificate with valid dates', async () => {
     try {
       const {stdout} = await execAsync(
-        `openssl x509 -in ${rootCertPath} -noout -dates`,
+        `openssl x509 -in ${certPath} -noout -dates`,
       )
 
       expect(stdout).toContain('notBefore=')
@@ -150,7 +151,7 @@ describe('Certificate Validation', () => {
       const validityPeriod = notAfter.getTime() - notBefore.getTime()
       const oneYear = 365 * 24 * 60 * 60 * 1000
       expect(validityPeriod).toBeGreaterThanOrEqual(oneYear)
-    } catch (error) {
+    } catch (error: any) {
       throw new Error(
         `Failed to extract dates from certificate: ${error.message}`,
       )

@@ -8,7 +8,7 @@ import {existsSync, mkdirSync, rmSync} from 'fs'
 import path from 'path'
 
 import {ATSMSClient} from '../lib/atsms-client.js'
-import {ATSMSRootCertificate} from '../lib/certificates/index.js'
+import {ATSMSEndpointCertificate} from '../lib/certificates/index.js'
 import {type ATSMSConfig} from '../lib/types.js'
 
 describe('ATSMSClient Library', () => {
@@ -56,7 +56,7 @@ describe('ATSMSClient Library', () => {
   })
 
   describe('Certificate Storage', () => {
-    test('should require authentication for storing root certificate', async () => {
+    test('should require authentication for storing endpoint certificate', async () => {
       const agent = new AtpAgent({service: 'https://bsky.social'})
       const did = 'did:plc:test123'
       const client = new ATSMSClient(agent, did)
@@ -64,25 +64,12 @@ describe('ATSMSClient Library', () => {
       // Agent without session (not authenticated)
       expect(agent.session).toBeUndefined()
 
-      // Create a mock RootCertificate
-      const mockRootCert = await ATSMSRootCertificate.generate('did:test:123', 'test.domain')
-
-      await expect(
-        client.storeRootCertificate(mockRootCert)
-      ).rejects.toThrow('Authentication Required')
-    })
-
-    test('should require authentication for storing client certificate', async () => {
-      const agent = new AtpAgent({service: 'https://bsky.social'})
-      const did = 'did:plc:test123'
-      const client = new ATSMSClient(agent, did)
-
-      // Agent without session (not authenticated)
-      expect(agent.session).toBeUndefined()
-
-      // Create mock certificates
-      const rootCert = await ATSMSRootCertificate.generate('did:test:123', 'test.domain')
-      const endpointCert = await rootCert.generateSignedEndpointCertificate('test@test.domain')
+      // Create a self-signed endpoint certificate
+      const endpointCert = await ATSMSEndpointCertificate.generate(
+        'did:test:123',
+        'test.domain',
+        'test@test.domain'
+      )
 
       await expect(
         client.storeEndpointCertificate(endpointCert)

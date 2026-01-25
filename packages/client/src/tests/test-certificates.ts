@@ -1,9 +1,9 @@
 /**
  * Test certificate generation utilities
- * Uses the actual certificate classes with K-256 for root and RSA for client
+ * Uses the actual certificate classes with self-signed RSA certificates
  */
 
-import { ATSMSRootCertificate } from '../lib/certificates/index.js'
+import { ATSMSEndpointCertificate } from '../lib/certificates/index.js'
 
 export interface TestCertificateResult {
   cert: string
@@ -11,43 +11,23 @@ export interface TestCertificateResult {
 }
 
 /**
- * Generate a test root certificate with K-256
+ * Generate a test self-signed endpoint certificate
+ * @param did - The DID for the certificate
+ * @param domain - The domain/handle for the certificate
+ * @param email - Optional email address (defaults to generated from DID and domain)
  */
-export async function generateTestRootCertificate(
-  did: string,
-  domain: string
-): Promise<TestCertificateResult> {
-  // Generate a K-256 root certificate
-  const rootCert = await ATSMSRootCertificate.generate(did, domain, 365)
-  const certPEM = rootCert.toString('pem')
-  const privateKeyPEM = rootCert.certificatePrivateKeyPEM!
-
-  return {
-    cert: certPEM,
-    privateKey: privateKeyPEM
-  }
-}
-
-/**
- * Generate a test client certificate signed by root
- */
-export async function generateTestClientCertificate(
-  rootResult: TestCertificateResult,
+export async function generateTestEndpointCertificate(
   did: string,
   domain: string,
   email?: string
 ): Promise<TestCertificateResult> {
-  // Load the root certificate with private key
-  const rootCert = await ATSMSRootCertificate.fromPEMWithKey(rootResult.cert, rootResult.privateKey)
-
-  // Generate client certificate with default email if not provided
-  // Note: For certificates loaded from PEM, we need to pass did and domain explicitly
+  // Generate a self-signed RSA endpoint certificate
   const defaultEmail = email || `${did.split(':').pop()}@${domain}`
-  const endpointCert = await rootCert.generateSignedEndpointCertificate(
-    defaultEmail,
-    365,
+  const endpointCert = await ATSMSEndpointCertificate.generate(
     did,
-    domain
+    domain,
+    defaultEmail,
+    365
   )
 
   const certPEM = endpointCert.toString('pem')
@@ -58,3 +38,9 @@ export async function generateTestClientCertificate(
     privateKey: privateKeyPEM
   }
 }
+
+/**
+ * Alias for generateTestEndpointCertificate for backwards compatibility
+ * @deprecated Use generateTestEndpointCertificate instead
+ */
+export const generateTestClientCertificate = generateTestEndpointCertificate

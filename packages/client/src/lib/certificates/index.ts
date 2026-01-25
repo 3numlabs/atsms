@@ -6,5 +6,4 @@
 
 export { ATSMSCertificate } from './certificate'
 export { ATSMSEndpointCertificate } from './endpoint-certificate'
-export { ATSMSRootCertificate } from './root-certificate'
 

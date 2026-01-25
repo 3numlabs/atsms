@@ -19,8 +19,7 @@ export * from './storage/types'
 // Export certificate classes
 export {
   ATSMSCertificate,
-  ATSMSEndpointCertificate,
-  ATSMSRootCertificate
+  ATSMSEndpointCertificate
 } from './certificates/index'
 
 // Export crypto operations

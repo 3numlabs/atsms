@@ -5,8 +5,7 @@
 
 import {AtpAgent} from '@atproto/api'
 
-import { ATSMSEndpointCertificate, ATSMSRootCertificate } from './certificates/index'
-import type { ATSMSCertificateType } from './types'
+import { ATSMSEndpointCertificate } from './certificates/index'
 
 export class ATSMSClient {
   public agent: AtpAgent
@@ -19,34 +18,9 @@ export class ATSMSClient {
     if (!did || !did.startsWith('did:')) {
       throw new Error('Valid DID is required')
     }
-    
+
     this.agent = agent
     this.did = did
-  }
-
-  /**
-   * Store root certificate in PDS
-   */
-  async storeRootCertificate(rootCert: ATSMSRootCertificate): Promise<void> {
-    const certPEM = rootCert.certificatePEM
-    const certificateType: ATSMSCertificateType = 'root'
-
-    try {
-      await this.agent.com.atproto.repo.putRecord({
-        repo: this.did,
-        collection: 'at.atsms.x509',
-        rkey: 'root',
-        record: {
-          certificate: certPEM,
-          certificateType,
-          createdAt: new Date().toISOString(),
-          $type: 'at.atsms.x509',
-        },
-      })
-    } catch (error: any) {
-      console.error('Failed to store root certificate:', error)
-      throw new Error(`Failed to store root certificate: ${error.message || error}`)
-    }
   }
 
   /**
@@ -57,7 +31,6 @@ export class ATSMSClient {
     const serialNumber = endpointCert.serialNumber
     const validUntil = endpointCert.notAfter.toISOString()
     const createdAt = new Date().toISOString()
-    const certificateType: ATSMSCertificateType = 'endpoint'
 
     try {
       await this.agent.com.atproto.repo.putRecord({
@@ -66,7 +39,6 @@ export class ATSMSClient {
         rkey: serialNumber,
         record: {
           certificate: endpointCertPEM,
-          certificateType,
           serialNumber: serialNumber,
           validUntil: validUntil,
           createdAt: createdAt,
@@ -106,15 +78,13 @@ export class ATSMSClient {
 
   /**
    * Get user certificates from their PDS
-   * Returns the root certificate and all endpoint certificates
+   * Returns all endpoint certificates for the user
    * @param did - The DID to fetch certificates for (must be a valid DID)
    */
   async getUserCertificates(did: string): Promise<{
-    rootCert: ATSMSRootCertificate | null
     endpointCerts: ATSMSEndpointCertificate[]
     error?: 'NOT_ATPROTO_USER' | 'NO_ATSMS_CERTS' | 'NO_ENDPOINT_CERTS' | 'FETCH_ERROR'
   }> {
-    let rootCert: ATSMSRootCertificate | null = null
     const endpointCerts: ATSMSEndpointCertificate[] = []
 
     try {
@@ -124,7 +94,6 @@ export class ATSMSClient {
         // This means the DID doesn't exist or can't be resolved
         console.warn(`DID ${did} is not a valid AT Protocol user (could not resolve to PDS)`)
         return {
-          rootCert: null,
           endpointCerts: [],
           error: 'NOT_ATPROTO_USER'
         }
@@ -144,28 +113,26 @@ export class ATSMSClient {
       if (!response.data.records || response.data.records.length === 0) {
         console.log(`User ${did} has not set up AT-SMS certificates`)
         return {
-          rootCert: null,
           endpointCerts: [],
           error: 'NO_ATSMS_CERTS'
         }
       }
 
-      // Parse the results into root and endpoint certificates
+      // Parse the results into endpoint certificates
+      // Skip legacy root certificates (rkey = 'root')
       for (const record of response.data.records) {
         try {
           const certPEM = (record.value as any)?.certificate
           if (!certPEM) continue
 
-          const isRoot = record.uri.endsWith('/root')
-
-          if (isRoot) {
-            // Parse as root certificate (no private key for external DIDs)
-            rootCert = ATSMSRootCertificate.fromPEM(certPEM)
-          } else {
-            // Parse as endpoint certificate (no private key for external DIDs)
-            const endpointCert = ATSMSEndpointCertificate.fromPEM(certPEM)
-            endpointCerts.push(endpointCert)
+          // Skip legacy root certificates
+          if (record.uri.endsWith('/root')) {
+            continue
           }
+
+          // Parse as endpoint certificate (no private key for external DIDs)
+          const endpointCert = ATSMSEndpointCertificate.fromPEM(certPEM)
+          endpointCerts.push(endpointCert)
         } catch (error) {
           console.error('Error parsing certificate from record:', error)
         }
@@ -174,14 +141,12 @@ export class ATSMSClient {
       // Check if we found valid certificates
       if (endpointCerts.length === 0) {
         return {
-          rootCert,
           endpointCerts: [],
           error: 'NO_ENDPOINT_CERTS'
         }
       }
 
       return {
-        rootCert,
         endpointCerts,
       }
     } catch (error: any) {
@@ -189,7 +154,6 @@ export class ATSMSClient {
       if (error.status === 400 || error.status === 404) {
         console.warn(`User ${did} not found or invalid AT Protocol account`)
         return {
-          rootCert: null,
           endpointCerts: [],
           error: 'NOT_ATPROTO_USER'
         }
@@ -197,7 +161,6 @@ export class ATSMSClient {
 
       console.error(`Failed to retrieve certificates for DID ${did}:`, error)
       return {
-        rootCert: null,
         endpointCerts: [],
         error: 'FETCH_ERROR'
       }

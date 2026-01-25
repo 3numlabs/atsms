@@ -15,7 +15,7 @@ import prompts from 'prompts'
 import * as readline from 'readline'
 
 import { ATSMSClient } from '../lib/atsms-client'
-import { ATSMSEndpointCertificate, ATSMSRootCertificate } from '../lib/certificates/index'
+import { ATSMSEndpointCertificate } from '../lib/certificates/index'
 import { PasswordEncryption } from '../lib/crypto/password-encryption'
 import { parseTextContent, parseWebRTCContent } from '../lib/messages'
 import { ATSMSStorageManager } from '../lib/storage/manager'
@@ -26,11 +26,8 @@ import { ATSMSWebSocketClient } from '../lib/websocket-client'
 // AT-SMS API Configuration
 const ATSMS_API_DOMAIN = 'atsms-api.enumdao.workers.dev'
 
-// Configuration paths
-const CONFIG_DIR = path.join(os.homedir(), '.atsms')
-const AUTH_CACHE_FILE = path.join(CONFIG_DIR, 'auth-cache.json')
-const HISTORY_FILE = path.join(CONFIG_DIR, 'chat-history.txt')
-const DB_FILE = path.join(CONFIG_DIR, 'messages.db')
+// Default configuration directory
+const DEFAULT_DATA_DIR = path.join(os.homedir(), '.atsms')
 
 // ANSI color codes for better terminal output
 const colors = {
@@ -108,14 +105,26 @@ class ChatClient {
     apiUrl: `https://${ATSMS_API_DOMAIN}`
   }
 
-  constructor() {
+  // Configurable paths
+  private dataDir: string
+  private authCacheFile: string
+  private historyFile: string
+  private dbFile: string
+
+  constructor(dataDir?: string) {
+    // Set data directory (use provided or default)
+    this.dataDir = dataDir || DEFAULT_DATA_DIR
+    this.authCacheFile = path.join(this.dataDir, 'auth-cache.json')
+    this.historyFile = path.join(this.dataDir, 'chat-history.txt')
+    this.dbFile = path.join(this.dataDir, 'messages.db')
+
     // Ensure config directory exists
-    if (!fs.existsSync(CONFIG_DIR)) {
-      fs.mkdirSync(CONFIG_DIR, { recursive: true })
+    if (!fs.existsSync(this.dataDir)) {
+      fs.mkdirSync(this.dataDir, { recursive: true })
     }
 
     // Initialize SQLite database
-    this.db = new BunSQLiteWrapper(DB_FILE)
+    this.db = new BunSQLiteWrapper(this.dbFile)
 
     // Load auth cache
     this.loadAuthCache()
@@ -149,8 +158,8 @@ class ChatClient {
 
   private loadAuthCache() {
     try {
-      if (fs.existsSync(AUTH_CACHE_FILE)) {
-        const data = fs.readFileSync(AUTH_CACHE_FILE, 'utf-8')
+      if (fs.existsSync(this.authCacheFile)) {
+        const data = fs.readFileSync(this.authCacheFile, 'utf-8')
         this.authCache = JSON.parse(data)
       }
     } catch (error) {
@@ -160,7 +169,7 @@ class ChatClient {
 
   private saveAuthCache() {
     try {
-      fs.writeFileSync(AUTH_CACHE_FILE, JSON.stringify(this.authCache, null, 2))
+      fs.writeFileSync(this.authCacheFile, JSON.stringify(this.authCache, null, 2))
     } catch (error) {
       console.error(colors.error('Failed to save auth cache:', error))
     }
@@ -168,8 +177,8 @@ class ChatClient {
 
   private loadHistory() {
     try {
-      if (fs.existsSync(HISTORY_FILE)) {
-        const history = fs.readFileSync(HISTORY_FILE, 'utf-8')
+      if (fs.existsSync(this.historyFile)) {
+        const history = fs.readFileSync(this.historyFile, 'utf-8')
           .split('\n')
           .filter(line => line.trim())
 
@@ -189,7 +198,7 @@ class ChatClient {
     try {
       // Keep last 1000 commands
       const recentHistory = this.commandHistory.slice(-1000)
-      fs.writeFileSync(HISTORY_FILE, recentHistory.join('\n'))
+      fs.writeFileSync(this.historyFile, recentHistory.join('\n'))
     } catch (error) {
       console.error(colors.error('Failed to save history:', error))
     }
@@ -540,47 +549,6 @@ class ChatClient {
       const certs = await atsmsClient.getUserCertificates(did)
       const localCerts = await storage.listCertificates(did)
 
-      // Check for root certificate first
-      let hasRootPrivateKey = false
-
-      if (certs.rootCert) {
-        if (this.debug) {
-          console.log(colors.success('[DEBUG] ✓ Found root certificate'))
-        }
-
-        // Check if root certificate has private key
-        if (certs.rootCert.privateKey || certs.rootCert.certificatePrivateKeyPEM) {
-          hasRootPrivateKey = true
-          if (this.debug) {
-            console.log(colors.success('[DEBUG] ✓ Root certificate private key available'))
-          }
-        } else {
-          // Check local storage for root private key
-          const localRoot = localCerts.find(
-            c => c.type === 'root' && c.serialNumber === certs.rootCert!.serialNumber
-          )
-          if (localRoot?.hasPrivateKey && localRoot.privateKeyPEM) {
-            hasRootPrivateKey = true
-
-            // Store the private key reference for later use
-            if (localRoot.isEncrypted) {
-              if (this.debug) {
-                console.log(colors.success('[DEBUG] ✓ Root certificate with encrypted private key in local storage'))
-              }
-            } else {
-              if (this.debug) {
-                console.log(colors.success('[DEBUG] ✓ Root certificate with private key in local storage'))
-              }
-            }
-          }
-        }
-
-        if (!hasRootPrivateKey) {
-          console.log(colors.warning('⚠ Root certificate private key not available locally'))
-          console.log(colors.info('  You cannot generate new endpoint certificates without it'))
-        }
-      }
-
       // Check for endpoint certificates
       if (certs.endpointCerts && certs.endpointCerts.length > 0) {
         if (this.debug) {
@@ -645,26 +613,17 @@ class ChatClient {
           endpointCert = certs.endpointCerts[0]
           console.log(colors.warning('⚠ Endpoint certificate found but private key not available locally'))
           console.log(colors.error('❌ Cannot send messages - endpoint certificate private key required'))
-
-          if (hasRootPrivateKey) {
-            console.log(colors.info('\nYou have certificates from another device. You can:'))
-            console.log(colors.info('  1. Type "/genendpoint" to generate a NEW endpoint certificate for this device'))
-            console.log(colors.info('  2. Import the private key from your other device'))
-          } else {
-            console.log(colors.info('\nCertificates exist but were created on a different device.'))
-            console.log(colors.info('Without the root certificate private key, you cannot generate new endpoint certificates.'))
-            console.log(colors.info('\nYour options:'))
-            console.log(colors.info('  1. Import your certificates from the other device'))
-            console.log(colors.info('  2. Type "/genroot" to create a NEW certificate chain (will replace existing)'))
-          }
+          console.log(colors.info('\nCertificates exist but were created on a different device.'))
+          console.log(colors.info('\nYour options:'))
+          console.log(colors.info('  1. Import your certificates from the other device'))
+          console.log(colors.info('  2. Type "/gencert" to create a NEW certificate for this device'))
         }
       } else {
         console.log(colors.error('\n⚠ No AT-SMS certificates found!'))
-        console.log(colors.info('\nYou need certificates to send and receive AT-SMS messages.'))
+        console.log(colors.info('\nYou need a certificate to send and receive AT-SMS messages.'))
         console.log(colors.info('\nTo get started:'))
-        console.log(colors.info('  1. Type "/genroot" to generate a root certificate'))
-        console.log(colors.info('  2. Type "/genendpoint" to generate a endpoint certificate'))
-        console.log(colors.info('  3. Type "/listcerts" to verify your certificates'))
+        console.log(colors.info('  1. Type "/gencert" to generate a certificate'))
+        console.log(colors.info('  2. Type "/listcerts" to verify your certificate'))
         console.log(colors.info('\nAlternatively, run: bun atsms.ts init ' + handle))
       }
     } catch (error: any) {
@@ -675,8 +634,7 @@ class ChatClient {
         console.log(colors.system(`Stack trace: ${stack.slice(0, 3).join('\n')}`))
       }
       console.log(colors.info('\nTo initialize certificates:'))
-      console.log(colors.info('  1. Type "/genroot" to generate a root certificate'))
-      console.log(colors.info('  2. Type "/genendpoint" to generate a endpoint certificate'))
+      console.log(colors.info('  Type "/gencert" to generate a certificate'))
     }
     const storageManager = new ATSMSStorageManager({
       storage,
@@ -910,7 +868,7 @@ class ChatClient {
         'help', '?', 'quit', 'exit',
         'msg', 'message', 'list', 'ls',
         'back', 'leave', 'refresh', 'sync',
-        'info', 'genroot', 'genendpoint', 'listcerts', 'certs',
+        'info', 'gencert', 'genendpoint', 'listcerts', 'certs',
         'clear', 'whoami'
       ]
 
@@ -1028,12 +986,9 @@ class ChatClient {
         this.showInfo()
         break
 
-      case 'genroot':
-        await this.generateRootCertificate()
-        break
-
+      case 'gencert':
       case 'genendpoint':
-        await this.generateEndpointCertificate()
+        await this.generateCertificate()
         break
 
       case 'listcerts':
@@ -1072,8 +1027,7 @@ Available commands:
   /info                 Show account info
 
 Certificate Management:
-  /genroot              Generate a root certificate
-  /genendpoint          Generate a endpoint certificate
+  /gencert              Generate a self-signed certificate
   /listcerts            List all certificates
 
 WebRTC Testing (Debug):
@@ -1149,16 +1103,13 @@ In conversation mode:
 
         if (recipientCerts.error === 'NO_ATSMS_CERTS') {
           console.log(colors.error(`✗ ${recipientHandle} has not set up AT-SMS`))
-          console.log(colors.info('  They need to run /genroot and /genendpoint before receiving encrypted messages'))
+          console.log(colors.info('  They need to run /gencert to generate a certificate before receiving encrypted messages'))
           return
         }
 
         if (recipientCerts.error === 'NO_ENDPOINT_CERTS' || recipientCerts.endpointCerts.length === 0) {
           console.log(colors.error(`✗ ${recipientHandle} has no endpoint certificates`))
-          console.log(colors.info('  They need to run /genendpoint to create an endpoint certificate'))
-          if (recipientCerts.rootCert) {
-            console.log(colors.info('  (They have a root certificate but no endpoint certificates)'))
-          }
+          console.log(colors.info('  They need to run /gencert to create a certificate'))
           return
         }
 
@@ -1268,7 +1219,7 @@ In conversation mode:
       console.log(colors.info('To fix this:'))
       console.log(colors.info('  1. Type /back to exit conversation'))
       console.log(colors.info('  2. Type "/listcerts" to check your certificates'))
-      console.log(colors.info('  3. If no certificates, type "/genroot" then "/genendpoint"'))
+      console.log(colors.info('  3. If no certificates, type "/gencert" to generate one'))
       console.log(colors.info('  4. Try sending again'))
       return
     }
@@ -1510,6 +1461,7 @@ Account Info:
   DID: ${this.state.did}
   Certificate: ${this.state.endpointCert ? '✓ Loaded' : '✗ Not found'}
   WebSocket: ${this.state.wsClient ? '✓ Connected' : '✗ Disconnected'}
+  Data Directory: ${this.dataDir}
 `))
   }
 
@@ -1526,24 +1478,20 @@ Account Info:
     this.rl.prompt()
   }
 
-  private async generateRootCertificate() {
+  private async generateCertificate() {
     if (!this.state) {
       console.log(colors.error('Not logged in'))
       return
     }
 
     try {
-      // Check if root certificate already exists
+      // Check if certificates already exist
       const certs = await this.state.atsmsClient.getUserCertificates(this.state.did)
 
-      if (certs.rootCert) {
-        console.log(colors.warning('\n⚠ A root certificate already exists!'))
-        console.log(colors.info(`  Current Serial: ${certs.rootCert.serialNumber}`))
-        console.log(colors.info(`  Valid until: ${certs.rootCert.notAfter.toLocaleDateString()}`))
-        console.log(colors.warning('\nGenerating a new root certificate will:'))
-        console.log(colors.warning('  • Invalidate ALL existing endpoint certificates'))
-        console.log(colors.warning('  • Require you to generate new endpoint certificates'))
-        console.log(colors.warning('  • Replace the root certificate in your PDS'))
+      if (certs.endpointCerts && certs.endpointCerts.length > 0) {
+        console.log(colors.warning('\n⚠ Endpoint certificate(s) already exist!'))
+        console.log(colors.info(`  Found ${certs.endpointCerts.length} existing certificate(s)`))
+        console.log(colors.warning('\nGenerating a new certificate will add another certificate to your account.'))
 
         // Save readline state and close it
         const history = (this.rl as any).history ? [...(this.rl as any).history] : []
@@ -1552,7 +1500,7 @@ Account Info:
         const confirmation = await prompts({
           type: 'confirm',
           name: 'value',
-          message: 'Are you sure you want to continue?',
+          message: 'Do you want to generate a new certificate?',
           initial: false
         })
 
@@ -1560,166 +1508,29 @@ Account Info:
         this.recreateReadline(history)
 
         if (!confirmation.value) {
-          console.log(colors.info('Root certificate generation cancelled'))
+          console.log(colors.info('Certificate generation cancelled'))
           this.updatePrompt()
           return
         }
       }
 
       if (this.debug) {
-        console.log(colors.info('[DEBUG] Generating root certificate...'))
-      }
-
-      // Extract domain from handle
-      const domain = this.state.handle.split('@').pop() || this.state.handle
-
-      // Generate root certificate
-      const rootCert = await ATSMSRootCertificate.generate(
-        this.state.did,
-        domain
-      )
-
-      // Ask for password to encrypt the private key
-      const password = await this.promptPassword('Enter password to encrypt private key (or press Enter to skip): ')
-
-      // Store locally in SQLite with optional encryption
-      const storage = this.state.storageManager.getStorage() as SQLiteAdapter
-      if (password) {
-        const encryptedKey = PasswordEncryption.encrypt(rootCert.certificatePrivateKeyPEM!, password)
-        await storage.saveCertificate(
-          this.state.did,
-          'root',
-          rootCert.serialNumber,
-          rootCert.certificatePEM,
-          encryptedKey,
-          true,
-          { domain, handle: this.state.handle }
-        )
-        console.log(colors.success('✓ Private key encrypted and stored locally'))
-      } else {
-        await storage.saveCertificate(
-          this.state.did,
-          'root',
-          rootCert.serialNumber,
-          rootCert.certificatePEM,
-          rootCert.certificatePrivateKeyPEM,
-          false,
-          { domain, handle: this.state.handle }
-        )
-        console.log(colors.warning('⚠ Private key stored unencrypted locally'))
-      }
-
-      // Store in PDS (without private key)
-      if (this.debug) {
-        console.log(colors.info('[DEBUG] Storing root certificate in PDS...'))
-      }
-      await this.state.atsmsClient.storeRootCertificate(rootCert)
-
-      console.log(colors.success('✓ Root certificate generated and stored'))
-      console.log(colors.info(`  Serial: ${rootCert.serialNumber}`))
-      console.log(colors.info(`  Valid until: ${rootCert.notAfter.toLocaleDateString()}`))
-      console.log(colors.success('✓ Private key available for signing endpoint certificates'))
-
-    } catch (error: any) {
-      console.log(colors.error('Failed to generate root certificate: ' + (error.message || 'Unknown error')))
-      console.log(colors.info('You may need to delete existing root certificate first'))
-    }
-  }
-
-  private async generateEndpointCertificate() {
-    if (!this.state) {
-      console.log(colors.error('Not logged in'))
-      return
-    }
-
-    try {
-      if (this.debug) {
-        console.log(colors.info('[DEBUG] Checking for root certificate...'))
-      }
-
-      // Get certificates to find root
-      const certs = await this.state.atsmsClient.getUserCertificates(this.state.did)
-
-      if (!certs.rootCert) {
-        console.log(colors.error('No root certificate found!'))
-        console.log(colors.info('Run "/genroot" first to generate a root certificate'))
-        return
-      }
-
-      // Check if root certificate has private key (in memory or in local storage)
-      let rootWithKey = certs.rootCert
-      const hasPrivateKeyInMemory = certs.rootCert.hasPrivateKey ?
-        certs.rootCert.hasPrivateKey() :
-        (certs.rootCert.certificatePrivateKeyPEM ? true : false)
-
-      if (!hasPrivateKeyInMemory) {
-        // Try to load from local storage
-        const storage = this.state.storageManager.getStorage() as SQLiteAdapter
-        const localRoot = await storage.getCertificate(
-          this.state.did,
-          'root',
-          certs.rootCert.serialNumber
-        )
-
-        if (localRoot && localRoot.privateKeyPEM) {
-          // Found local private key
-          let privateKeyPEM = localRoot.privateKeyPEM
-
-          if (localRoot.isEncrypted) {
-            const password = await this.promptPassword('Enter password to decrypt root certificate private key: ')
-            if (!password) {
-              console.log(colors.error('Password required to decrypt private key'))
-              return
-            }
-            try {
-              privateKeyPEM = PasswordEncryption.decrypt(localRoot.privateKeyPEM, password)
-            } catch {
-              console.log(colors.error('Failed to decrypt private key. Wrong password?'))
-              return
-            }
-          }
-
-          // Reconstruct proper ATSMSRootCertificate instance with private key
-          try {
-            rootWithKey = await ATSMSRootCertificate.fromPEMWithKey(
-              localRoot.certificatePEM,
-              privateKeyPEM
-            )
-            if (this.debug) {
-              console.log(colors.success('[DEBUG] ✓ Found root certificate private key in local storage'))
-            }
-          } catch (error: any) {
-            console.log(colors.error('Failed to load root certificate with private key: ' + (error.message || 'Unknown error')))
-            return
-          }
-        } else {
-          console.log(colors.error('\n❌ Cannot generate endpoint certificate'))
-          console.log(colors.error('The root certificate private key is required to sign endpoint certificates.'))
-          console.log(colors.error('Your root certificate exists but its private key is not available locally.'))
-          console.log(colors.info('\nThis typically happens when the root certificate was created on a different device.'))
-          return
-        }
-      }
-
-      if (this.debug) {
-        console.log(colors.success('[DEBUG] ✓ Root certificate has private key'))
-        console.log(colors.info('[DEBUG] Generating endpoint certificate...'))
+        console.log(colors.info('[DEBUG] Generating self-signed endpoint certificate...'))
       }
 
       // For now, API endpoint as the email domain inbox, and the DID as the username.
       const plcDid = this.state.did.split(':').pop() || 'unknown'
       const email = `${plcDid}@${ATSMS_API_DOMAIN}`
 
-      // Generate endpoint certificate signed by root
-      const endpointCert = await ATSMSEndpointCertificate.generateWithRoot(
-        rootWithKey,
+      // Generate self-signed endpoint certificate
+      const endpointCert = await ATSMSEndpointCertificate.generate(
         this.state.did,
         this.state.handle,
         email
       )
 
-      // Ask for password to encrypt the endpoint private key
-      const password = await this.promptPassword('Enter password to encrypt endpoint private key (or press Enter to skip): ')
+      // Ask for password to encrypt the private key
+      const password = await this.promptPassword('Enter password to encrypt private key (or press Enter to skip): ')
 
       // Store locally in SQLite with optional encryption
       const storage = this.state.storageManager.getStorage() as SQLiteAdapter
@@ -1734,7 +1545,7 @@ Account Info:
           true,
           { domain: this.state.handle, handle: this.state.handle }
         )
-        console.log(colors.success('✓ Client private key encrypted and stored locally'))
+        console.log(colors.success('✓ Private key encrypted and stored locally'))
       } else {
         await storage.saveCertificate(
           this.state.did,
@@ -1745,21 +1556,18 @@ Account Info:
           false,
           { domain: this.state.handle, handle: this.state.handle }
         )
-        console.log(colors.warning('⚠ Client private key stored unencrypted locally'))
+        console.log(colors.warning('⚠ Private key stored unencrypted locally'))
       }
 
       // Store in PDS (without private key)
       if (this.debug) {
-        console.log(colors.info('[DEBUG] Storing endpoint certificate in PDS...'))
+        console.log(colors.info('[DEBUG] Storing certificate in PDS...'))
       }
       await this.state.atsmsClient.storeEndpointCertificate(endpointCert)
 
-      console.log(colors.success('✓ Endpoint certificate generated and stored'))
+      console.log(colors.success('✓ Certificate generated and stored'))
       console.log(colors.info(`  Serial: ${endpointCert.serialNumber}`))
-
-      // Check if certificate has private key
-      const hasPrivateKey = endpointCert.privateKey || endpointCert.certificatePrivateKeyPEM
-      console.log(colors.info(`  Has private key: ${hasPrivateKey ? 'Yes' : 'No'}`))
+      console.log(colors.info(`  Valid until: ${endpointCert.notAfter.toLocaleDateString()}`))
 
       // Save locally for use in this session
       this.state.endpointCert = endpointCert
@@ -1789,7 +1597,7 @@ Account Info:
       console.log(colors.success('\n✓ You can now send encrypted messages!'))
 
     } catch (error: any) {
-      console.log(colors.error('Failed to generate endpoint certificate: ' + (error.message || 'Unknown error')))
+      console.log(colors.error('Failed to generate certificate: ' + (error.message || 'Unknown error')))
     }
   }
 
@@ -1811,33 +1619,9 @@ Account Info:
 
       console.log(colors.info('\n═══ Your Certificates ═══\n'))
 
-      // Root certificate
-      if (certs.rootCert) {
-        console.log(colors.success('Root Certificate:'))
-        console.log(`  Serial: ${certs.rootCert.serialNumber}`)
-        console.log(`  Valid: ${certs.rootCert.notBefore.toLocaleDateString()} - ${certs.rootCert.notAfter.toLocaleDateString()}`)
-
-        // Check for local private key
-        const localRoot = localCerts.find(c => c.type === 'root' && c.serialNumber === certs.rootCert!.serialNumber)
-        const hasLocalKey = localRoot?.hasPrivateKey || false
-        const hasMemoryKey = certs.rootCert.privateKey ? true : false
-
-        if (hasMemoryKey) {
-          console.log(`  Has private key: ${colors.success('✓ Yes (in memory)')}`)
-        } else if (hasLocalKey) {
-          console.log(`  Has private key: ${colors.success('✓ Yes (local storage)')}`)
-        } else {
-          console.log(`  Has private key: ${colors.warning('✗ No')}`)
-        }
-        console.log('')
-      } else {
-        console.log(colors.warning('No root certificate found'))
-        console.log(colors.info('  Run "/genroot" to generate one\n'))
-      }
-
       // Endpoint certificates
       if (certs.endpointCerts && certs.endpointCerts.length > 0) {
-        console.log(colors.success(`Client Certificates (${certs.endpointCerts.length}):`))
+        console.log(colors.success(`Certificates (${certs.endpointCerts.length}):`))
 
         for (const cert of certs.endpointCerts) {
           const hasMemoryKey = cert.privateKey || cert.certificatePrivateKeyPEM
@@ -1863,8 +1647,8 @@ Account Info:
         }
         console.log('')
       } else {
-        console.log(colors.warning('No endpoint certificates found'))
-        console.log(colors.info('  Run "/genendpoint" to generate one (requires root certificate)\n'))
+        console.log(colors.warning('No certificates found'))
+        console.log(colors.info('  Run "/gencert" to generate one\n'))
       }
 
       // Summary - check both memory and local storage
@@ -1888,12 +1672,7 @@ Account Info:
 
       if (!canSend) {
         console.log(colors.info('\nTo enable sending:'))
-        if (!certs.rootCert) {
-          console.log(colors.info('  1. Run "/genroot" to generate a root certificate'))
-          console.log(colors.info('  2. Run "/genendpoint" to generate a endpoint certificate'))
-        } else {
-          console.log(colors.info('  Run "/genendpoint" to generate a new endpoint certificate with private key'))
-        }
+        console.log(colors.info('  Run "/gencert" to generate a certificate with private key'))
       }
 
     } catch (error: any) {
@@ -1985,16 +1764,43 @@ async function main() {
   // Parse flags
   let debug = false
   let handle: string | undefined
+  let dataDir: string | undefined
 
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
     if (arg === '--debug') {
       debug = true
+    } else if (arg === '--data-dir' && i + 1 < args.length) {
+      dataDir = args[++i]
+    } else if (arg.startsWith('--data-dir=')) {
+      dataDir = arg.split('=')[1]
+    } else if (arg === '--help' || arg === '-h') {
+      console.log(`
+AT-SMS Chat Client
+
+Usage: bun atsms-chat.ts [handle] [options]
+
+Arguments:
+  handle              AT Protocol handle or DID to authenticate with
+
+Options:
+  --data-dir <path>   Directory for storing auth cache, history, and messages
+                      (default: ~/.atsms)
+  --debug             Enable debug output
+  --help, -h          Show this help message
+
+Examples:
+  bun atsms-chat.ts alice.bsky.social
+  bun atsms-chat.ts --data-dir ./my-data alice.bsky.social
+  bun atsms-chat.ts alice.bsky.social --data-dir=/tmp/atsms-test --debug
+`)
+      process.exit(0)
     } else if (!arg.startsWith('--')) {
       handle = arg
     }
   }
 
-  const client = new ChatClient()
+  const client = new ChatClient(dataDir)
   client['debug'] = debug  // Set debug flag
 
   await client.start(handle)

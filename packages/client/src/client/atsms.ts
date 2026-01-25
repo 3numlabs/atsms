@@ -13,7 +13,7 @@ import * as readline from 'readline'
 
 import {ATSMSApiClient} from '../lib/atsms-api.js'
 import {ATSMSClient} from '../lib/atsms-client.js'
-import {ATSMSEndpointCertificate, ATSMSRootCertificate} from '../lib/certificates/index.js'
+import {ATSMSEndpointCertificate} from '../lib/certificates/index.js'
 import {
   decryptAndVerifyMessageSignature,
   encryptMessage,
@@ -75,14 +75,12 @@ class ATSMSCLITool {
   async initCertificates(
     handle: string,
     password: string | null,
-    rootCertPath: string,
-    rootKeyPath: string,
     endpointCertPath: string,
     endpointKeyPath: string,
     email: string,
     publishToPDS: boolean
   ): Promise<void> {
-    console.log(`Generating certificates for ${handle}...`)
+    console.log(`Generating certificate for ${handle}...`)
 
     let did: string
 
@@ -96,35 +94,22 @@ class ATSMSCLITool {
       console.log(`Using test DID: ${did}`)
     }
 
-    // Generate root certificate
-    console.log('Generating root certificate (secp256k1)...')
-    const rootCert = await ATSMSRootCertificate.generate(did, handle)
-    const rootCertPEM = rootCert.certificatePEM
-    const rootKeyPEM = rootCert.certificatePrivateKeyPEM!
-
-    // Write root certificate and key
-    writeFileSync(rootCertPath, rootCertPEM, 'utf8')
-    writeFileSync(rootKeyPath, rootKeyPEM, 'utf8')
-    console.log(`✓ Root certificate: ${rootCertPath}`)
-    console.log(`✓ Root key: ${rootKeyPath}`)
-
-    // Generate endpoint certificate
-    console.log('Generating endpoint certificate (RSA-2048)...')
-    const endpointCert = await rootCert.generateSignedEndpointCertificate(email)
+    // Generate self-signed endpoint certificate
+    console.log('Generating self-signed endpoint certificate (RSA-2048)...')
+    const endpointCert = await ATSMSEndpointCertificate.generate(did, handle, email)
     const endpointCertPEM = endpointCert.certificatePEM
     const endpointKeyPEM = endpointCert.certificatePrivateKeyPEM!
 
     // Write endpoint certificate and key
     writeFileSync(endpointCertPath, endpointCertPEM, 'utf8')
     writeFileSync(endpointKeyPath, endpointKeyPEM, 'utf8')
-    console.log(`✓ Endpoint certificate: ${endpointCertPath}`)
-    console.log(`✓ Endpoint key: ${endpointKeyPath}`)
+    console.log(`✓ Certificate: ${endpointCertPath}`)
+    console.log(`✓ Private key: ${endpointKeyPath}`)
 
     // Print certificate info
     console.log('\n=== Certificate Info ===')
     console.log(`DID: ${did}`)
-    console.log(`Root Serial: ${rootCert.serialNumber}`)
-    console.log(`Endpoint Serial: ${endpointCert.serialNumber}`)
+    console.log(`Serial: ${endpointCert.serialNumber}`)
     console.log(`Valid Until: ${endpointCert.notAfter.toISOString()}`)
 
     // Publish to PDS if requested
@@ -132,11 +117,9 @@ class ATSMSCLITool {
       if (!this.atsmsClient) {
         throw new Error('Not logged in - cannot publish to PDS')
       }
-      console.log('\nPublishing certificates to PDS...')
-      await this.atsmsClient.storeRootCertificate(rootCert)
-      console.log('✓ Root certificate published')
+      console.log('\nPublishing certificate to PDS...')
       await this.atsmsClient.storeEndpointCertificate(endpointCert)
-      console.log('✓ Endpoint certificate published')
+      console.log('✓ Certificate published')
     }
   }
 
@@ -630,7 +613,7 @@ Usage:
   bun atsms.ts <command> [options]
 
 Commands:
-  init              Generate certificates
+  init              Generate self-signed certificate
   send              Send encrypted message
   receive           Receive and decrypt messages
   list              List messages
@@ -643,13 +626,11 @@ Options (varies by command):
 
   init:
     --handle <handle>           User handle (required)
-    --root-cert <path>          Output path for root certificate (required)
-    --root-key <path>           Output path for root key (required)
-    --endpoint-cert <path>        Output path for endpoint certificate (required)
-    --endpoint-key <path>         Output path for endpoint key (required)
-    --email <email>             Email for endpoint certificate (required)
+    --endpoint-cert <path>      Output path for endpoint certificate (required)
+    --endpoint-key <path>       Output path for endpoint key (required)
+    --email <email>             Email for certificate (required)
     --password <password>       PDS password (optional, prompts if not provided)
-    --publish-to-pds            Publish certificates to PDS (requires --password)
+    --publish-to-pds            Publish certificate to PDS (requires --password)
 
   send:
     --handle <handle>           Sender handle (required)
@@ -662,22 +643,22 @@ Options (varies by command):
 
   receive:
     --handle <handle>           User handle (required)
-    --endpoint-cert <path>        Endpoint certificate path (required)
-    --endpoint-key <path>         Client key path (required)
+    --endpoint-cert <path>      Endpoint certificate path (required)
+    --endpoint-key <path>       Client key path (required)
     --password <password>       PDS password (optional, prompts if not provided)
     --output-dir <path>         Save messages to directory (optional, prints to stdout if omitted)
 
   list:
     --handle <handle>           User handle (required)
-    --endpoint-cert <path>        Endpoint certificate path (required)
-    --endpoint-key <path>         Endpoint key path (required)
+    --endpoint-cert <path>      Endpoint certificate path (required)
+    --endpoint-key <path>       Endpoint key path (required)
     --password <password>       PDS password (optional, prompts if not provided)
     --after-seq <number>        List messages after sequence number (optional)
 
   download:
     --handle <handle>           User handle (required)
-    --endpoint-cert <path>        Endpoint certificate path (required)
-    --endpoint-key <path>         Endpoint key path (required)
+    --endpoint-cert <path>      Endpoint certificate path (required)
+    --endpoint-key <path>       Endpoint key path (required)
     --message-id <id>           Message ID (required)
     --output-dir <path>         Output directory for artifacts (required)
     --password <password>       PDS password (optional, prompts if not provided)
@@ -691,27 +672,27 @@ Options (varies by command):
 
   delete:
     --handle <handle>           User handle (required)
-    --endpoint-cert <path>        Endpoint certificate path (required)
-    --endpoint-key <path>         Endpoint key path (required)
+    --endpoint-cert <path>      Endpoint certificate path (required)
+    --endpoint-key <path>       Endpoint key path (required)
     --message-id <id>           Message ID (required)
     --password <password>       PDS password (optional, prompts if not provided)
 
   stats:
     --handle <handle>           User handle (required)
-    --endpoint-cert <path>        Endpoint certificate path (required)
-    --endpoint-key <path>         Endpoint key path (required)
+    --endpoint-cert <path>      Endpoint certificate path (required)
+    --endpoint-key <path>       Endpoint key path (required)
     --password <password>       PDS password (optional, prompts if not provided)
 
 Global Options:
   --api-url <url>              API URL (default: https://atsms-api.enumdao.workers.dev)
 
 Examples:
-  # Generate certificates (no PDS)
-  bun atsms.ts init --handle aib0b.bsky.social --root-cert ./root.pem --root-key ./root-key.pem \\
+  # Generate certificate (no PDS)
+  bun atsms.ts init --handle aib0b.bsky.social \\
     --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email alice@example.com
 
   # Generate and publish to PDS
-  bun atsms.ts init --handle aib0b.bsky.social --root-cert ./root.pem --root-key ./root-key.pem \\
+  bun atsms.ts init --handle aib0b.bsky.social \\
     --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email alice@example.com --publish-to-pds
 
   # Send message
@@ -749,16 +730,14 @@ Examples:
     switch (command) {
       case 'init': {
         const handle = parsedArgs['handle'] as string
-        const rootCert = parsedArgs['root-cert'] as string
-        const rootKey = parsedArgs['root-key'] as string
         const endpointCert = parsedArgs['endpoint-cert'] as string
         const endpointKey = parsedArgs['endpoint-key'] as string
         const email = parsedArgs['email'] as string
         const publishToPDS = parsedArgs['publish-to-pds'] as boolean
 
-        if (!handle || !rootCert || !rootKey || !endpointCert || !endpointKey || !email) {
+        if (!handle || !endpointCert || !endpointKey || !email) {
           throw new Error(
-            'Missing required arguments: --handle, --root-cert, --root-key, --endpoint-cert, --endpoint-key, --email'
+            'Missing required arguments: --handle, --endpoint-cert, --endpoint-key, --email'
           )
         }
 
@@ -772,8 +751,6 @@ Examples:
         await tool.initCertificates(
           handle,
           password,
-          rootCert,
-          rootKey,
           endpointCert,
           endpointKey,
           email,
