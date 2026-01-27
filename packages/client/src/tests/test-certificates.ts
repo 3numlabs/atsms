@@ -15,25 +15,27 @@ export interface TestCertificateResult {
   algorithm: ATSMSCertificateAlgorithm;
 }
 
+/** Default email domain for test certificates */
+const TEST_EMAIL_DOMAIN = "test.atsms.example";
+
 /**
  * Generate a test self-signed endpoint certificate
  * @param did - The DID for the certificate
  * @param domain - The domain/handle for the certificate
- * @param email - Optional email address (defaults to generated from DID and domain)
+ * @param emailDomain - Email domain for deterministic email (defaults to test.atsms.example)
  * @param algorithm - Certificate algorithm ('RSA' or 'P256', defaults to 'RSA' for backward compatibility)
  */
 export async function generateTestEndpointCertificate(
   did: string,
   domain: string,
-  email?: string,
+  emailDomain: string = TEST_EMAIL_DOMAIN,
   algorithm: ATSMSCertificateAlgorithm = "RSA",
 ): Promise<TestCertificateResult> {
-  const defaultEmail = email || `${did.split(":").pop()}@${domain}`;
   const endpointCert = await generateEndpointCertificate(
     algorithm,
     did,
     domain,
-    defaultEmail,
+    emailDomain,
     365,
   );
 
@@ -51,14 +53,14 @@ export async function generateTestEndpointCertificate(
  * Generate a test P-256 endpoint certificate
  * @param did - The DID for the certificate
  * @param domain - The domain/handle for the certificate
- * @param email - Optional email address
+ * @param emailDomain - Email domain for deterministic email
  */
 export async function generateTestP256EndpointCertificate(
   did: string,
   domain: string,
-  email?: string,
+  emailDomain: string = TEST_EMAIL_DOMAIN,
 ): Promise<TestCertificateResult> {
-  return generateTestEndpointCertificate(did, domain, email, "P256");
+  return generateTestEndpointCertificate(did, domain, emailDomain, "P256");
 }
 
 /**

@@ -15,6 +15,7 @@ import {
 import { cryptoProvider } from "../crypto-provider";
 import type { ATSMSCertificateType } from "../types";
 import { ATSMSCertificate } from "./certificate";
+import { computeATSMSEmail, generateSerialNumber } from "./san-utils";
 
 /**
  * P-256 Endpoint Certificate class - self-signed ECDSA certificates
@@ -25,15 +26,22 @@ export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
    * Generate a new self-signed P-256 endpoint certificate
    * Uses ECDSA with P-256 curve for signing
    *
+   * SAN (Subject Alternative Name) format:
+   * - DNS: domain (e.g., 'alice.bsky.social')
+   * - URI: at://[did]/at.atsms.x509/[serial-hex] (AT Protocol URI)
+   * - Email: Deterministic based on DID method:
+   *   - PLC: plc.[plc-id]@[emailDomain]
+   *   - WEB: web.[base64url(web-part)]@[emailDomain]
+   *
    * @param did - Decentralized identifier (e.g., 'did:plc:xyz123')
    * @param domain - Domain name / handle (e.g., 'alice.bsky.social')
-   * @param email - Email address for certificate SAN
+   * @param emailDomain - Email provider domain for deterministic email (e.g., 'atsms.email')
    * @param validityDays - Certificate validity period (default: 10 years)
    */
   static async generate(
     did: string,
     domain: string,
-    email: string,
+    emailDomain: string,
     validityDays = 3652, // Default to ten years
   ): Promise<ATSMSP256EndpointCertificate> {
     // Validate parameters to prevent common errors
@@ -59,16 +67,18 @@ export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
       throw new Error(`Invalid DID: must start with 'did:', got: ${did}`);
     }
 
-    // Minimally validate email format
-    if (
-      typeof email !== "string" ||
-      email.split("@").length !== 2 ||
-      email.split("@")[1].split(".").length < 2
-    ) {
+    // Validate emailDomain is a string and not empty
+    if (typeof emailDomain !== "string" || !emailDomain.trim()) {
       throw new Error(
-        `Invalid email: must be a valid email address, got: ${email}`,
+        `Invalid emailDomain: must be a non-empty string, got ${typeof emailDomain}: ${emailDomain}`,
       );
     }
+
+    // Generate serial number first (needed for SAN URI)
+    const serialNumber = await generateSerialNumber();
+
+    // Compute deterministic email from DID and email domain
+    const sanEmail = computeATSMSEmail(did, emailDomain);
 
     // Generate P-256 key pair for endpoint certificate
     const ecAlg = {
@@ -84,6 +94,7 @@ export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
     // Create self-signed certificate with ECDSA
     const cert = await X509CertificateGenerator.createSelfSigned(
       {
+        serialNumber: serialNumber.hex,
         name: `CN=${did}`,
         notBefore: new Date(),
         notAfter: new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000),
@@ -104,8 +115,8 @@ export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
           ), // serverAuth, clientAuth
           new SubjectAlternativeNameExtension([
             { type: "dns", value: domain },
-            { type: "url", value: did },
-            { type: "email", value: email },
+            { type: "url", value: `at://${did}/at.atsms.x509/${serialNumber.hex}` },
+            { type: "email", value: sanEmail },
           ]),
         ],
       },

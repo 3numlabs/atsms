@@ -15,15 +15,15 @@ import { generateJWT, getTokenExpiration } from "../lib/jwt-auth.js";
 describe("JWT Authentication", () => {
   let endpointCert: ATSMSEndpointCertificate;
   const testDid = "did:plc:test123";
-  const testEmail = "test@atsms.example.com";
-  const testDomain = "atsms.example.com";
+  const testEmailDomain = "atsms.example.com";
+  const testDomain = "test.atsms.example.com";
 
   beforeAll(async () => {
     // Generate self-signed endpoint certificate
     endpointCert = await ATSMSEndpointCertificate.generate(
       testDid,
       testDomain,
-      testEmail,
+      testEmailDomain,
       365,
     );
   });
@@ -118,15 +118,15 @@ describe("JWT Authentication", () => {
 describe("JWT Authentication with P-256 (ES256)", () => {
   let p256Cert: ATSMSP256EndpointCertificate;
   const testDid = "did:plc:p256test123";
-  const testEmail = "p256test@atsms.example.com";
-  const testDomain = "atsms.example.com";
+  const testEmailDomain = "atsms.example.com";
+  const testDomain = "p256test.atsms.example.com";
 
   beforeAll(async () => {
     // Generate self-signed P-256 endpoint certificate
     p256Cert = await ATSMSP256EndpointCertificate.generate(
       testDid,
       testDomain,
-      testEmail,
+      testEmailDomain,
       365,
     );
   });

@@ -14,13 +14,13 @@ describe("Sequential Certificate Private Key Import", () => {
     const cert1Result = await generateTestEndpointCertificate(
       "did:plc:user1",
       "user1.acme.xyz",
-      "user1@user1.acme.xyz",
+      "user1.acme.xyz",
     );
 
     const cert2Result = await generateTestEndpointCertificate(
       "did:plc:user2",
       "user2.acme.xyz",
-      "user2@user2.acme.xyz",
+      "user2.acme.xyz",
     );
 
     // First, load certificates without private keys
@@ -69,13 +69,13 @@ describe("Sequential Certificate Private Key Import", () => {
     const cert1Result = await generateTestEndpointCertificate(
       "did:plc:userA",
       "userA.acme.xyz",
-      "userA@userA.acme.xyz",
+      "userA.acme.xyz",
     );
 
     const cert2Result = await generateTestEndpointCertificate(
       "did:plc:userB",
       "userB.acme.xyz",
-      "userB@userB.acme.xyz",
+      "userB.acme.xyz",
     );
 
     // Import second certificate with private key first

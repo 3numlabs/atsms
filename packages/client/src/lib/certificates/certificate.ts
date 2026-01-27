@@ -176,6 +176,10 @@ export abstract class ATSMSCertificate extends X509Certificate {
 
   /**
    * Get the DID from the Subject Alternative Name extension
+   *
+   * The DID is extracted from the URI field in the SAN extension.
+   * Expected format: at://[did]/at.atsms.x509/[serial-hex]
+   * Example: at://did:plc:abc123/at.atsms.x509/1234abcd
    */
   get did(): string | undefined {
     try {
@@ -185,25 +189,31 @@ export abstract class ATSMSCertificate extends X509Certificate {
 
       if (!sanExt || !sanExt.value) return undefined;
 
-      // Parse the SAN extension value to extract URLs and DNS names
+      // Parse the SAN extension value to extract URLs
       const der = new Uint8Array(sanExt.value);
       const asn1 = asn1js.fromBER(der.buffer);
 
       if (asn1.offset === -1) return undefined;
 
-      // Look for URLs (tag 6) or DNS names (tag 2) in the GeneralNames sequence
+      // Look for URLs (tag 6) in the GeneralNames sequence
       const sequence = asn1.result as any;
       if (sequence.valueBlock && sequence.valueBlock.value) {
         for (const item of sequence.valueBlock.value) {
-          // URL has tag 6, DNS name has tag 2
-          if (
-            item.idBlock &&
-            (item.idBlock.tagNumber === 6 || item.idBlock.tagNumber === 2)
-          ) {
+          // URL has tag 6
+          if (item.idBlock && item.idBlock.tagNumber === 6) {
             const valueHex = item.valueBlock.valueHex;
             const valueStr = new TextDecoder().decode(new Uint8Array(valueHex));
-            if (valueStr.startsWith("did:")) {
-              return valueStr;
+
+            // Parse AT URI format: at://[did]/at.atsms.x509/[serial]
+            if (valueStr.startsWith("at://")) {
+              const pathStart = valueStr.indexOf("/at.atsms.x509/");
+              if (pathStart !== -1) {
+                // Extract DID between "at://" and "/at.atsms.x509/"
+                const did = valueStr.slice(5, pathStart);
+                if (did.startsWith("did:")) {
+                  return did;
+                }
+              }
             }
           }
         }

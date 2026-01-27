@@ -89,7 +89,7 @@ describe("Certificate Classes", () => {
         ATSMSEndpointCertificate.generate(
           "did:plc:test",
           "test.com",
-          "test@example.com",
+          "example.com",
           "test.com" as any, // Wrong: domain string as validityDays
         ),
       ).rejects.toThrow("Invalid validityDays");
@@ -100,7 +100,7 @@ describe("Certificate Classes", () => {
         ATSMSEndpointCertificate.generate(
           "did:plc:test",
           "test.com",
-          "test@example.com",
+          "example.com",
           -365,
         ),
       ).rejects.toThrow("Invalid validityDays");
@@ -111,7 +111,7 @@ describe("Certificate Classes", () => {
         ATSMSEndpointCertificate.generate(
           "did:plc:test",
           "test.com",
-          "test@example.com",
+          "example.com",
           NaN,
         ),
       ).rejects.toThrow("Invalid validityDays");
@@ -122,7 +122,7 @@ describe("Certificate Classes", () => {
         ATSMSEndpointCertificate.generate(
           "did:plc:test",
           "",
-          "test@example.com",
+          "example.com",
           365,
         ),
       ).rejects.toThrow("Invalid domain");
@@ -133,7 +133,7 @@ describe("Certificate Classes", () => {
         ATSMSEndpointCertificate.generate(
           "did:plc:test",
           123 as any,
-          "test@example.com",
+          "example.com",
           365,
         ),
       ).rejects.toThrow("Invalid domain");
@@ -144,63 +144,19 @@ describe("Certificate Classes", () => {
         ATSMSEndpointCertificate.generate(
           "not-a-did",
           "test.com",
-          "test@example.com",
+          "example.com",
           365,
         ),
       ).rejects.toThrow("Invalid DID");
     });
 
-    it("should reject invalid email - missing @", async () => {
-      await expect(
-        ATSMSEndpointCertificate.generate(
-          "did:plc:test",
-          "test.com",
-          "invalidemail.com",
-          365,
-        ),
-      ).rejects.toThrow("Invalid email");
-    });
-
-    it("should reject invalid email - multiple @ symbols", async () => {
-      await expect(
-        ATSMSEndpointCertificate.generate(
-          "did:plc:test",
-          "test.com",
-          "test@@example.com",
-          365,
-        ),
-      ).rejects.toThrow("Invalid email");
-    });
-
-    it("should reject invalid email - no domain", async () => {
-      await expect(
-        ATSMSEndpointCertificate.generate(
-          "did:plc:test",
-          "test.com",
-          "test@",
-          365,
-        ),
-      ).rejects.toThrow("Invalid email");
-    });
-
-    it("should reject invalid email - domain without TLD", async () => {
-      await expect(
-        ATSMSEndpointCertificate.generate(
-          "did:plc:test",
-          "test.com",
-          "test@domain",
-          365,
-        ),
-      ).rejects.toThrow("Invalid email");
-    });
-
-    it("should reject invalid email - empty string", async () => {
+    it("should reject invalid emailDomain - empty string", async () => {
       await expect(
         ATSMSEndpointCertificate.generate("did:plc:test", "test.com", "", 365),
-      ).rejects.toThrow("Invalid email");
+      ).rejects.toThrow("Invalid emailDomain");
     });
 
-    it("should reject invalid email - non-string type", async () => {
+    it("should reject invalid emailDomain - non-string type", async () => {
       await expect(
         ATSMSEndpointCertificate.generate(
           "did:plc:test",
@@ -208,33 +164,36 @@ describe("Certificate Classes", () => {
           123 as any,
           365,
         ),
-      ).rejects.toThrow("Invalid email");
+      ).rejects.toThrow("Invalid emailDomain");
     });
 
-    it("should reject invalid email - only @ symbol", async () => {
+    it("should reject invalid emailDomain - whitespace only", async () => {
       await expect(
-        ATSMSEndpointCertificate.generate("did:plc:test", "test.com", "@", 365),
-      ).rejects.toThrow("Invalid email");
+        ATSMSEndpointCertificate.generate("did:plc:test", "test.com", "   ", 365),
+      ).rejects.toThrow("Invalid emailDomain");
     });
 
-    it("should accept valid email addresses", async () => {
-      // Test various valid email formats
-      const validEmails = [
-        "test@example.com",
-        "user.name@domain.co.uk",
-        "test123@subdomain.example.org",
-        "alice@bsky.social",
+    it("should accept valid email domains", async () => {
+      // Test various valid email domain formats
+      const validDomains = [
+        "example.com",
+        "domain.co.uk",
+        "subdomain.example.org",
+        "bsky.social",
+        "atsms.email",
       ];
 
-      for (const email of validEmails) {
+      for (const emailDomain of validDomains) {
         const endpointCert = await ATSMSEndpointCertificate.generate(
           "did:plc:test",
           "test.com",
-          email,
+          emailDomain,
           365,
         );
         expect(endpointCert).toBeDefined();
         expect(endpointCert.getType()).toBe("endpoint");
+        // Verify the email is deterministically computed
+        expect(endpointCert.email).toBe(`plc.test@${emailDomain}`);
       }
     });
 
@@ -242,7 +201,7 @@ describe("Certificate Classes", () => {
       const endpointCert = await ATSMSEndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
         365,
       );
 

@@ -34,11 +34,11 @@ describe.skipIf(!ATSMS_TEST_HANDLE || !ATSMS_TEST_PASSWORD)(
 
       // Generate self-signed endpoint certificate
       console.log("Generating test certificate...");
-      const email = `test@${ATSMS_TEST_HANDLE!}`;
+      const emailDomain = ATSMS_TEST_HANDLE!.split(".").slice(-2).join(".") || "bsky.social";
       const endpointCert = await ATSMSEndpointCertificate.generate(
         did,
         ATSMS_TEST_HANDLE!,
-        email,
+        emailDomain,
       );
       const clientCertPEM = endpointCert.toString("pem");
 

@@ -72,7 +72,7 @@ describe("ATSMSClient Library", () => {
       const endpointCert = await ATSMSEndpointCertificate.generate(
         "did:test:123",
         "test.domain",
-        "test@test.domain",
+        "test.domain",
       );
 
       await expect(

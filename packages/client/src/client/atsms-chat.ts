@@ -318,8 +318,31 @@ class ChatClient {
 `),
     );
 
-    // Get handle from argument or prompt
-    const handle = initialHandle || (await this.promptForHandle());
+    // Get handle from argument, cached auth, or prompt
+    let handle = initialHandle;
+
+    if (!handle) {
+      // Check for cached authentication
+      const cachedHandles = Object.keys(this.authCache);
+      if (cachedHandles.length === 1) {
+        // Single cached account - use it automatically
+        handle = cachedHandles[0];
+        console.log(colors.info(`Using cached account: ${handle}`));
+      } else if (cachedHandles.length > 1) {
+        // Multiple cached accounts - let user choose
+        console.log(colors.info("Multiple cached accounts found:"));
+        cachedHandles.forEach((h, i) => {
+          const entry = this.authCache[h];
+          const expired = entry.expiresAt <= Date.now();
+          const status = expired ? colors.warning(" (expired)") : "";
+          console.log(colors.info(`  ${i + 1}. ${h}${status}`));
+        });
+        handle = await this.promptForHandle();
+      } else {
+        // No cached accounts - prompt for handle
+        handle = await this.promptForHandle();
+      }
+    }
 
     // Authenticate
     await this.authenticate(handle);
@@ -1862,16 +1885,13 @@ Account Info:
         );
       }
 
-      // For now, API endpoint as the email domain inbox, and the DID as the username.
-      const plcDid = this.state.did.split(":").pop() || "unknown";
-      const email = `${plcDid}@${ATSMS_API_DOMAIN}`;
-
       // Generate self-signed endpoint certificate (P-256 ECDSA by default)
+      // Email is computed deterministically from DID and email domain
       const endpointCert = await generateEndpointCertificate(
         "P256",
         this.state.did,
         this.state.handle,
-        email,
+        ATSMS_API_DOMAIN,
       );
 
       // Ask for password to encrypt the private key

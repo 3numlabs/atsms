@@ -34,6 +34,7 @@ const colors = {
 // API configuration
 const API_BASE = "https://atsms-api.enumdao.workers.dev";
 const WS_BASE = "wss://atsms-api.enumdao.workers.dev";
+const DEFAULT_DATA_DIR = join(homedir(), ".atsms");
 
 // Type definitions
 interface JWTPayload {
@@ -116,18 +117,37 @@ interface WebSocketMessage {
 }
 
 // Parse command line arguments
-const args = process.argv.slice(2);
-const command = args[0];
-const handle = args[1];
+const rawArgs = process.argv.slice(2);
+let dataDir = DEFAULT_DATA_DIR;
+let verbose = false;
+const filteredArgs: string[] = [];
+
+// Extract options
+for (let i = 0; i < rawArgs.length; i++) {
+  const arg = rawArgs[i];
+  if (arg === "--data-dir" && i + 1 < rawArgs.length) {
+    dataDir = rawArgs[++i];
+  } else if (arg.startsWith("--data-dir=")) {
+    dataDir = arg.split("=")[1];
+  } else if (arg === "-v" || arg === "--verbose") {
+    verbose = true;
+  } else {
+    filteredArgs.push(arg);
+  }
+}
+
+const command = filteredArgs[0];
+const handle = filteredArgs[1];
+const args = filteredArgs; // Keep for compatibility with command handlers
 
 if (!command) {
   showUsage();
   process.exit(1);
 }
 
-// Load or generate JWT token from ~/.atsms cache
+// Load or generate JWT token from data directory
 async function loadOrGenerateJWT(handle: string): Promise<string> {
-  const configDir = join(homedir(), ".atsms");
+  const configDir = dataDir;
 
   // Try old location first (backward compatibility)
   const oldTokenPath = join("./", ".atsms", handle, "jwt-token.json");
@@ -183,8 +203,19 @@ async function loadOrGenerateJWT(handle: string): Promise<string> {
     }
 
     // Generate JWT using jose library
+    // Detect key type by trying to import as EC first (P-256 is the new default)
     const userId = `at://${did}/at.atsms.x509/${cert.serialNumber}`;
-    const privateKey = await importPKCS8(cert.privateKeyPEM, "RS256");
+    let privateKey: CryptoKey;
+    let algorithm: string;
+
+    try {
+      privateKey = await importPKCS8(cert.privateKeyPEM, "ES256");
+      algorithm = "ES256";
+    } catch {
+      // Fall back to RSA
+      privateKey = await importPKCS8(cert.privateKeyPEM, "RS256");
+      algorithm = "RS256";
+    }
 
     const token = await new SignJWT({
       sub: userId,
@@ -192,7 +223,7 @@ async function loadOrGenerateJWT(handle: string): Promise<string> {
       aud: "atsms-api",
     })
       .setProtectedHeader({
-        alg: "RS256",
+        alg: algorithm,
         typ: "JWT",
         kid: cert.serialNumber,
       })
@@ -200,9 +231,11 @@ async function loadOrGenerateJWT(handle: string): Promise<string> {
       .setExpirationTime("1h")
       .sign(privateKey);
 
-    console.log(
-      `${colors.green}✓ Generated new JWT from cached credentials${colors.reset}`,
-    );
+    if (verbose) {
+      console.log(
+        `${colors.green}✓ Generated new JWT from cached credentials${colors.reset}`,
+      );
+    }
     return token;
   } catch (error: any) {
     // Could not generate JWT
@@ -210,6 +243,7 @@ async function loadOrGenerateJWT(handle: string): Promise<string> {
       `${colors.red}Error: Could not load or generate JWT token${colors.reset}`,
     );
     console.error(`${colors.yellow}Reason: ${error.message}${colors.reset}`);
+    console.error(`${colors.yellow}Data directory: ${configDir}${colors.reset}`);
     console.error("");
     console.error(`${colors.yellow}Please authenticate first:${colors.reset}`);
     console.error(`  Run: ${colors.cyan}bun run chat${colors.reset}`);
@@ -218,7 +252,7 @@ async function loadOrGenerateJWT(handle: string): Promise<string> {
     );
     console.error("");
     console.error(
-      `${colors.yellow}This will authenticate and cache credentials in ~/.atsms${colors.reset}`,
+      `${colors.yellow}Or specify a different data directory with --data-dir${colors.reset}`,
     );
     process.exit(1);
   }
@@ -355,7 +389,7 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
   },
 
   async health(token: string, _jwtInfo: JWTInfo) {
-    console.log(`${colors.yellow}Checking API health...${colors.reset}`);
+    if (verbose) console.log(`${colors.yellow}Checking API health...${colors.reset}`);
     const result = await apiRequest("GET", "/health", null, token);
     console.log(JSON.stringify(result, null, 2));
   },
@@ -366,7 +400,7 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
     limitStr = "50",
     afterStr?: string,
   ) {
-    console.log(`${colors.yellow}Listing messages...${colors.reset}`);
+    if (verbose) console.log(`${colors.yellow}Listing messages...${colors.reset}`);
     const limit = parseInt(limitStr, 10);
     let query = `?limit=${limit}`;
     if (afterStr) query += `&after=${afterStr}`;
@@ -378,17 +412,17 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
       token,
     );
 
-    console.log(
-      `${colors.green}Messages (${result.totalCount} total):${colors.reset}`,
-    );
+    if (verbose) {
+      console.log(
+        `${colors.green}Messages (${result.totalCount} total):${colors.reset}`,
+      );
+    }
     result.messages.forEach((msg) => {
       const timestamp = new Date(msg.storedAt).toLocaleString();
-      console.log(
-        `  ${colors.cyan}[${msg.seq}]${colors.reset} ${msg.id} - ${msg.seq} - (${timestamp})`,
-      );
+      console.log(`${msg.id}\t${msg.seq}\t${timestamp}`);
     });
 
-    if (result.hasMore) {
+    if (verbose && result.hasMore) {
       console.log(
         `${colors.yellow}More messages available. Use --after ${result.latestSeq} to see more.${colors.reset}`,
       );
@@ -401,9 +435,11 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
       process.exit(1);
     }
 
-    console.log(
-      `${colors.yellow}Getting message ${messageId}...${colors.reset}`,
-    );
+    if (verbose) {
+      console.log(
+        `${colors.yellow}Getting message ${messageId}...${colors.reset}`,
+      );
+    }
     const result = await apiRequest(
       "GET",
       `/messages/${jwtInfo.did}/${jwtInfo.certSerial}/${messageId}`,
@@ -419,20 +455,22 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
       process.exit(1);
     }
 
-    console.log(
-      `${colors.yellow}Deleting message ${messageId}...${colors.reset}`,
-    );
+    if (verbose) {
+      console.log(
+        `${colors.yellow}Deleting message ${messageId}...${colors.reset}`,
+      );
+    }
     await apiRequest(
       "DELETE",
       `/messages/${jwtInfo.did}/${jwtInfo.certSerial}/${messageId}`,
       null,
       token,
     );
-    console.log(`${colors.green}✓ Message deleted${colors.reset}`);
+    console.log(`${colors.green}✓ Deleted ${messageId}${colors.reset}`);
   },
 
   async stats(token: string, jwtInfo: JWTInfo) {
-    console.log(`${colors.yellow}Getting inbox statistics...${colors.reset}`);
+    if (verbose) console.log(`${colors.yellow}Getting inbox statistics...${colors.reset}`);
     const result: StatsResponse = await apiRequest(
       "GET",
       `/messages/${jwtInfo.did}/${jwtInfo.certSerial}/stats`,
@@ -440,19 +478,23 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
       token,
     );
 
-    console.log(`${colors.green}Inbox Statistics:${colors.reset}`);
-    console.log(
-      `  Total messages: ${colors.cyan}${result.messageCount}${colors.reset}`,
-    );
-    console.log(
-      `  Unread messages: ${colors.cyan}${result.unreadCount}${colors.reset}`,
-    );
-    console.log(
-      `  Latest sequence: ${colors.cyan}${result.latestSeq}${colors.reset}`,
-    );
-    console.log(
-      `  Connected clients: ${colors.cyan}${result.connectedClients}${colors.reset}`,
-    );
+    if (verbose) {
+      console.log(`${colors.green}Inbox Statistics:${colors.reset}`);
+      console.log(
+        `  Total messages: ${colors.cyan}${result.messageCount}${colors.reset}`,
+      );
+      console.log(
+        `  Unread messages: ${colors.cyan}${result.unreadCount}${colors.reset}`,
+      );
+      console.log(
+        `  Latest sequence: ${colors.cyan}${result.latestSeq}${colors.reset}`,
+      );
+      console.log(
+        `  Connected clients: ${colors.cyan}${result.connectedClients}${colors.reset}`,
+      );
+    } else {
+      console.log(JSON.stringify(result));
+    }
   },
 
   async send(
@@ -526,19 +568,21 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
 
     const totalEndpoints = recipientArgs.length;
     const uniqueDids = recipients.length;
-    console.log(
-      `${colors.yellow}Connecting to WebSocket to send message...${colors.reset}`,
-    );
-    console.log(
-      `${colors.blue}Recipients: ${uniqueDids} DID(s) with ${totalEndpoints} endpoint(s)${colors.reset}`,
-    );
+    if (verbose) {
+      console.log(
+        `${colors.yellow}Connecting to WebSocket to send message...${colors.reset}`,
+      );
+      console.log(
+        `${colors.blue}Recipients: ${uniqueDids} DID(s) with ${totalEndpoints} endpoint(s)${colors.reset}`,
+      );
+    }
 
     const wsUrl = `${WS_BASE}/ws/${jwtInfo.did}/${jwtInfo.certSerial}`;
     const ws = new WebSocket(wsUrl);
     let requestId: string | null = null;
 
     ws.on("open", () => {
-      console.log(`${colors.green}✓ Connected to WebSocket${colors.reset}`);
+      if (verbose) console.log(`${colors.green}✓ Connected to WebSocket${colors.reset}`);
     });
 
     ws.on("message", (data) => {
@@ -547,7 +591,7 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
 
         switch (msg.type) {
           case "auth_required":
-            console.log(`${colors.yellow}Authenticating...${colors.reset}`);
+            if (verbose) console.log(`${colors.yellow}Authenticating...${colors.reset}`);
             ws.send(
               JSON.stringify({
                 type: "auth",
@@ -557,8 +601,10 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
             break;
 
           case "auth_success":
-            console.log(`${colors.green}✓ Authenticated${colors.reset}`);
-            console.log(`${colors.yellow}Sending message...${colors.reset}`);
+            if (verbose) {
+              console.log(`${colors.green}✓ Authenticated${colors.reset}`);
+              console.log(`${colors.yellow}Sending message...${colors.reset}`);
+            }
 
             // Send the message
             requestId = `send-${Date.now()}`;
@@ -574,23 +620,33 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
 
           case "send_response":
             if (msg.requestId === requestId) {
-              console.log(`${colors.green}✓ Send completed${colors.reset}`);
-              console.log(`${colors.green}Results:${colors.reset}`);
-
-              msg.results?.forEach((result) => {
-                const statusColor =
-                  result.status === "sent" ? colors.green : colors.red;
-                console.log(
-                  `  ${result.email} (${result.did}:${result.certSerial})`,
-                );
-                console.log(
-                  `    Status: ${statusColor}${result.status}${colors.reset}`,
-                );
-                if (result.error)
+              if (verbose) {
+                console.log(`${colors.green}✓ Send completed${colors.reset}`);
+                console.log(`${colors.green}Results:${colors.reset}`);
+                msg.results?.forEach((result) => {
+                  const statusColor =
+                    result.status === "sent" ? colors.green : colors.red;
                   console.log(
-                    `    Error: ${colors.red}${result.error}${colors.reset}`,
+                    `  ${result.email} (${result.did}:${result.certSerial})`,
                   );
-              });
+                  console.log(
+                    `    Status: ${statusColor}${result.status}${colors.reset}`,
+                  );
+                  if (result.error)
+                    console.log(
+                      `    Error: ${colors.red}${result.error}${colors.reset}`,
+                    );
+                });
+              } else {
+                // Compact output: status for each recipient
+                msg.results?.forEach((result) => {
+                  const statusColor =
+                    result.status === "sent" ? colors.green : colors.red;
+                  console.log(
+                    `${statusColor}${result.status}${colors.reset}\t${result.email}`,
+                  );
+                });
+              }
 
               ws.close();
               process.exit(0);
@@ -643,22 +699,26 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
   },
 
   async watch(token: string, jwtInfo: JWTInfo) {
-    console.log(
-      `${colors.yellow}Connecting to WebSocket for real-time updates...${colors.reset}`,
-    );
+    if (verbose) {
+      console.log(
+        `${colors.yellow}Connecting to WebSocket for real-time updates...${colors.reset}`,
+      );
+    }
 
     // Use the new /ws/ path that doesn't require auth at the API level
     const wsUrl = `${WS_BASE}/ws/${jwtInfo.did}/${jwtInfo.certSerial}`;
-    console.log(`${colors.blue}WebSocket URL: ${wsUrl}${colors.reset}`);
+    if (verbose) console.log(`${colors.blue}WebSocket URL: ${wsUrl}${colors.reset}`);
 
     // Connect without Authorization header (browser-style)
     const ws = new WebSocket(wsUrl);
 
     ws.on("open", () => {
-      console.log(`${colors.green}✓ Connected to WebSocket${colors.reset}`);
-      console.log(
-        `${colors.yellow}Waiting for auth_required message...${colors.reset}`,
-      );
+      if (verbose) {
+        console.log(`${colors.green}✓ Connected to WebSocket${colors.reset}`);
+        console.log(
+          `${colors.yellow}Waiting for auth_required message...${colors.reset}`,
+        );
+      }
       // Don't send auth immediately - wait for auth_required message
     });
 
@@ -672,13 +732,14 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
 
         switch (msg.type) {
           case "auth_required":
-            console.log(
-              `${colors.yellow}[${timestamp}] Authentication required (deadline: ${new Date(msg.deadline!).toLocaleTimeString()})${colors.reset}`,
-            );
-            // Send auth token in response to auth_required
-            console.log(
-              `${colors.blue}Sending auth token (length: ${token.length})${colors.reset}`,
-            );
+            if (verbose) {
+              console.log(
+                `${colors.yellow}[${timestamp}] Authentication required (deadline: ${new Date(msg.deadline!).toLocaleTimeString()})${colors.reset}`,
+              );
+              console.log(
+                `${colors.blue}Sending auth token (length: ${token.length})${colors.reset}`,
+              );
+            }
             ws.send(
               JSON.stringify({
                 type: "auth",
@@ -688,19 +749,20 @@ const commands: Record<string, CommandHandler | AuthCommandHandler> = {
             break;
           case "auth_success":
             console.log(
-              `${colors.green}[${timestamp}] ✓ Authenticated successfully${colors.reset}`,
+              `${colors.green}✓ Connected${colors.reset}`,
             );
-            console.log(
-              `${colors.green}[${timestamp}] DID: ${msg.did}, Certificate: ${msg.certSerial}${colors.reset}`,
-            );
-            console.log(
-              `${colors.yellow}Listening for messages... (Press Ctrl+C to stop)${colors.reset}`,
-            );
+            if (verbose) {
+              console.log(
+                `${colors.green}[${timestamp}] DID: ${msg.did}, Certificate: ${msg.certSerial}${colors.reset}`,
+              );
+            }
             break;
           case "connected":
-            console.log(
-              `${colors.green}[${timestamp}] Connected successfully${colors.reset}`,
-            );
+            if (verbose) {
+              console.log(
+                `${colors.green}[${timestamp}] Connected successfully${colors.reset}`,
+              );
+            }
             break;
           case "new_message":
             console.log(
@@ -775,8 +837,14 @@ function showUsage() {
   console.log(`${colors.bright}AT-SMS API Client${colors.reset}`);
   console.log("");
   console.log(
-    "Usage: bun src/client/api-client.ts <command> <handle> [args...]",
+    "Usage: bun src/client/api-client.ts [options] <command> <handle> [args...]",
   );
+  console.log("");
+  console.log("Options:");
+  console.log(
+    "  --data-dir <path>         Directory for auth cache and messages (default: ~/.atsms)",
+  );
+  console.log("  -v, --verbose             Show detailed output");
   console.log("");
   console.log("Commands:");
   console.log(
@@ -798,10 +866,16 @@ function showUsage() {
   console.log("  bun src/client/api-client.ts auth aib0b.bsky.social");
   console.log("  bun src/client/api-client.ts list aib0b.bsky.social");
   console.log("  bun src/client/api-client.ts get aib0b.bsky.social msg-123");
+  console.log("  bun src/client/api-client.ts delete aib0b.bsky.social msg-123");
   console.log(
     "  bun src/client/api-client.ts send aib0b.bsky.social ./message.p7m did:plc:abc:4d18ac7f:user@atsms.example.com",
   );
   console.log("  bun src/client/api-client.ts watch aib0b.bsky.social");
+  console.log("");
+  console.log("  # With custom data directory:");
+  console.log(
+    "  bun src/client/api-client.ts --data-dir ./chaos-dot-atsms list chaosmokey.skyfi.social",
+  );
 }
 
 // Main execution
@@ -841,13 +915,6 @@ async function main() {
     const token = await loadOrGenerateJWT(handle);
     const jwtInfo = parseJWT(token);
 
-    console.log(`${colors.blue}AT-SMS API Client${colors.reset}`);
-    console.log(`Handle: ${colors.green}${handle}${colors.reset}`);
-    console.log(`DID: ${colors.green}${jwtInfo.did}${colors.reset}`);
-    console.log(
-      `Certificate: ${colors.green}${jwtInfo.certSerial}${colors.reset}`,
-    );
-
     // Check token expiry
     const expiry = new Date(jwtInfo.exp * 1000);
     const now = new Date();
@@ -860,10 +927,22 @@ async function main() {
       );
       process.exit(1);
     }
-    console.log(
-      `Token expires: ${colors.yellow}${expiry.toLocaleString()}${colors.reset}`,
-    );
-    console.log("");
+
+    if (verbose) {
+      console.log(`${colors.blue}AT-SMS API Client${colors.reset}`);
+      if (dataDir !== DEFAULT_DATA_DIR) {
+        console.log(`Data dir: ${colors.yellow}${dataDir}${colors.reset}`);
+      }
+      console.log(`Handle: ${colors.green}${handle}${colors.reset}`);
+      console.log(`DID: ${colors.green}${jwtInfo.did}${colors.reset}`);
+      console.log(
+        `Certificate: ${colors.green}${jwtInfo.certSerial}${colors.reset}`,
+      );
+      console.log(
+        `Token expires: ${colors.yellow}${expiry.toLocaleString()}${colors.reset}`,
+      );
+      console.log("");
+    }
 
     // Execute command - pass remaining args after handle
     await (handler as CommandHandler)(token, jwtInfo, ...args.slice(2));

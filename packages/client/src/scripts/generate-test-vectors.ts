@@ -6,10 +6,13 @@
  * their S/MIME encryption implementation is compatible with the AT-SMS protocol.
  *
  * Generates test vectors for both RSA-2048 and P-256 ECDSA/ECDH algorithms.
+ * Includes all intermediate cryptographic values for step-by-step verification.
  *
  * Usage: bun src/scripts/generate-test-vectors.ts > src/tests/fixtures/test-vectors.json
  */
 
+import * as asn1js from "asn1js";
+import * as pkijs from "pkijs";
 import {
   type ATSMSAnyEndpointCertificate,
   type ATSMSCertificateAlgorithm,
@@ -36,6 +39,52 @@ interface ParticipantVectors {
   };
 }
 
+interface ECDHIntermediateValues {
+  _description: string;
+  ephemeralPublicKey: {
+    _description: string;
+    x: string; // hex
+    y: string; // hex
+    uncompressed: string; // hex (04 || x || y)
+  };
+  ukm: {
+    _description: string;
+    hex: string;
+    base64: string;
+  };
+  recipientIdentifier: {
+    _description: string;
+    value: string; // hex - serial number or subject key identifier
+  };
+  wrappedKey: {
+    _description: string;
+    hex: string;
+    base64: string;
+  };
+  contentEncryption: {
+    iv: string; // hex
+    algorithm: string;
+  };
+}
+
+interface RSAIntermediateValues {
+  _description: string;
+  recipientIdentifier: {
+    _description: string;
+    issuerCN: string;
+    serialNumber: string; // hex
+  };
+  encryptedKey: {
+    _description: string;
+    hex: string;
+    base64: string;
+  };
+  contentEncryption: {
+    iv: string; // hex
+    algorithm: string;
+  };
+}
+
 interface CryptoVectors {
   _comment: string;
   signedMessage: {
@@ -51,7 +100,158 @@ interface CryptoVectors {
     contentEncryptionAlgorithm: string;
     format: string;
   };
+  intermediateValues?: ECDHIntermediateValues | RSAIntermediateValues;
 }
+
+/**
+ * Extract intermediate cryptographic values from an encrypted envelope
+ * This allows other implementations to verify their encryption logic step-by-step
+ */
+function extractIntermediateValues(
+  encryptedBytes: Uint8Array,
+  receiverAlgorithm: ATSMSCertificateAlgorithm,
+): ECDHIntermediateValues | RSAIntermediateValues {
+  // Parse ContentInfo
+  const contentInfo = asn1js.fromBER(encryptedBytes.buffer as ArrayBuffer);
+  const cmsContent = new pkijs.ContentInfo({ schema: contentInfo.result });
+  const envelopedData = new pkijs.EnvelopedData({ schema: cmsContent.content });
+
+  // Get the IV from encryptedContentInfo
+  const encContentInfo = envelopedData.encryptedContentInfo;
+  const contentEncAlg = encContentInfo.contentEncryptionAlgorithm;
+  const ivOctetString = contentEncAlg.algorithmParams as asn1js.OctetString;
+  const iv = Buffer.from(ivOctetString.valueBlock.valueHexView).toString("hex");
+
+  // Get the first recipient info
+  const recipientInfo = envelopedData.recipientInfos[0];
+
+  if (receiverAlgorithm === "P256") {
+    // ECDH - KeyAgreeRecipientInfo (variant 2)
+    const kari = recipientInfo.value as pkijs.KeyAgreeRecipientInfo;
+
+    // Extract ephemeral public key from originator
+    const originator = kari.originator;
+    const originatorKey = originator.value as pkijs.OriginatorPublicKeyInfo;
+    const publicKeyBits = originatorKey.publicKey.valueBlock.valueHexView;
+
+    // The public key is in uncompressed format: 04 || x || y
+    const uncompressed = Buffer.from(publicKeyBits).toString("hex");
+    const x = uncompressed.slice(2, 66); // 32 bytes = 64 hex chars
+    const y = uncompressed.slice(66, 130); // 32 bytes = 64 hex chars
+
+    // Extract UKM (User Keying Material)
+    const ukmValue = kari.ukm!.valueBlock.valueHexView;
+    const ukmHex = Buffer.from(ukmValue).toString("hex");
+    const ukmBase64 = Buffer.from(ukmValue).toString("base64");
+
+    // Extract recipient identifier and wrapped key
+    // pkijs structure: kari.recipientEncryptedKeys.encryptedKeys[0]
+    const recipientEncKeysObj = kari.recipientEncryptedKeys as any;
+    const recipientEncKey = recipientEncKeysObj.encryptedKeys[0];
+
+    // Get recipient identifier - could be IssuerAndSerialNumber or RecipientKeyIdentifier
+    let recipientIdInfo = "";
+    if (recipientEncKey.rid) {
+      const rid = recipientEncKey.rid;
+      if (rid.serialNumber) {
+        // IssuerAndSerialNumber
+        recipientIdInfo = Buffer.from(
+          rid.serialNumber.valueBlock.valueHexView,
+        ).toString("hex");
+      } else if (rid.subjectKeyIdentifier) {
+        // RecipientKeyIdentifier
+        recipientIdInfo = Buffer.from(
+          rid.subjectKeyIdentifier.valueBlock.valueHexView,
+        ).toString("hex");
+      }
+    }
+
+    // Wrapped key (encrypted CEK)
+    const wrappedKeyBytes = recipientEncKey.encryptedKey.valueBlock.valueHexView;
+    const wrappedKeyHex = Buffer.from(wrappedKeyBytes).toString("hex");
+    const wrappedKeyBase64 = Buffer.from(wrappedKeyBytes).toString("base64");
+
+    return {
+      _description:
+        "ECDH intermediate values for step-by-step verification. Use these to verify your ECDH key agreement and key derivation.",
+      ephemeralPublicKey: {
+        _description:
+          "Ephemeral public key generated for this encryption (P-256 uncompressed point)",
+        x,
+        y,
+        uncompressed,
+      },
+      ukm: {
+        _description:
+          "User Keying Material - random bytes used in key derivation function",
+        hex: ukmHex,
+        base64: ukmBase64,
+      },
+      recipientIdentifier: {
+        _description: "Identifies which recipient certificate this is encrypted for",
+        value: recipientIdInfo,
+      },
+      wrappedKey: {
+        _description:
+          "Content Encryption Key (CEK) wrapped with the derived Key Encryption Key (KEK) using AES-256 key wrap",
+        hex: wrappedKeyHex,
+        base64: wrappedKeyBase64,
+      },
+      contentEncryption: {
+        iv,
+        algorithm: "AES-256-CBC",
+      },
+    };
+  } else {
+    // RSA - KeyTransRecipientInfo (variant 1)
+    const ktri = recipientInfo.value as pkijs.KeyTransRecipientInfo;
+
+    // Extract recipient identifier (issuer and serial)
+    const rid = ktri.rid as pkijs.IssuerAndSerialNumber;
+    const issuer = rid.issuer;
+
+    // Get CN from issuer
+    let issuerCN = "";
+    for (const rdn of issuer.typesAndValues) {
+      if (rdn.type === "2.5.4.3") {
+        // commonName OID
+        issuerCN = rdn.value.valueBlock.value;
+        break;
+      }
+    }
+
+    const serialNumber = Buffer.from(
+      rid.serialNumber.valueBlock.valueHexView,
+    ).toString("hex");
+
+    // Encrypted key
+    const encryptedKeyBytes = ktri.encryptedKey.valueBlock.valueHexView;
+    const encryptedKeyHex = Buffer.from(encryptedKeyBytes).toString("hex");
+    const encryptedKeyBase64 = Buffer.from(encryptedKeyBytes).toString("base64");
+
+    return {
+      _description:
+        "RSA-OAEP intermediate values for step-by-step verification.",
+      recipientIdentifier: {
+        _description: "Identifies which recipient certificate this is encrypted for",
+        issuerCN,
+        serialNumber,
+      },
+      encryptedKey: {
+        _description:
+          "Content Encryption Key (CEK) encrypted with recipient's RSA public key using RSA-OAEP",
+        hex: encryptedKeyHex,
+        base64: encryptedKeyBase64,
+      },
+      contentEncryption: {
+        iv,
+        algorithm: "AES-256-CBC",
+      },
+    };
+  }
+}
+
+const TEST_EMAIL_DOMAIN = "atsms-test.example";
 
 async function generateParticipant(
   role: string,
@@ -59,10 +259,11 @@ async function generateParticipant(
   domain: string,
   algorithm: ATSMSCertificateAlgorithm,
 ): Promise<{ participant: ParticipantVectors; cert: ATSMSAnyEndpointCertificate }> {
-  const email = `${role}@atsms-test.example`;
-
   console.error(`Generating ${algorithm} certificate for ${role}...`);
-  const cert = await generateEndpointCertificate(algorithm, did, domain, email);
+  const cert = await generateEndpointCertificate(algorithm, did, domain, TEST_EMAIL_DOMAIN);
+
+  // Get the computed email from the certificate
+  const email = cert.email!;
 
   return {
     participant: {
@@ -117,6 +318,12 @@ async function generateCryptoVectors(
       ? "ECDH-ES with AES-256 key wrap"
       : "RSA-OAEP with SHA-256";
 
+  // Extract intermediate values for step-by-step verification
+  const intermediateValues = extractIntermediateValues(
+    encryptedMessage,
+    receiverAlgorithm,
+  );
+
   return {
     _comment: `Sender: ${senderAlgorithm}, Receiver: ${receiverAlgorithm}`,
     signedMessage: {
@@ -133,6 +340,7 @@ async function generateCryptoVectors(
       contentEncryptionAlgorithm: "AES-256-CBC",
       format: "PKCS#7 EnvelopedData (DER encoded)",
     },
+    intermediateValues,
   };
 }
 
@@ -303,12 +511,47 @@ async function generateTestVectors() {
         },
         messageEncryption: {
           keyEncryption: "ECDH-ES (Ephemeral-Static)",
-          keyDerivation: "HKDF with SHA-256",
-          keyWrap: "AES-256 key wrap",
+          keyDerivation: "dhSinglePass-stdDH-sha256kdf-scheme (RFC 5753)",
+          keyWrap: "AES-256 key wrap (RFC 3394)",
           contentEncryption: "AES-256-CBC",
           format: "PKCS#7 EnvelopedData (KeyAgreeRecipientInfo)",
         },
       },
+    },
+
+    ecdhKeyDerivation: {
+      _description:
+        "Step-by-step ECDH key derivation process for P-256 encryption (RFC 5753)",
+      steps: [
+        "1. Generate ephemeral P-256 key pair (d_e, Q_e) for this encryption",
+        "2. Generate random UKM (User Keying Material) - typically 64 bytes",
+        "3. Perform ECDH: SharedSecret = d_e * Q_recipient (recipient's public key)",
+        "4. Derive KEK using KDF: KEK = KDF(SharedSecret, keyEncryptionAlgorithm, ukm)",
+        "5. Generate random CEK (Content Encryption Key) for AES-256-CBC",
+        "6. Wrap CEK with KEK using AES-256 key wrap: WrappedCEK = AES-WRAP(KEK, CEK)",
+        "7. Encrypt content: Ciphertext = AES-256-CBC(CEK, IV, SignedMessage)",
+      ],
+      kdfDetails: {
+        algorithm: "dhSinglePass-stdDH-sha256kdf-scheme",
+        oid: "1.3.132.1.11.1",
+        input: "SharedInfo = AlgorithmIdentifier || [ukm]",
+        output: "256-bit KEK for AES key wrap",
+      },
+      cmsStructure: {
+        envelopedDataVersion: 2,
+        recipientInfoType: "KeyAgreeRecipientInfo [1]",
+        kariVersion: 3,
+        originatorType: "originatorKey [1] (ephemeral public key)",
+        ukmRequired: true,
+        recipientIdentifier: "issuerAndSerialNumber (SEQUENCE, no tag) - NOT rKeyId",
+      },
+      asn1Notes: [
+        "KeyAgreeRecipientInfo uses IMPLICIT [1] tag in RecipientInfo CHOICE",
+        "originatorKey uses IMPLICIT [1] tag - replaces OriginatorPublicKeyInfo SEQUENCE",
+        "ukm uses EXPLICIT [1] tag",
+        "For recipientIdentifier, use issuerAndSerialNumber (no tag), NOT rKeyId [0]",
+        "If using rKeyId [0], it must use IMPLICIT tagging (no SEQUENCE wrapper)",
+      ],
     },
 
     testCases: [

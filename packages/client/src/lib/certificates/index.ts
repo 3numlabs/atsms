@@ -79,10 +79,18 @@ export async function loadEndpointCertificateWithKey(
 
 /**
  * Generate an endpoint certificate with the specified algorithm
+ *
+ * SAN (Subject Alternative Name) format:
+ * - DNS: domain (e.g., 'alice.bsky.social')
+ * - URI: at://[did]/at.atsms.x509/[serial-hex] (AT Protocol URI)
+ * - Email: Deterministic based on DID method:
+ *   - PLC: plc.[plc-id]@[emailDomain]
+ *   - WEB: web.[base64url(web-part)]@[emailDomain]
+ *
  * @param algorithm - 'RSA' or 'P256'
  * @param did - Decentralized identifier
  * @param domain - Domain name / handle
- * @param email - Email address for certificate SAN
+ * @param emailDomain - Email provider domain for deterministic email (e.g., 'atsms.email')
  * @param validityDays - Certificate validity period (default: 10 years)
  * @returns The generated certificate
  */
@@ -90,18 +98,18 @@ export async function generateEndpointCertificate(
   algorithm: ATSMSCertificateAlgorithm,
   did: string,
   domain: string,
-  email: string,
+  emailDomain: string,
   validityDays = 3652,
 ): Promise<ATSMSAnyEndpointCertificate> {
   if (algorithm === "P256") {
     return ATSMSP256EndpointCertificate.generate(
       did,
       domain,
-      email,
+      emailDomain,
       validityDays,
     );
   }
-  return ATSMSEndpointCertificate.generate(did, domain, email, validityDays);
+  return ATSMSEndpointCertificate.generate(did, domain, emailDomain, validityDays);
 }
 
 /**

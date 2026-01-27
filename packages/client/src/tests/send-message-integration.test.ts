@@ -67,7 +67,7 @@ describe("Send Message Integration", () => {
       const clientResult = await generateTestEndpointCertificate(
         "did:plc:testuser123",
         "acme.xyz",
-        "test@acme.xyz",
+        "acme.xyz",
       );
       writeFileSync(clientCertPath, clientResult.cert, "utf8");
       writeFileSync(clientKeyPath, clientResult.privateKey, "utf8");

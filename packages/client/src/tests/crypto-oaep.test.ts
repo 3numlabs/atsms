@@ -13,7 +13,7 @@ describe("RSA-OAEP Encryption/Decryption", () => {
     const endpointCert = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     // Test message
@@ -48,12 +48,12 @@ describe("RSA-OAEP Encryption/Decryption", () => {
     const recipient1 = await ATSMSEndpointCertificate.generate(
       "did:test:recipient1",
       "recipient1.acme.xyz",
-      "recipient1@recipient1.acme.xyz",
+      "recipient1.acme.xyz",
     );
     const recipient2 = await ATSMSEndpointCertificate.generate(
       "did:test:recipient2",
       "recipient2.acme.xyz",
-      "recipient2@recipient2.acme.xyz",
+      "recipient2.acme.xyz",
     );
 
     // Test message
@@ -82,7 +82,7 @@ describe("RSA-OAEP Encryption/Decryption", () => {
     const clientCertWithKey = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     // Create certificate without private key (simulate external certificate)
@@ -109,12 +109,12 @@ describe("RSA-OAEP Encryption/Decryption", () => {
     const rightCert = await ATSMSEndpointCertificate.generate(
       "did:test:right",
       "right.acme.xyz",
-      "right@right.acme.xyz",
+      "right.acme.xyz",
     );
     const wrongCert = await ATSMSEndpointCertificate.generate(
       "did:test:wrong",
       "wrong.acme.xyz",
-      "wrong@wrong.acme.xyz",
+      "wrong.acme.xyz",
     );
 
     // Test message
@@ -137,7 +137,7 @@ describe("RSA-OAEP Encryption/Decryption", () => {
     const endpointCert = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     // Create a large message (but within RSA limits)
@@ -162,7 +162,7 @@ describe("RSA-OAEP Encryption/Decryption", () => {
     const endpointCert = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     // Create binary data
@@ -185,7 +185,7 @@ describe("RSA-OAEP Encryption/Decryption", () => {
     const endpointCert = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     // Empty message
@@ -218,7 +218,7 @@ describe("RSA-OAEP Encryption/Decryption", () => {
       const endpointCert = await ATSMSEndpointCertificate.generate(
         "did:test:123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
 
       const testMessage = new TextEncoder().encode("Same message");
@@ -243,7 +243,7 @@ describe("RSA-OAEP Encryption/Decryption", () => {
       const clientCertWithKey = await ATSMSEndpointCertificate.generate(
         "did:test:123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
 
       // Create certificate without private key (only public cert needed for encryption)
@@ -273,12 +273,12 @@ describe("RSA-OAEP Encryption/Decryption", () => {
       const cert1WithKey = await ATSMSEndpointCertificate.generate(
         "did:test:one",
         "one.acme.xyz",
-        "one@one.acme.xyz",
+        "one.acme.xyz",
       );
       const cert2WithKey = await ATSMSEndpointCertificate.generate(
         "did:test:two",
         "two.acme.xyz",
-        "two@two.acme.xyz",
+        "two.acme.xyz",
       );
 
       // Create one without private key

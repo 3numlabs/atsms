@@ -20,7 +20,7 @@ describe("P-256 ECDH Encryption/Decryption", () => {
     const endpointCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     const testMessage =
@@ -47,12 +47,12 @@ describe("P-256 ECDH Encryption/Decryption", () => {
     const recipient1 = await ATSMSP256EndpointCertificate.generate(
       "did:test:recipient1",
       "recipient1.acme.xyz",
-      "recipient1@recipient1.acme.xyz",
+      "recipient1.acme.xyz",
     );
     const recipient2 = await ATSMSP256EndpointCertificate.generate(
       "did:test:recipient2",
       "recipient2.acme.xyz",
-      "recipient2@recipient2.acme.xyz",
+      "recipient2.acme.xyz",
     );
 
     const testMessage = "Multi-recipient P-256 test message";
@@ -74,7 +74,7 @@ describe("P-256 ECDH Encryption/Decryption", () => {
     const certWithKey = await ATSMSP256EndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     const certNoKey = ATSMSP256EndpointCertificate.fromPEM(
@@ -97,12 +97,12 @@ describe("P-256 ECDH Encryption/Decryption", () => {
     const rightCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:right",
       "right.acme.xyz",
-      "right@right.acme.xyz",
+      "right.acme.xyz",
     );
     const wrongCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:wrong",
       "wrong.acme.xyz",
-      "wrong@wrong.acme.xyz",
+      "wrong.acme.xyz",
     );
 
     const testMessage = "Secret message";
@@ -121,7 +121,7 @@ describe("P-256 ECDH Encryption/Decryption", () => {
     const endpointCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     const binaryData = new Uint8Array([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd]);
@@ -141,7 +141,7 @@ describe("P-256 ECDH Encryption/Decryption", () => {
     const endpointCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     const emptyMessage = new Uint8Array(0);
@@ -161,7 +161,7 @@ describe("P-256 ECDH Encryption/Decryption", () => {
     const endpointCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     const testMessage = new TextEncoder().encode("Same message");
@@ -184,12 +184,12 @@ describe("Mixed RSA and P-256 Encryption", () => {
     const rsaCert = await ATSMSEndpointCertificate.generate(
       "did:test:rsa",
       "rsa.acme.xyz",
-      "rsa@rsa.acme.xyz",
+      "rsa.acme.xyz",
     );
     const p256Cert = await ATSMSP256EndpointCertificate.generate(
       "did:test:p256",
       "p256.acme.xyz",
-      "p256@p256.acme.xyz",
+      "p256.acme.xyz",
     );
 
     const testMessage = "Mixed RSA and P-256 recipients";
@@ -213,7 +213,7 @@ describe("Mixed RSA and P-256 Encryption", () => {
     const certWithKey = await ATSMSP256EndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
-      "test@test.acme.xyz",
+      "test.acme.xyz",
     );
 
     const certNoKey = ATSMSP256EndpointCertificate.fromPEM(
@@ -240,12 +240,12 @@ describe("P-256 Signing and Encryption Full Flow", () => {
     const senderCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:sender",
       "sender.acme.xyz",
-      "sender@sender.acme.xyz",
+      "sender.acme.xyz",
     );
     const recipientCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:recipient",
       "recipient.acme.xyz",
-      "recipient@recipient.acme.xyz",
+      "recipient.acme.xyz",
     );
 
     const message = "Hello from P-256 sender!";
@@ -275,12 +275,12 @@ describe("P-256 Signing and Encryption Full Flow", () => {
     const senderCert = await ATSMSEndpointCertificate.generate(
       "did:test:sender",
       "sender.acme.xyz",
-      "sender@sender.acme.xyz",
+      "sender.acme.xyz",
     );
     const recipientCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:recipient",
       "recipient.acme.xyz",
-      "recipient@recipient.acme.xyz",
+      "recipient.acme.xyz",
     );
 
     const message = "Hello from RSA sender to P-256 recipient!";
@@ -302,12 +302,12 @@ describe("P-256 Signing and Encryption Full Flow", () => {
     const senderCert = await ATSMSP256EndpointCertificate.generate(
       "did:test:sender",
       "sender.acme.xyz",
-      "sender@sender.acme.xyz",
+      "sender.acme.xyz",
     );
     const recipientCert = await ATSMSEndpointCertificate.generate(
       "did:test:recipient",
       "recipient.acme.xyz",
-      "recipient@recipient.acme.xyz",
+      "recipient.acme.xyz",
     );
 
     const message = "Hello from P-256 sender to RSA recipient!";
@@ -329,17 +329,17 @@ describe("P-256 Signing and Encryption Full Flow", () => {
     const senderCert = await ATSMSEndpointCertificate.generate(
       "did:test:sender",
       "sender.acme.xyz",
-      "sender@sender.acme.xyz",
+      "sender.acme.xyz",
     );
     const rsaRecipient = await ATSMSEndpointCertificate.generate(
       "did:test:rsa-recipient",
       "rsa-recipient.acme.xyz",
-      "rsa@recipient.acme.xyz",
+      "rsa.recipient.acme.xyz",
     );
     const p256Recipient = await ATSMSP256EndpointCertificate.generate(
       "did:test:p256-recipient",
       "p256-recipient.acme.xyz",
-      "p256@recipient.acme.xyz",
+      "p256.recipient.acme.xyz",
     );
 
     const message = "Hello to both RSA and P-256 recipients!";

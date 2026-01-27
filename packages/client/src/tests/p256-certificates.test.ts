@@ -21,7 +21,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const endpointCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
 
       expect(endpointCert.getType()).toBe("endpoint");
@@ -31,7 +31,8 @@ describe("P-256 ECDSA Certificate Classes", () => {
       expect(endpointCert.hasPrivateKey()).toBe(true);
       expect(endpointCert.isValid()).toBe(true);
       expect(endpointCert.did).toBe("did:plc:test123");
-      expect(endpointCert.email).toBe("test@test.acme.xyz");
+      // Email is deterministically computed as plc.[plc-id]@[emailDomain]
+      expect(endpointCert.email).toBe("plc.test123@test.acme.xyz");
 
       const certPEM = endpointCert.certificatePEM;
       const privateKeyPEM = endpointCert.certificatePrivateKeyPEM!;
@@ -44,7 +45,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const originalCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
 
       const certPEM = originalCert.certificatePEM;
@@ -66,12 +67,12 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const cert1 = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
       const cert2 = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test456",
         "test2.acme.xyz",
-        "test2@test2.acme.xyz",
+        "test2.acme.xyz",
       );
 
       await expect(
@@ -88,7 +89,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const originalCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:client123",
         "client.acme.xyz",
-        "client@client.acme.xyz",
+        "client.acme.xyz",
       );
 
       const certPEM = originalCert.certificatePEM;
@@ -111,7 +112,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
         ATSMSP256EndpointCertificate.generate(
           "did:plc:test",
           "test.com",
-          "test@example.com",
+          "example.com",
           "test.com" as any,
         ),
       ).rejects.toThrow("Invalid validityDays");
@@ -122,28 +123,38 @@ describe("P-256 ECDSA Certificate Classes", () => {
         ATSMSP256EndpointCertificate.generate(
           "not-a-did",
           "test.com",
-          "test@example.com",
+          "example.com",
           365,
         ),
       ).rejects.toThrow("Invalid DID");
     });
 
-    it("should reject invalid email", async () => {
+    it("should reject empty emailDomain", async () => {
       await expect(
         ATSMSP256EndpointCertificate.generate(
           "did:plc:test",
           "test.com",
-          "invalidemail.com",
+          "",
           365,
         ),
-      ).rejects.toThrow("Invalid email");
+      ).rejects.toThrow("Invalid emailDomain");
+    });
+
+    it("should accept valid emailDomain", async () => {
+      const cert = await ATSMSP256EndpointCertificate.generate(
+        "did:plc:test",
+        "test.com",
+        "atsms.email",
+        365,
+      );
+      expect(cert.email).toBe("plc.test@atsms.email");
     });
 
     it("should generate valid certificate with correct expiration", async () => {
       const endpointCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
         365,
       );
 
@@ -162,7 +173,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const endpointCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       const publicKey = await endpointCert.getPublicKeyForEncryption();
@@ -174,7 +185,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const endpointCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       const privateKey = await endpointCert.getPrivateKeyForDecryption();
@@ -186,7 +197,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const originalCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       const certPEM = originalCert.certificatePEM;
@@ -203,7 +214,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const p256Cert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       const algorithm = detectCertificateAlgorithm(p256Cert.certificatePEM);
@@ -214,7 +225,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const rsaCert = await ATSMSEndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       const algorithm = detectCertificateAlgorithm(rsaCert.certificatePEM);
@@ -225,7 +236,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const originalCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       const loadedCert = loadEndpointCertificate(originalCert.certificatePEM);
@@ -238,7 +249,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const originalCert = await ATSMSEndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       const loadedCert = loadEndpointCertificate(originalCert.certificatePEM);
@@ -251,7 +262,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const originalCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       const loadedCert = await loadEndpointCertificateWithKey(
@@ -266,7 +277,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const originalCert = await ATSMSEndpointCertificate.generate(
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       const loadedCert = await loadEndpointCertificateWithKey(
@@ -282,11 +293,13 @@ describe("P-256 ECDSA Certificate Classes", () => {
         "P256",
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       expect(cert).toBeInstanceOf(ATSMSP256EndpointCertificate);
       expect(isP256Certificate(cert)).toBe(true);
+      // Verify deterministic email format
+      expect(cert.email).toBe("plc.test@example.com");
     });
 
     it("should generate RSA certificate using generateEndpointCertificate", async () => {
@@ -294,11 +307,13 @@ describe("P-256 ECDSA Certificate Classes", () => {
         "RSA",
         "did:plc:test",
         "test.com",
-        "test@example.com",
+        "example.com",
       );
 
       expect(cert).toBeInstanceOf(ATSMSEndpointCertificate);
       expect(isRSACertificate(cert)).toBe(true);
+      // Verify deterministic email format
+      expect(cert.email).toBe("plc.test@example.com");
     });
   });
 
@@ -307,7 +322,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const endpointCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
 
       expect(endpointCert.isSimpleSelfSigned()).toBe(true);
@@ -319,7 +334,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const endpointCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
 
       expect(endpointCert.isCA).toBe(false);
@@ -329,7 +344,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const endpointCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
 
       const isValid = await endpointCert.verifySelfSignature();
@@ -340,7 +355,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const originalCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
 
       const certPEM = originalCert.toString("pem");
@@ -363,7 +378,7 @@ describe("P-256 ECDSA Certificate Classes", () => {
       const endpointCert = await ATSMSP256EndpointCertificate.generate(
         "did:plc:test123",
         "test.acme.xyz",
-        "test@test.acme.xyz",
+        "test.acme.xyz",
       );
 
       expect(endpointCert.isExpired()).toBe(false);

@@ -85,7 +85,7 @@ class ATSMSCLITool {
     password: string | null,
     endpointCertPath: string,
     endpointKeyPath: string,
-    email: string,
+    emailDomain: string,
     publishToPDS: boolean,
     algorithm: ATSMSCertificateAlgorithm = "P256",
   ): Promise<void> {
@@ -112,7 +112,7 @@ class ATSMSCLITool {
       algorithm,
       did,
       handle,
-      email,
+      emailDomain,
     );
     const endpointCertPEM = endpointCert.certificatePEM;
     const endpointKeyPEM = endpointCert.certificatePrivateKeyPEM!;
@@ -690,7 +690,7 @@ Options (varies by command):
     --handle <handle>           User handle (required)
     --endpoint-cert <path>      Output path for endpoint certificate (required)
     --endpoint-key <path>       Output path for endpoint key (required)
-    --email <email>             Email for certificate (required)
+    --email-domain <domain>     Email domain for certificate (e.g., 'atsms.email') (required)
     --algorithm <p256|rsa>      Certificate algorithm (default: p256)
     --password <password>       PDS password (optional, prompts if not provided)
     --publish-to-pds            Publish certificate to PDS (requires --password)
@@ -752,15 +752,15 @@ Global Options:
 Examples:
   # Generate P-256 certificate (default, no PDS)
   bun atsms.ts init --handle aib0b.bsky.social \\
-    --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email alice@example.com
+    --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email-domain atsms.email
 
   # Generate RSA certificate (legacy)
   bun atsms.ts init --handle aib0b.bsky.social \\
-    --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email alice@example.com --algorithm rsa
+    --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email-domain atsms.email --algorithm rsa
 
   # Generate and publish to PDS
   bun atsms.ts init --handle aib0b.bsky.social \\
-    --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email alice@example.com --publish-to-pds
+    --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email-domain atsms.email --publish-to-pds
 
   # Send message
   bun atsms.ts send --handle aib0b.bsky.social --sender-cert ./endpoint.pem --sender-key ./endpoint-key.pem \\
@@ -801,13 +801,13 @@ Examples:
         const handle = parsedArgs["handle"] as string;
         const endpointCert = parsedArgs["endpoint-cert"] as string;
         const endpointKey = parsedArgs["endpoint-key"] as string;
-        const email = parsedArgs["email"] as string;
+        const emailDomain = parsedArgs["email-domain"] as string;
         const publishToPDS = parsedArgs["publish-to-pds"] as boolean;
         const algorithmArg = (parsedArgs["algorithm"] as string)?.toLowerCase();
 
-        if (!handle || !endpointCert || !endpointKey || !email) {
+        if (!handle || !endpointCert || !endpointKey || !emailDomain) {
           throw new Error(
-            "Missing required arguments: --handle, --endpoint-cert, --endpoint-key, --email",
+            "Missing required arguments: --handle, --endpoint-cert, --endpoint-key, --email-domain",
           );
         }
 
@@ -835,7 +835,7 @@ Examples:
           password,
           endpointCert,
           endpointKey,
-          email,
+          emailDomain,
           publishToPDS,
           algorithm,
         );
