@@ -7,6 +7,7 @@
 import { nanoid } from "nanoid";
 
 import { ATSMSEndpointCertificate } from "./certificates/index";
+import { cryptoProvider } from "./crypto-provider";
 import { encryptMessage, signMessage } from "./crypto";
 import {
   type ATProtoFacet,
@@ -14,6 +15,37 @@ import {
   type ATSMSTextContent,
   type ATSMSWebRTCContent,
 } from "./types";
+
+/**
+ * Generate deterministic conversation ID for 1:1 DMs.
+ * Both parties will compute the same ID given the same DIDs,
+ * preventing duplicate conversations between the same two users.
+ *
+ * @param did1 - First participant DID
+ * @param did2 - Second participant DID
+ * @returns Deterministic convoId with "dm_" prefix
+ */
+export async function generateDMConvoId(
+  did1: string,
+  did2: string,
+): Promise<string> {
+  const sortedDids = [did1, did2].sort().join(",");
+  const encoder = new TextEncoder();
+  const data = encoder.encode(sortedDids);
+  const hashBuffer = await cryptoProvider.subtle.digest("SHA-256", data);
+  const hashArray = new Uint8Array(hashBuffer);
+  const hashHex = Array.from(hashArray)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `dm_${hashHex.substring(0, 16)}`;
+}
+
+/**
+ * Check if a conversation ID is a deterministic DM ID
+ */
+export function isDMConvoId(convoId: string): boolean {
+  return convoId.startsWith("dm_");
+}
 
 /**
  * Helper: Create content for "atsms/text" message

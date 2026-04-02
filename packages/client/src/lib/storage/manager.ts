@@ -19,7 +19,11 @@ import {
   signMessage,
 } from "../crypto";
 import { generateJWT } from "../jwt-auth";
-import { createTextContent, createWebRTCContent } from "../messages";
+import {
+  createTextContent,
+  createWebRTCContent,
+  generateDMConvoId,
+} from "../messages";
 import { ATSMSTransportLayer } from "../transport-layer";
 import type {
   ATSMSMessagePayload,
@@ -273,8 +277,12 @@ export class ATSMSStorageManager {
       return conversation;
     }
 
-    // Create new conversation with random ID
-    const convoId = nanoid(13);
+    // For 1:1 DMs, use deterministic convoId; random for groups
+    const convoId =
+      participantDids.length === 2
+        ? await generateDMConvoId(participantDids[0], participantDids[1])
+        : nanoid(13);
+
     conversation = {
       id: convoId,
       participantIds: participantDids,
@@ -329,11 +337,24 @@ export class ATSMSStorageManager {
     endpointCert: ATSMSEndpointCertificate,
     metadata?: { title?: string },
   ): Promise<string> {
-    // Generate conversation and message IDs
-    const convoId = nanoid(13);
     const messageId = nanoid(13);
     const now = new Date();
     const activeDid = await this.getActiveDid();
+
+    // For 1:1 DMs, use deterministic convoId to prevent duplicates
+    let convoId: string;
+    if (recipientDIDs.length === 1) {
+      convoId = await generateDMConvoId(activeDid, recipientDIDs[0]);
+
+      // Check if conversation already exists — send message there instead
+      const existing = await this.storage.getConversation(convoId);
+      if (existing) {
+        await this.sendMessage(convoId, content, endpointCert);
+        return convoId;
+      }
+    } else {
+      convoId = nanoid(13);
+    }
 
     // Validate and collect recipient certificates
     const participantDids: string[] = [activeDid];
@@ -775,32 +796,61 @@ export class ATSMSStorageManager {
       new Set([validatedData.senderId, ...validatedData.recipientIds]),
     );
 
-    let conversation = await this.storage.getConversation(
-      validatedData.convoId,
-    );
+    let conversation: LocalConversation | null = null;
+    let effectiveConvoId: string;
 
-    if (!conversation) {
-      // Create new conversation
-      conversation = {
-        id: validatedData.convoId,
-        participantIds,
-        createdAt: new Date(validatedData.createdAt),
-        acceptedAt:
-          validatedData.senderId === activeDid
-            ? new Date(validatedData.createdAt)
-            : undefined,
-        lastMessageAt: new Date(validatedData.createdAt),
-        unreadCount: validatedData.senderId !== activeDid ? 1 : 0,
-      };
+    // For 1:1 DMs, compute deterministic convoId
+    if (participantIds.length === 2) {
+      effectiveConvoId = await generateDMConvoId(
+        participantIds[0],
+        participantIds[1],
+      );
 
-      await this.storage.saveConversation(conversation);
-      this.conversationUpdatedSubject.next(validatedData.convoId);
+      conversation = await this.storage.getConversation(effectiveConvoId);
+
+      if (!conversation) {
+        conversation = {
+          id: effectiveConvoId,
+          participantIds,
+          createdAt: new Date(validatedData.createdAt),
+          acceptedAt:
+            validatedData.senderId === activeDid
+              ? new Date(validatedData.createdAt)
+              : undefined,
+          lastMessageAt: new Date(validatedData.createdAt),
+          unreadCount: validatedData.senderId !== activeDid ? 1 : 0,
+        };
+
+        await this.storage.saveConversation(conversation);
+        this.conversationUpdatedSubject.next(effectiveConvoId);
+      }
+    } else {
+      // Group chat: use the sender's convoId (existing behavior)
+      effectiveConvoId = validatedData.convoId;
+      conversation = await this.storage.getConversation(effectiveConvoId);
+
+      if (!conversation) {
+        conversation = {
+          id: effectiveConvoId,
+          participantIds,
+          createdAt: new Date(validatedData.createdAt),
+          acceptedAt:
+            validatedData.senderId === activeDid
+              ? new Date(validatedData.createdAt)
+              : undefined,
+          lastMessageAt: new Date(validatedData.createdAt),
+          unreadCount: validatedData.senderId !== activeDid ? 1 : 0,
+        };
+
+        await this.storage.saveConversation(conversation);
+        this.conversationUpdatedSubject.next(effectiveConvoId);
+      }
     }
 
-    // 6. Save message to database
+    // 6. Save message to database (using effective convoId, not sender's)
     const localMessage: LocalMessage = {
       id: transportMessage.id,
-      convoId: validatedData.convoId,
+      convoId: effectiveConvoId,
       senderId: validatedData.senderId,
       recipientIds: validatedData.recipientIds,
       content: validatedData.content,
@@ -813,11 +863,11 @@ export class ATSMSStorageManager {
 
     // 7. Update conversation
     if (validatedData.senderId !== activeDid) {
-      await this.storage.updateConversation(validatedData.convoId, {
+      await this.storage.updateConversation(effectiveConvoId, {
         lastMessageAt: localMessage.createdAt,
         unreadCount: (conversation.unreadCount || 0) + 1,
       });
-      this.conversationUpdatedSubject.next(validatedData.convoId);
+      this.conversationUpdatedSubject.next(effectiveConvoId);
     }
 
     // 8. Notify observers
@@ -825,7 +875,7 @@ export class ATSMSStorageManager {
 
     return {
       messageId: transportMessage.id,
-      convoId: validatedData.convoId,
+      convoId: effectiveConvoId,
       isNew: true,
     };
   }
@@ -1028,6 +1078,7 @@ export class ATSMSStorageManager {
   async clearAll(): Promise<void> {
     await this.storage.clearAll();
   }
+
 
   // Certificate management
   private async getCachedOrFetchCertificatesForDID(
