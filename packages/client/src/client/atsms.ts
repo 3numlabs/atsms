@@ -251,10 +251,11 @@ class ATSMSCLITool {
 
     // List messages
     console.log("Fetching messages...");
-    const messageList = await this.atsmsApiClient.listMessages(
+    const listResponse = await this.atsmsApiClient.listMessages(
       this.did,
       endpointCert.serialNumber,
     );
+    const messageList = listResponse.messages;
 
     if (messageList.length === 0) {
       console.log("No messages found");
@@ -365,11 +366,13 @@ class ATSMSCLITool {
 
     // List messages
     console.log("Fetching message list...");
-    const messages = await this.atsmsApiClient.listMessages(
+    const response = await this.atsmsApiClient.listMessages(
       this.did,
       endpointCert.serialNumber,
       afterSeq,
     );
+
+    const messages = response.messages;
 
     if (messages.length === 0) {
       console.log("No messages found");
