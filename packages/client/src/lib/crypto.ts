@@ -202,23 +202,23 @@ export async function decryptAndVerifyMessageSignature(
       throw new Error("No content found in SignedData");
     }
 
-    // ==========================================================================
-    // TODO [SECURITY]: Implement cryptographic signature verification.
-    //
-    // Currently we trust the message if decryption succeeds, but we do NOT
-    // verify the PKCS#7 SignedData signature against the signer's public key.
-    // Without this step, a man-in-the-middle who can inject messages into the
-    // inbox could forge the signer identity — the signer certificate embedded
-    // in the message is taken at face value.
-    //
-    // To close this gap:
-    //   1. Call cmsSignedData.verify() with the signer's public key
-    //   2. Cross-check the signer's certificate against the PDS record
-    //      (fetch the cert from at.atsms.x509 for the claimed DID and compare
-    //      fingerprints) to prevent substitution of a different valid cert.
-    //
-    // This is a prerequisite for any production deployment.
-    // ==========================================================================
+    // Step 3: Verify the PKCS#7 signature against the embedded signer certificate
+    const signatureValid = await cmsSignedData.verify({
+      signer: 0,
+      checkChain: false, // Self-signed certs — no chain to check
+    });
+
+    if (!signatureValid) {
+      throw new Error(
+        "Signature verification failed: the message signature does not match the signer's certificate",
+      );
+    }
+
+    // NOTE: This verifies the signature is mathematically valid against the
+    // certificate embedded in the message. It does NOT verify that the
+    // certificate itself is the one published in the signer's PDS record.
+    // Callers that need to confirm sender identity should cross-check the
+    // signer's certificate fingerprint against the PDS (at.atsms.x509).
 
     return {
       messageSigner: endpointCert,

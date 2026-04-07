@@ -103,7 +103,7 @@ bun run chat
 **Cryptographic Operations** (`src/lib/crypto.ts`, `src/lib/crypto-oaep.ts`):
 - `encryptMessage()`: CMS EnvelopedData encryption using ECDH (KeyAgreeRecipientInfo) for multiple recipients
 - `signMessage()`: PKCS#7 signed-data with P-256 ECDSA
-- `decryptAndVerifyMessageSignature()`: Decrypt and extract signer cert (NOTE: signature verification not yet implemented - see TODO in crypto.ts)
+- `decryptAndVerifyMessageSignature()`: Decrypt, verify PKCS#7 signature, and extract signer cert. Throws if signature is invalid.
 - Uses ECDH with P-256 for key agreement, AES-256-CBC for content encryption
 - Custom crypto provider system for browser/Node compatibility
 
@@ -394,7 +394,7 @@ bun test src/tests/atsms-client-integration.test.ts
 
 - **Crypto provider must be set early**: Call `setCryptoProvider()` before any crypto operations in browser environments
 - **Certificate validation**: Endpoint certificates are self-signed; verify signature using the certificate's own public key
-- **Signature verification TODO**: `decryptAndVerifyMessageSignature()` in `crypto.ts` does NOT verify the PKCS#7 signature — it trusts decryption success. This is a known security gap marked with a prominent TODO. Production deployment requires implementing signature verification and cross-checking against PDS records.
+- **Signature verification**: `decryptAndVerifyMessageSignature()` verifies the PKCS#7 signature against the embedded signer certificate and throws if invalid. Note: this confirms the signature is mathematically valid but does NOT cross-check the certificate against the signer's PDS record — callers that need sender identity confirmation should compare fingerprints against `at.atsms.x509`.
 - **Error handling**: Certificate operations return `null` for missing/invalid certs (not exceptions)
 - **Platform detection**: Use `typeof window !== 'undefined'` for browser detection
 - **Private key security**: Never serialize or transmit private keys; keep them in local storage only

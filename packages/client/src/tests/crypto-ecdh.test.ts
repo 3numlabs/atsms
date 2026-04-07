@@ -363,4 +363,38 @@ describe("P-256 Signing and Encryption Full Flow", () => {
     expect(p256Result.messageSigner.commonName).toBe("did:test:sender");
     expect(new TextDecoder().decode(p256Result.decryptedContent)).toBe(message);
   });
+
+  test("should reject message with tampered signed content", async () => {
+    const senderCert = await ATSMSEndpointCertificate.generate(
+      "did:test:sender",
+      "sender.acme.xyz",
+      "sender.acme.xyz",
+    );
+    const recipientCert = await ATSMSEndpointCertificate.generate(
+      "did:test:recipient",
+      "recipient.acme.xyz",
+      "recipient.acme.xyz",
+    );
+
+    // Sign a message normally
+    const signedContent = await signMessage(
+      "Original message",
+      senderCert,
+    );
+
+    // Tamper with the signed content by flipping bytes near the end
+    // (the content portion of the SignedData)
+    const tampered = new Uint8Array(signedContent);
+    const offset = tampered.length - 20;
+    tampered[offset] ^= 0xff;
+    tampered[offset + 1] ^= 0xff;
+
+    // Encrypt the tampered signed content for the recipient
+    const encryptedContent = await encryptMessage(tampered, [recipientCert]);
+
+    // Decryption should succeed but signature verification should fail
+    await expect(
+      decryptAndVerifyMessageSignature(encryptedContent, recipientCert),
+    ).rejects.toThrow();
+  });
 });
