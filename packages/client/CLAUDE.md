@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AT-SMS (AT Protocol Secure Messaging Service) is a TypeScript library for end-to-end encrypted messaging on top of the AT Protocol (Bluesky). The library supports both Node.js and browser environments. The primary purpose of of src/client/atsms-chat.ts and src/client/atsms.ts is to test the library via a command line utility, neither intended to be production client.
+AT-SMS (AT Protocol Secure Messaging Service) is a TypeScript library for end-to-end encrypted messaging on top of the AT Protocol (Bluesky). The library supports both Node.js and browser environments. The primary purpose of src/client/atsms-chat.ts and src/client/atsms.ts is to test the library via a command line utility, neither intended to be production client.
 
 **Key technologies:**
 - AT Protocol for decentralized identity (DIDs) and certificate storage in the PDS
-- X.509 self-signed RSA certificates for per-device endpoint identity and key management
+- X.509 self-signed P-256 ECDSA certificates for per-device endpoint identity and key management
 - S/MIME (PKCS#7) for message encryption/signing as a base level of encryption support
 - WebCrypto API for cross-platform cryptography
-- RSA-PSS with SHA-256 for certificate signing
+- ECDSA with SHA-256 for certificate signing, ECDH for key agreement
 
 ## Common Commands
 
@@ -63,15 +63,17 @@ The project includes three CLI tools for different purposes:
 
 ```bash
 # 1. atsms.ts - Stateless testing & artifact generation
-bun src/client/atsms.ts init --handle alice.bsky.social --endpoint-cert ./client.pem --endpoint-key ./client-key.pem --email alice@example.com
+bun src/client/atsms.ts init --handle alice.bsky.social --endpoint-cert ./client.pem --endpoint-key ./client-key.pem --email-domain atsms.email
 bun src/client/atsms.ts send --handle alice.bsky.social --sender-cert ./client.pem --sender-key ./client-key.pem --recipient bob.bsky.social --message "Hello"
-bun src/client/atsms.ts receive --handle alice.bsky.social --endpoint-cert ./client.pem --endpoint-key ./client-key.pem --output-dir ./messages
+bun src/client/atsms.ts send-email --handle alice.bsky.social --recipient bob.bsky.social --subject "Hello" --message "Hi Bob"
+bun src/client/atsms.ts receive --handle alice.bsky.social --endpoint-cert ./client.pem --endpoint-key ./client-key.pem --type atsms
+bun src/client/atsms.ts list --handle alice.bsky.social --endpoint-cert ./client.pem --endpoint-key ./client-key.pem --type all
 
 # 2. api-client.ts - Lightweight API testing with cached credentials
 bun src/client/api-client.ts list alice.bsky.social
 bun src/client/api-client.ts watch alice.bsky.social  # WebSocket real-time monitoring
 bun src/client/api-client.ts stats alice.bsky.social
-bun src/client/api-client.ts send alice.bsky.social ./message.p7m did:plc:abc:4d18ac7f:user@example.com  # NEW: Send via WebSocket
+bun src/client/api-client.ts send alice.bsky.social ./message.p7m did:plc:abc:4d18ac7f:user@example.com  # Send via WebSocket
 
 # 3. atsms-chat.ts - Interactive chat with persistent storage
 bun src/client/atsms-chat.ts alice.bsky.social
@@ -83,23 +85,26 @@ bun run chat
 ### Core Components
 
 **Certificate System** (`src/lib/certificates/`):
-- `ATSMSEndpointCertificate`: Self-signed RSA-2048 per-device endpoint identity, used for message encryption and API authentication
+- `ATSMSEndpointCertificate`: Self-signed P-256 ECDSA per-device endpoint identity, used for message encryption (ECDH) and API authentication (JWT signing)
   - Subject and Issuer: `CN=<did>` (self-signed)
-  - Signature: RSA-PSS with SHA-256
-  - Extensions: BasicConstraints (CA=false), KeyUsage, ExtendedKeyUsage, SubjectAltName
+  - Signature: ECDSA with SHA-256
+  - Key Usage: digitalSignature, keyAgreement (for ECDH)
+  - Extended Key Usage: serverAuth, clientAuth (future TLS), emailProtection (S/MIME)
+  - Extensions: BasicConstraints (CA=false), SubjectAltName (DNS, URI, Email)
 - `ATSMSCertificate`: Base abstract class with X.509 operations
-  - `.did` getter: Extracts DID from Subject Alternative Name (SAN) extension
+  - `.did` getter: Extracts DID from Subject Alternative Name (SAN) URI field
   - `.email` getter: Extracts email from SAN extension (RFC822 name)
   - `.serialNumber` getter: Returns certificate serial number
 - All certificates stored in AT Protocol records (`at.atsms.x509` collection)
 - Private keys ONLY stored locally, never in PDS
-- **Method signature**: `ATSMSEndpointCertificate.generate(did, domain, email, validityDays?)` - creates self-signed certificate
+- **Method signature**: `ATSMSEndpointCertificate.generate(did, domain, emailDomain, validityDays?)` - creates self-signed P-256 certificate
+- **Factory functions**: `generateEndpointCertificate(did, domain, emailDomain, validityDays?)`, `loadEndpointCertificate(certPEM)`, `loadEndpointCertificateWithKey(certPEM, keyPEM)`
 
 **Cryptographic Operations** (`src/lib/crypto.ts`, `src/lib/crypto-oaep.ts`):
-- `encryptMessage()`: PKCS#7 enveloped-data encryption for multiple recipients (each device cert for the user DID)
-- `signMessage()`: PKCS#7 signed-data with detached signature
-- `decryptAndVerifyMessageSignature()`: Decrypt and verify in one operation
-- Uses RSA-OAEP for key encryption, AES-256-CBC for content encryption
+- `encryptMessage()`: CMS EnvelopedData encryption using ECDH (KeyAgreeRecipientInfo) for multiple recipients
+- `signMessage()`: PKCS#7 signed-data with P-256 ECDSA
+- `decryptAndVerifyMessageSignature()`: Decrypt and extract signer cert (NOTE: signature verification not yet implemented - see TODO in crypto.ts)
+- Uses ECDH with P-256 for key agreement, AES-256-CBC for content encryption
 - Custom crypto provider system for browser/Node compatibility
 
 **Storage System** (`src/lib/storage/`):
@@ -111,14 +116,18 @@ bun run chat
 **API Client** (`src/lib/atsms-api.ts`):
 - `ATSMSApiClient`: REST API client for AT-SMS inbox service
 - Handles message transport, listing, and retrieval
+- Supports three message types: `atsms`, `atsms-email`, `email`
+- `sendMessage(did, encryptedContent, messageType?)`: Send atsms or atsms-email via HTTP
+- `sendEmail({did, subject, textBody, ...})`: Send plain email via HTTP
+- `listMessages(did, certSerial, after?, limit?, messageType?)`: List with type filter
 - AT-SMS API JWT authentication (see "JWT Authentication" section)
 
 **WebSocket Client** (`src/lib/websocket-client.ts`):
 - Real-time message notifications
-- AT-SMS API JWT authentication: headers (Node.js) vs post-connection (browser) - see "JWT Authentication" section
+- AT-SMS API JWT authentication: post-connection auth message (browser compatible)
 - Auto-reconnection with exponential backoff
-- Request/response pattern for API operations (list, get, delete, stats, **send**)
-- **NEW**: WebSocket send command for multi-recipient message delivery
+- Request/response pattern for API operations (list, get, delete, stats, send)
+- WebSocket send command for multi-recipient message delivery
 
 **Message Handling** (`src/lib/messages.ts`):
 - `createMessagePayload()`: Create structured message payload with `content` (JSON string) and `contentType` (MIME type)
@@ -127,29 +136,45 @@ bun run chat
 - `prepareMessageForSending()`: Sign + encrypt pipeline
 - `extractP7MFromEmail()`: Parse S/MIME MIME messages
 
+### Message Types
+
+The inbox service supports three message types, all stored in per-certificate inboxes:
+
+- **`atsms`** — AT-SMS P7M encrypted payloads (opaque blob). Default type.
+- **`atsms-email`** — S/MIME encrypted email (enveloped-data, opaque blob — metadata inside encrypted payload)
+- **`email`** — Normal parsed email with subject, body, attachments, and optional S/MIME verification
+
+Types defined as `ATSMSMessageType = "atsms" | "atsms-email" | "email"` in `types.ts`.
+
 ### Data Flow
 
-1. **Sending a message:**
+1. **Sending an atsms message:**
    - Create text content with `createTextContent(text, facets?)` → Create message payload with `contentType: "atsms/text"` and JSON `content`
-   - Sign with sender cert → Encrypt for recipients → Send via WebSocket (or HTTP fallback)
+   - Sign with sender cert (ECDSA) → Encrypt for recipients (ECDH) → Send via HTTP POST /send-message or WebSocket
    - Message payload stored as JSON, signed and encrypted as PKCS#7
-   - **NEW**: Multi-recipient send in single WebSocket call - server handles per-device delivery
-   - Each recipient's devices receive via DO-to-DO (same service) or SMTP (external service - stub)
+   - Multi-recipient send in single call - server handles per-device delivery
+   - Each recipient's devices receive via DO-to-DO (same service) or SMTP (external service)
 
-2. **Receiving messages:**
-   - API notification → Fetch encrypted message → Decrypt with client cert → Verify signature → Parse JSON `content` → Store in local DB
+2. **Sending an email:**
+   - No encryption needed — send plain email via `sendEmail()` or WebSocket send with `messageType: "email"`
+   - Server delivers to all active certificate inboxes for the recipient DID
+
+3. **Receiving messages:**
+   - API notification → Fetch message → For atsms/atsms-email: decrypt with endpoint cert → Parse content → Store in local DB
+   - For email type: already decrypted by server, read fields directly
    - Messages stored with `content` (JSON string) and `contentType` (MIME type)
-   - Apps that use AT-SMS should only read decrypted messages via the datastore, never directly by decrypting messages
    - Use `parseTextContent(message.content)` to extract text from "atsms/text" messages
    - WebSocket used to inform the client apps of new inbound messages
 
-3. **Certificate lookup for peers:**
+4. **Certificate lookup for peers:**
    - DID → PLC directory → PDS URL → List records in `at.atsms.x509` → Parse certificates
    - Results cached in memory by `ATSMSStorageManager`
 
 ### Build Output
 
-- `dist/index.js`: Browser bundle (main export)
+- `dist/index.js`: Node.js bundle
+- `dist/index.browser.js`: Browser bundle
+- `dist/index.native.js`: React Native bundle
 - `dist/index.d.ts`: TypeScript type definitions
 - Only `src/lib/**/*` files are included in the build (excludes `src/client`, `src/tests`)
 
@@ -160,12 +185,14 @@ The project includes three CLI tools in `src/client/`, each serving different te
 **1. atsms.ts** - Stateless Testing & Artifact Generation (`ATSMSCLITool`):
 - **Purpose:** Comprehensive end-to-end testing tool with no persistent state
 - **Architecture:** All file I/O controlled via explicit CLI arguments (no `.atsms` directory)
-- **Commands:** init, send, receive, list, download, create-p7m, delete, stats
+- **Commands:** init, send, send-email, receive, list, download, create-p7m, delete, stats
 - **Use cases:**
   - Testing library functionality end-to-end
   - Generating certificates and P7M artifacts for testing
+  - Sending plain email messages
   - CI/CD pipelines (stateless, reproducible)
   - When you need explicit control over file locations
+- **Message type filter:** `list` and `receive` commands accept `--type atsms|atsms-email|email|all`
 - **Authentication:** Uses both PDS JWTs (from AtpAgent) and AT-SMS API JWTs (generated on-demand from certificate files, not cached) - see "JWT Authentication" section
 - **Dependencies:** Full AT Protocol integration (ATSMSClient, AtpAgent)
 
@@ -195,31 +222,6 @@ The project includes three CLI tools in `src/client/`, each serving different te
 - **Authentication:** Uses both PDS JWTs (for certificate management via ATSMSClient) and AT-SMS API JWTs (handled internally by ATSMSStorageManager) - see "JWT Authentication" section
 - **Storage:** Complete state in `~/.atsms/` directory
 
-**Key Changes in Latest Version:**
-
-- **WebSocket Send API**: Messages can now be sent via WebSocket using the new multi-recipient `send` command
-  - **Grouped by DID**: Recipients grouped by DID with multiple endpoints (devices) per DID
-  - Single call sends to all endpoints for all recipients
-  - Server handles DO-to-DO delivery (same service) with per-endpoint results
-  - SMTP delivery for external services (currently stub - returns `failed` with error)
-  - HTTPS send endpoint not yet implemented (throws error) - use WebSocket via transport layer
-- **Send Request Format**:
-  ```typescript
-  {
-    to: [{
-      did: "did:plc:abc123",
-      endpoints: [
-        { certSerial: "4d18ac7f", email: "user@atsms.example.com" },
-        { certSerial: "ab34567", email: "user@backup.example.com" }
-      ]
-    }]
-  }
-  ```
-- **Send Response Format**: Simplified status values - `sent` or `failed` (removed `delivered`, `email_stub_not_implemented`, `messageId`, `seq`, `duplicate` fields)
-- **Transport Layer**: Automatically uses WebSocket for send when available, falls back to HTTPS (stub)
-- **Storage Manager**: Updated to batch encrypt and group endpoints by DID in one WebSocket call
-- **Backward Compatibility**: Legacy single-recipient HTTPS method retained as `sendMessageLegacy()`
-
 **Library Components (not CLI tools):**
 
 **ATSMSClient** (`src/lib/atsms-client.ts`):
@@ -235,7 +237,8 @@ The project includes three CLI tools in `src/client/`, each serving different te
 - **PDS**: Personal Data Server - each user's AT Protocol data store
 - **Certificate Serial**: Unique identifier for client certificates, used as record key in PDS
 - **Transport vs Payload**: Transport is the encrypted envelope; payload is the decrypted content
-- **Conversation ID (convoId)**: Groups messages into threads
+- **Conversation ID (convoId)**: Groups messages into threads. For 1:1 DMs, deterministically generated from sorted DID pair.
+- **Message Type**: `atsms` (encrypted P7M), `atsms-email` (S/MIME encrypted email), `email` (plain email)
 
 ### Message Content Structure
 
@@ -275,34 +278,6 @@ Example `content` value: `'{"text":"Hello @alice.bsky.social!","facets":[...]}'`
 - `createTextContent(text: string, facets?: ATProtoFacet[]): string` - Creates JSON content string
 - `parseTextContent(content: string): ATSMSTextContent` - Parses JSON content string
 
-**Usage in Library:**
-```typescript
-import { createTextContent, parseTextContent } from '@atsms/sms'
-
-// Creating content
-const content = createTextContent('Hello world!')
-
-// Parsing content
-const parsed = parseTextContent(message.content)
-console.log(parsed.text) // "Hello world!"
-```
-
-**Usage in Chat Client:**
-```typescript
-// Chat client uses getMessageText() helper to extract display text
-private getMessageText(message: any): string {
-  try {
-    if (message.contentType === 'atsms/text') {
-      const parsed = parseTextContent(message.content)
-      return parsed.text
-    }
-    return message.content || '[unsupported content]'
-  } catch {
-    return '[invalid content]'
-  }
-}
-```
-
 **2. Future Content Types**
 
 The architecture supports extending to other content types in the future:
@@ -331,15 +306,6 @@ CREATE TABLE messages (
 );
 ```
 
-**Querying Messages:**
-```sql
--- Search text content using json_extract
-SELECT id, json_extract(content, '$.text') as message_text
-FROM messages
-WHERE contentType = 'atsms/text'
-  AND json_extract(content, '$.text') LIKE '%search term%';
-```
-
 #### Key Design Principles
 
 1. **Content is always JSON-serialized**: Even simple text messages are stored as JSON objects
@@ -364,6 +330,7 @@ AT-SMS uses **two distinct JWT types** for different authentication purposes:
 - **Purpose**: Authenticate with AT-SMS API endpoints (inbox service) for message operations
 - **Used by**: `ATSMSApiClient` and `ATSMSWebSocketClient`
 - **Generated by**: `generateJWT()` in `src/lib/jwt-auth.ts`
+- **Algorithm**: ES256 (P-256 ECDSA)
 - **Token format**: Custom JWT signed with client certificate's private key
 - **Scope**: AT-SMS API operations (list/get/delete messages, WebSocket connections, send messages)
 - **Library note**: The AT-SMS library DOES generate these JWTs internally using client certificates
@@ -371,10 +338,16 @@ AT-SMS uses **two distinct JWT types** for different authentication purposes:
 **JWT Generation in `jwt-auth.ts`:**
 ```typescript
 // Creates JWT for AT-SMS API authentication
-// Signed with client certificate private key
-// Contains: did, certSerial, email, exp (expiration)
-generateJWT(did: string, certSerial: string, email: string, privateKey: CryptoKey): Promise<string>
+// Signed with ES256 (P-256 ECDSA) using certificate's private key
+generateJWT(privateKeyPEM: string, endpointCertSerialNumber: string, did: string): Promise<string>
 ```
+
+**JWT Claims:**
+- `sub`: `at://[did]/at.atsms.x509/[serialNumber]` (AT Protocol URI)
+- `iss`: DID
+- `aud`: "atsms-api"
+- `kid`: certificate serial number
+- Expiration: 1 hour
 
 **Usage in CLI Tools:**
 
@@ -391,7 +364,7 @@ generateJWT(did: string, certSerial: string, email: string, privateKey: CryptoKe
 ## Testing Notes
 
 - Tests use in-memory SQLite databases
-- Test certificates generated in `src/tests/test-certificates.ts`
+- Test certificates generated in `src/tests/test-certificates.ts` using `generateTestEndpointCertificate(did, domain, emailDomain?)`
 - Integration tests require actual AT Protocol credentials (set via env vars or skip)
 - Sequential import test (`sequential-import.test.ts`) ensures proper module loading order
 
@@ -411,7 +384,7 @@ bun test src/tests/atsms-client-integration.test.ts
 
 **WebSocket Integration Test** (`websocket-client-integration.test.ts`):
 - Tests real-time WebSocket connections to AT-SMS server
-- Verifies AT-SMS API JWT authentication via headers (Node.js path) - see "JWT Authentication" section
+- Verifies AT-SMS API JWT authentication (ES256)
 - Tests ping/pong keepalive mechanism
 - Validates message broadcast reception
 - Checks reconnection logic with exponential backoff
@@ -421,11 +394,12 @@ bun test src/tests/atsms-client-integration.test.ts
 
 - **Crypto provider must be set early**: Call `setCryptoProvider()` before any crypto operations in browser environments
 - **Certificate validation**: Endpoint certificates are self-signed; verify signature using the certificate's own public key
+- **Signature verification TODO**: `decryptAndVerifyMessageSignature()` in `crypto.ts` does NOT verify the PKCS#7 signature — it trusts decryption success. This is a known security gap marked with a prominent TODO. Production deployment requires implementing signature verification and cross-checking against PDS records.
 - **Error handling**: Certificate operations return `null` for missing/invalid certs (not exceptions)
 - **Platform detection**: Use `typeof window !== 'undefined'` for browser detection
 - **Private key security**: Never serialize or transmit private keys; keep them in local storage only
 - **Initial release**: This library has never been published and is often refactored to improve the data patterns. Never need backward compatibility with each refactor. (This line will be removed once we publish version 0.0.1)
-- **Email in certificates**: All client certificates MUST include an email in the Subject Alternative Name (SAN) extension. The library validates recipient certificates (not sender certificates) during message sending and throws descriptive errors indicating which recipient's certificate is missing the email field.
+- **Email in certificates**: All client certificates MUST include an email in the Subject Alternative Name (SAN) extension. The email is deterministically computed from the DID and email domain (e.g., `plc.[plc-id]@[emailDomain]`).
 
 ## Code Style Requirements
 
@@ -438,4 +412,4 @@ bun test src/tests/atsms-client-integration.test.ts
   - Storage types: `ATSMSStorageManagerConfig`
   - Message types: All types in `types.ts` use `ATSMS` prefix
 - **No duplicate types**: Types should be defined once in `src/lib/types.ts` and imported where needed
-- **Removed types**: `ATSMSRootCertificate` removed - endpoint certificates are now self-signed
+- **Single algorithm**: P-256 ECDSA only. No RSA support. No algorithm detection or type guards needed.
