@@ -4,24 +4,19 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "X.509 certificate record for AT SMS secure messaging",
-      "key": "literal:root|string",
+      "description": "Self-signed P-256 ECDSA endpoint certificate for AT-SMS secure messaging. One record per device, keyed by certificate serial number.",
+      "key": "string",
       "record": {
         "type": "object",
-        "required": ["certificate", "certificateType", "createdAt"],
+        "required": ["certificate", "serialNumber", "createdAt"],
         "properties": {
           "certificate": {
             "type": "string",
-            "description": "The X.509 certificate in PEM format"
-          },
-          "certificateType": {
-            "type": "string",
-            "description": "Type of certificate: 'root' or 'endpoint'",
-            "enum": ["root", "endpoint"]
+            "description": "The X.509 certificate in PEM format (P-256 ECDSA, self-signed)"
           },
           "serialNumber": {
             "type": "string",
-            "description": "Serial number of the certificate (for endpoint certificates)"
+            "description": "Certificate serial number (hexadecimal). Also used as the record key (rkey)."
           },
           "validUntil": {
             "type": "string",
