@@ -14,8 +14,7 @@
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import {
-  type ATSMSAnyEndpointCertificate,
-  type ATSMSCertificateAlgorithm,
+  ATSMSEndpointCertificate,
   generateEndpointCertificate,
 } from "../lib/certificates/index.js";
 import {
@@ -29,7 +28,7 @@ interface ParticipantVectors {
   did: string;
   domain: string;
   email: string;
-  algorithm: ATSMSCertificateAlgorithm;
+  algorithm: string;
   endpointCertificate: {
     pem: string;
     privateKeyPem: string;
@@ -109,7 +108,7 @@ interface CryptoVectors {
  */
 function extractIntermediateValues(
   encryptedBytes: Uint8Array,
-  receiverAlgorithm: ATSMSCertificateAlgorithm,
+  receiverAlgorithm: string,
 ): ECDHIntermediateValues | RSAIntermediateValues {
   // Parse ContentInfo
   const contentInfo = asn1js.fromBER(encryptedBytes.buffer as ArrayBuffer);
@@ -257,10 +256,10 @@ async function generateParticipant(
   role: string,
   did: string,
   domain: string,
-  algorithm: ATSMSCertificateAlgorithm,
-): Promise<{ participant: ParticipantVectors; cert: ATSMSAnyEndpointCertificate }> {
-  console.error(`Generating ${algorithm} certificate for ${role}...`);
-  const cert = await generateEndpointCertificate(algorithm, did, domain, TEST_EMAIL_DOMAIN);
+  algorithm: string,
+): Promise<{ participant: ParticipantVectors; cert: ATSMSEndpointCertificate }> {
+  console.error(`Generating P-256 certificate for ${role}...`);
+  const cert = await generateEndpointCertificate(did, domain, TEST_EMAIL_DOMAIN);
 
   // Get the computed email from the certificate
   const email = cert.email!;
@@ -284,11 +283,11 @@ async function generateParticipant(
 }
 
 async function generateCryptoVectors(
-  senderCert: ATSMSAnyEndpointCertificate,
-  receiverCert: ATSMSAnyEndpointCertificate,
+  senderCert: ATSMSEndpointCertificate,
+  receiverCert: ATSMSEndpointCertificate,
   messagePayloadJson: string,
-  senderAlgorithm: ATSMSCertificateAlgorithm,
-  receiverAlgorithm: ATSMSCertificateAlgorithm,
+  senderAlgorithm: string,
+  receiverAlgorithm: string,
 ): Promise<CryptoVectors> {
   // Sign message
   const signedMessage = await signMessage(messagePayloadJson, senderCert);

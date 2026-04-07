@@ -14,7 +14,6 @@ import * as readline from "readline";
 import { ATSMSApiClient } from "../lib/atsms-api.js";
 import { ATSMSClient } from "../lib/atsms-client.js";
 import {
-  type ATSMSCertificateAlgorithm,
   generateEndpointCertificate,
   loadEndpointCertificate,
   loadEndpointCertificateWithKey,
@@ -29,7 +28,11 @@ import {
   createMessagePayload,
   prepareMessageForSending,
 } from "../lib/messages.js";
-import { type ATSMSConfig, type ATSMSDecryptedMessage } from "../lib/types.js";
+import {
+  type ATSMSConfig,
+  type ATSMSDecryptedMessage,
+  type ATSMSMessageType,
+} from "../lib/types.js";
 
 class ATSMSCLITool {
   private config: ATSMSConfig;
@@ -87,7 +90,6 @@ class ATSMSCLITool {
     endpointKeyPath: string,
     emailDomain: string,
     publishToPDS: boolean,
-    algorithm: ATSMSCertificateAlgorithm = "P256",
   ): Promise<void> {
     console.log(`Generating certificate for ${handle}...`);
 
@@ -103,13 +105,9 @@ class ATSMSCLITool {
       console.log(`Using test DID: ${did}`);
     }
 
-    // Generate self-signed endpoint certificate with specified algorithm
-    const algorithmName = algorithm === "P256" ? "P-256 ECDSA" : "RSA-2048";
-    console.log(
-      `Generating self-signed endpoint certificate (${algorithmName})...`,
-    );
+    // Generate self-signed P-256 ECDSA endpoint certificate
+    console.log("Generating self-signed endpoint certificate (P-256 ECDSA)...");
     const endpointCert = await generateEndpointCertificate(
-      algorithm,
       did,
       handle,
       emailDomain,
@@ -125,7 +123,7 @@ class ATSMSCLITool {
 
     // Print certificate info
     console.log("\n=== Certificate Info ===");
-    console.log(`Algorithm: ${algorithmName}`);
+    console.log("Algorithm: P-256 ECDSA");
     console.log(`DID: ${did}`);
     console.log(`Serial: ${endpointCert.serialNumber}`);
     console.log(`Valid Until: ${endpointCert.notAfter.toISOString()}`);
@@ -156,7 +154,7 @@ class ATSMSCLITool {
     // Login
     await this.login(handle, password);
 
-    // Load sender certificate (auto-detects RSA or P-256)
+    // Load sender certificate
     const senderCertPEM = readFileSync(senderCertPath, "utf8");
     const senderKeyPEM = readFileSync(senderKeyPath, "utf8");
     const senderCert = await loadEndpointCertificateWithKey(
@@ -218,10 +216,66 @@ class ATSMSCLITool {
     console.log("Sending message...");
     const encryptedBase64 = btoa(String.fromCharCode(...encryptedMessage));
 
-    // Use legacy single-recipient send method (for stateless CLI tool)
-    // TODO: Once HTTPS send endpoint is implemented, update to use new multi-recipient API
-    await this.atsmsApiClient.sendMessageLegacy(recipientDid, encryptedBase64);
+    const result = await this.atsmsApiClient.sendMessage(
+      recipientDid,
+      encryptedBase64,
+    );
     console.log("✓ Message sent successfully");
+    if (result.results) {
+      for (const r of result.results as any[]) {
+        const ok = r.success === true || r.status === "sent";
+        const label = ok ? "✓" : "✗";
+        const serial = r.serialNumber || r.certSerial || "?";
+        const detail = ok ? "sent" : (r.error || "failed");
+        console.log(`  ${label} cert ${serial}: ${detail}`);
+      }
+    }
+  }
+
+  /**
+   * Send an email message (unencrypted) to a recipient's inbox
+   */
+  async sendEmail(
+    handle: string,
+    password: string,
+    recipientHandleOrDid: string,
+    subject: string,
+    body: string,
+    fromName?: string,
+  ): Promise<void> {
+    // Login
+    await this.login(handle, password);
+
+    // Resolve recipient DID
+    let recipientDid = recipientHandleOrDid;
+    if (!recipientHandleOrDid.startsWith("did:")) {
+      console.log(`Resolving handle ${recipientHandleOrDid}...`);
+      const response = await this.agent!.resolveHandle({
+        handle: recipientHandleOrDid,
+      });
+      recipientDid = response.data.did;
+      console.log(`✓ Resolved to ${recipientDid}`);
+    }
+
+    console.log("Sending email...");
+    const result = await this.atsmsApiClient.sendEmail({
+      did: recipientDid,
+      subject,
+      textBody: body,
+      from: this.did,
+      fromName: fromName || handle,
+    });
+
+    console.log("✓ Email sent successfully");
+    if (result.results) {
+      for (const r of result.results as any[]) {
+        const ok = r.success === true || r.status === "sent";
+        const label = ok ? "✓" : "✗";
+        const serial = r.certSerial || r.serialNumber || "?";
+        const detail = ok ? "sent" : (r.error || "failed");
+        console.log(`  ${label} cert ${serial}: ${detail}`);
+      }
+    }
   }
 
   /**
@@ -233,11 +287,12 @@ class ATSMSCLITool {
     endpointCertPath: string,
     endpointKeyPath: string,
     outputDir?: string,
+    messageType?: ATSMSMessageType | "all",
   ): Promise<void> {
     // Login
     await this.login(handle, password);
 
-    // Load certificate (auto-detects RSA or P-256)
+    // Load certificate
     const endpointCertPEM = readFileSync(endpointCertPath, "utf8");
     const endpointKeyPEM = readFileSync(endpointKeyPath, "utf8");
     const endpointCert = await loadEndpointCertificateWithKey(
@@ -250,10 +305,14 @@ class ATSMSCLITool {
     this.atsmsApiClient.setAuthToken(jwt);
 
     // List messages
-    console.log("Fetching messages...");
+    const typeLabel = messageType && messageType !== "all" ? ` (type: ${messageType})` : "";
+    console.log(`Fetching messages${typeLabel}...`);
     const listResponse = await this.atsmsApiClient.listMessages(
       this.did,
       endpointCert.serialNumber,
+      undefined,
+      undefined,
+      messageType,
     );
     const messageList = listResponse.messages;
 
@@ -264,12 +323,13 @@ class ATSMSCLITool {
 
     console.log(`Found ${messageList.length} message(s)`);
 
-    // Download and decrypt each message
-    const decryptedMessages: any[] = [];
+    // Download and process each message
+    const processedMessages: any[] = [];
 
     for (const [index, msgMeta] of messageList.entries()) {
       console.log(`\nProcessing message ${index + 1}/${messageList.length}`);
       console.log(`  ID: ${msgMeta.id}`);
+      console.log(`  Type: ${msgMeta.messageType}`);
       console.log(`  Seq: ${msgMeta.seq}`);
 
       try {
@@ -280,62 +340,103 @@ class ATSMSCLITool {
           msgMeta.id,
         );
 
-        // Decrypt
-        const encryptedBytes = Uint8Array.from(
-          atob(message.encryptedContent),
-          (c) => c.charCodeAt(0),
-        );
+        if (msgMeta.messageType === "email") {
+          // Plain email — already decrypted by server
+          const result = {
+            id: msgMeta.id,
+            messageType: "email",
+            seq: msgMeta.seq,
+            storedAt: msgMeta.storedAt,
+            from: message.from,
+            fromName: message.fromName,
+            to: message.to,
+            subject: message.subject,
+            textBody: message.textBody,
+            htmlBody: message.htmlBody ? "(HTML content)" : undefined,
+            attachments: message.attachments?.map((a) => ({
+              filename: a.filename,
+              contentType: a.contentType,
+              size: a.size,
+            })),
+            smimeVerification: message.smimeVerification,
+          };
 
-        const decrypted: ATSMSDecryptedMessage =
-          await decryptAndVerifyMessageSignature(encryptedBytes, endpointCert);
+          processedMessages.push(result);
 
-        const decryptedContent = new TextDecoder().decode(
-          decrypted.decryptedContent,
-        );
+          console.log(`  ✓ Email`);
+          console.log(`  From: ${message.fromName ? `${message.fromName} <${message.from}>` : message.from}`);
+          console.log(`  Subject: ${message.subject || "(no subject)"}`);
+          if (message.textBody) {
+            const preview = message.textBody.substring(0, 100);
+            console.log(`  Body: ${preview}${message.textBody.length > 100 ? "..." : ""}`);
+          }
+          if (message.attachments?.length) {
+            console.log(`  Attachments: ${message.attachments.length}`);
+          }
+        } else {
+          // atsms or atsms-email — encrypted, need to decrypt
+          if (!message.encryptedContent) {
+            console.log(`  ✗ No encrypted content`);
+            continue;
+          }
 
-        // Try to parse as JSON
-        let parsedMessage;
-        try {
-          parsedMessage = JSON.parse(decryptedContent);
-        } catch {
-          parsedMessage = { text: decryptedContent };
-        }
+          const encryptedBytes = Uint8Array.from(
+            atob(message.encryptedContent),
+            (c) => c.charCodeAt(0),
+          );
 
-        const result = {
-          id: msgMeta.id,
-          seq: msgMeta.seq,
-          storedAt: msgMeta.storedAt,
-          signer: {
-            commonName: decrypted.messageSigner.commonName,
-            serialNumber: decrypted.messageSigner.serialNumber,
-          },
-          message: parsedMessage,
-        };
+          const decrypted: ATSMSDecryptedMessage =
+            await decryptAndVerifyMessageSignature(encryptedBytes, endpointCert);
 
-        decryptedMessages.push(result);
+          const decryptedContent = new TextDecoder().decode(
+            decrypted.decryptedContent,
+          );
 
-        console.log(`  ✓ Decrypted`);
-        console.log(`  Sender: ${result.signer.commonName}`);
-        if (parsedMessage.text) {
-          console.log(`  Text: ${parsedMessage.text}`);
+          // Try to parse as JSON
+          let parsedMessage;
+          try {
+            parsedMessage = JSON.parse(decryptedContent);
+          } catch {
+            parsedMessage = { text: decryptedContent };
+          }
+
+          const result = {
+            id: msgMeta.id,
+            messageType: msgMeta.messageType,
+            seq: msgMeta.seq,
+            storedAt: msgMeta.storedAt,
+            signer: {
+              commonName: decrypted.messageSigner.commonName,
+              serialNumber: decrypted.messageSigner.serialNumber,
+            },
+            message: parsedMessage,
+          };
+
+          processedMessages.push(result);
+
+          console.log(`  ✓ Decrypted (${msgMeta.messageType})`);
+          console.log(`  Sender: ${result.signer.commonName}`);
+          if (parsedMessage.text) {
+            console.log(`  Text: ${parsedMessage.text}`);
+          }
         }
       } catch (error) {
-        console.log(`  ✗ Failed to decrypt: ${error.message}`);
+        console.log(`  ✗ Failed to process: ${error.message}`);
       }
     }
 
     // Output results
     if (outputDir) {
       // Save to files
-      for (const msg of decryptedMessages) {
+      for (const msg of processedMessages) {
         const filePath = path.join(outputDir, `${msg.id}.json`);
         writeFileSync(filePath, JSON.stringify(msg, null, 2), "utf8");
         console.log(`\n✓ Saved: ${filePath}`);
       }
     } else {
       // Print to stdout
-      console.log("\n=== Decrypted Messages (JSON) ===");
-      console.log(JSON.stringify(decryptedMessages, null, 2));
+      console.log("\n=== Messages (JSON) ===");
+      console.log(JSON.stringify(processedMessages, null, 2));
     }
   }
 
@@ -348,11 +449,12 @@ class ATSMSCLITool {
     endpointCertPath: string,
     endpointKeyPath: string,
     afterSeq?: number,
+    messageType?: ATSMSMessageType | "all",
   ): Promise<void> {
     // Login
     await this.login(handle, password);
 
-    // Load certificate to get serial (auto-detects RSA or P-256)
+    // Load certificate to get serial
     const endpointCertPEM = readFileSync(endpointCertPath, "utf8");
     const endpointKeyPEM = readFileSync(endpointKeyPath, "utf8");
     const endpointCert = await loadEndpointCertificateWithKey(
@@ -365,11 +467,14 @@ class ATSMSCLITool {
     this.atsmsApiClient.setAuthToken(jwt);
 
     // List messages
-    console.log("Fetching message list...");
+    const typeLabel = messageType && messageType !== "all" ? ` (type: ${messageType})` : "";
+    console.log(`Fetching message list${typeLabel}...`);
     const response = await this.atsmsApiClient.listMessages(
       this.did,
       endpointCert.serialNumber,
       afterSeq,
+      undefined,
+      messageType,
     );
 
     const messages = response.messages;
@@ -379,10 +484,15 @@ class ATSMSCLITool {
       return;
     }
 
-    console.log(`\n=== ${messages.length} Message(s) ===`);
+    console.log(`\n=== ${messages.length} Message(s) (latestSeq: ${response.latestSeq}) ===`);
     messages.forEach((msg, index) => {
       console.log(`${index + 1}. ID: ${msg.id}`);
+      console.log(`   Type: ${msg.messageType}`);
       console.log(`   Seq: ${msg.seq}`);
+      console.log(`   Size: ${msg.length} bytes`);
+      if (msg.subject) {
+        console.log(`   Subject: ${msg.subject}`);
+      }
       console.log(`   Stored: ${msg.storedAt}`);
       console.log("");
     });
@@ -402,7 +512,7 @@ class ATSMSCLITool {
     // Login
     await this.login(handle, password);
 
-    // Load certificate (auto-detects RSA or P-256)
+    // Load certificate
     const endpointCertPEM = readFileSync(endpointCertPath, "utf8");
     const endpointKeyPEM = readFileSync(endpointKeyPath, "utf8");
     const endpointCert = await loadEndpointCertificateWithKey(
@@ -464,7 +574,7 @@ class ATSMSCLITool {
   ): Promise<void> {
     console.log("Creating P7M file...");
 
-    // Load sender certificate (auto-detects RSA or P-256)
+    // Load sender certificate
     const senderCertPEM = readFileSync(senderCertPath, "utf8");
     const senderKeyPEM = readFileSync(senderKeyPath, "utf8");
     const senderCert = await loadEndpointCertificateWithKey(
@@ -524,7 +634,7 @@ class ATSMSCLITool {
     // Login
     await this.login(handle, password);
 
-    // Load certificate (auto-detects RSA or P-256)
+    // Load certificate
     const endpointCertPEM = readFileSync(endpointCertPath, "utf8");
     const endpointKeyPEM = readFileSync(endpointKeyPath, "utf8");
     const endpointCert = await loadEndpointCertificateWithKey(
@@ -558,7 +668,7 @@ class ATSMSCLITool {
     // Login
     await this.login(handle, password);
 
-    // Load certificate (auto-detects RSA or P-256)
+    // Load certificate
     const endpointCertPEM = readFileSync(endpointCertPath, "utf8");
     const endpointKeyPEM = readFileSync(endpointKeyPath, "utf8");
     const endpointCert = await loadEndpointCertificateWithKey(
@@ -679,13 +789,19 @@ Usage:
 
 Commands:
   init              Generate self-signed certificate
-  send              Send encrypted message
-  receive           Receive and decrypt messages
-  list              List messages
+  send              Send encrypted atsms message
+  send-email        Send a plain email message
+  receive           Receive and process messages (all types)
+  list              List messages (all types)
   download          Download message artifacts
   create-p7m        Create P7M file for testing
   delete            Delete a message
   stats             Get inbox statistics
+
+Message Types:
+  atsms             Encrypted P7M payload (default)
+  atsms-email       S/MIME encrypted email (opaque blob)
+  email             Plain parsed email with subject, body, attachments
 
 Options (varies by command):
 
@@ -694,7 +810,6 @@ Options (varies by command):
     --endpoint-cert <path>      Output path for endpoint certificate (required)
     --endpoint-key <path>       Output path for endpoint key (required)
     --email-domain <domain>     Email domain for certificate (e.g., 'atsms.email') (required)
-    --algorithm <p256|rsa>      Certificate algorithm (default: p256)
     --password <password>       PDS password (optional, prompts if not provided)
     --publish-to-pds            Publish certificate to PDS (requires --password)
 
@@ -707,12 +822,21 @@ Options (varies by command):
     --password <password>       PDS password (optional, prompts if not provided)
     --save-p7m <path>           Save P7M artifact to path (optional)
 
+  send-email:
+    --handle <handle>           Sender handle (required)
+    --recipient <handle|did>    Recipient handle or DID (required)
+    --subject <text>            Email subject (required)
+    --message <text>            Email body text (required)
+    --from-name <name>          Sender display name (optional, defaults to handle)
+    --password <password>       PDS password (optional, prompts if not provided)
+
   receive:
     --handle <handle>           User handle (required)
     --endpoint-cert <path>      Endpoint certificate path (required)
     --endpoint-key <path>       Client key path (required)
     --password <password>       PDS password (optional, prompts if not provided)
     --output-dir <path>         Save messages to directory (optional, prints to stdout if omitted)
+    --type <type>               Filter by message type: atsms, atsms-email, email, all (default: all)
 
   list:
     --handle <handle>           User handle (required)
@@ -720,6 +844,7 @@ Options (varies by command):
     --endpoint-key <path>       Endpoint key path (required)
     --password <password>       PDS password (optional, prompts if not provided)
     --after-seq <number>        List messages after sequence number (optional)
+    --type <type>               Filter by message type: atsms, atsms-email, email, all (default: all)
 
   download:
     --handle <handle>           User handle (required)
@@ -753,30 +878,31 @@ Global Options:
   --api-url <url>              API URL (default: https://atsms-api.enumdao.workers.dev)
 
 Examples:
-  # Generate P-256 certificate (default, no PDS)
+  # Generate certificate (no PDS)
   bun atsms.ts init --handle aib0b.bsky.social \\
     --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email-domain atsms.email
-
-  # Generate RSA certificate (legacy)
-  bun atsms.ts init --handle aib0b.bsky.social \\
-    --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email-domain atsms.email --algorithm rsa
 
   # Generate and publish to PDS
   bun atsms.ts init --handle aib0b.bsky.social \\
     --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem --email-domain atsms.email --publish-to-pds
 
-  # Send message
+  # Send encrypted atsms message
   bun atsms.ts send --handle aib0b.bsky.social --sender-cert ./endpoint.pem --sender-key ./endpoint-key.pem \\
     --recipient bob.bsky.social --message "Hello Bob!"
 
-  # Send with P7M artifact
-  bun atsms.ts send --handle aib0b.bsky.social --sender-cert ./endpoint.pem --sender-key ./endpoint-key.pem \\
-    --recipient bob.bsky.social --message "Hello Bob!" --save-p7m ./message.p7m
+  # Send plain email
+  bun atsms.ts send-email --handle aib0b.bsky.social \\
+    --recipient bob.bsky.social --subject "Hello" --message "Hi Bob, how are you?"
 
-  # Receive messages (print to stdout)
-  bun atsms.ts receive --handle aib0b.bsky.social --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem
+  # List only email messages
+  bun atsms.ts list --handle aib0b.bsky.social --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem \\
+    --type email
 
-  # Receive messages (save to files)
+  # Receive only atsms messages (print to stdout)
+  bun atsms.ts receive --handle aib0b.bsky.social --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem \\
+    --type atsms
+
+  # Receive all messages (save to files)
   bun atsms.ts receive --handle aib0b.bsky.social --endpoint-cert ./endpoint.pem --endpoint-key ./endpoint-key.pem \\
     --output-dir ./messages
 
@@ -806,24 +932,11 @@ Examples:
         const endpointKey = parsedArgs["endpoint-key"] as string;
         const emailDomain = parsedArgs["email-domain"] as string;
         const publishToPDS = parsedArgs["publish-to-pds"] as boolean;
-        const algorithmArg = (parsedArgs["algorithm"] as string)?.toLowerCase();
 
         if (!handle || !endpointCert || !endpointKey || !emailDomain) {
           throw new Error(
             "Missing required arguments: --handle, --endpoint-cert, --endpoint-key, --email-domain",
           );
-        }
-
-        // Parse algorithm (default to P256)
-        let algorithm: ATSMSCertificateAlgorithm = "P256";
-        if (algorithmArg) {
-          if (algorithmArg === "rsa") {
-            algorithm = "RSA";
-          } else if (algorithmArg === "p256") {
-            algorithm = "P256";
-          } else {
-            throw new Error('Invalid algorithm. Use "p256" or "rsa"');
-          }
         }
 
         let password: string | null = null;
@@ -840,7 +953,6 @@ Examples:
           endpointKey,
           emailDomain,
           publishToPDS,
-          algorithm,
         );
         break;
       }
@@ -880,10 +992,19 @@ Examples:
         const endpointCert = parsedArgs["endpoint-cert"] as string;
         const endpointKey = parsedArgs["endpoint-key"] as string;
         const outputDir = parsedArgs["output-dir"] as string | undefined;
+        const typeFilter = parsedArgs["type"] as string | undefined;
 
         if (!handle || !endpointCert || !endpointKey) {
           throw new Error(
             "Missing required arguments: --handle, --endpoint-cert, --endpoint-key",
+          );
+        }
+
+        // Validate type filter
+        const validTypes = ["atsms", "atsms-email", "email", "all"];
+        if (typeFilter && !validTypes.includes(typeFilter)) {
+          throw new Error(
+            `Invalid --type value: "${typeFilter}". Must be one of: ${validTypes.join(", ")}`,
           );
         }
 
@@ -897,6 +1018,7 @@ Examples:
           endpointCert,
           endpointKey,
           outputDir,
+          typeFilter as ATSMSMessageType | "all" | undefined,
         );
         break;
       }
@@ -908,10 +1030,19 @@ Examples:
         const afterSeq = parsedArgs["after-seq"]
           ? parseInt(parsedArgs["after-seq"] as string, 10)
           : undefined;
+        const typeFilter = parsedArgs["type"] as string | undefined;
 
         if (!handle || !endpointCert || !endpointKey) {
           throw new Error(
             "Missing required arguments: --handle, --endpoint-cert, --endpoint-key",
+          );
+        }
+
+        // Validate type filter
+        const validTypes = ["atsms", "atsms-email", "email", "all"];
+        if (typeFilter && !validTypes.includes(typeFilter)) {
+          throw new Error(
+            `Invalid --type value: "${typeFilter}". Must be one of: ${validTypes.join(", ")}`,
           );
         }
 
@@ -925,6 +1056,7 @@ Examples:
           endpointCert,
           endpointKey,
           afterSeq,
+          typeFilter as ATSMSMessageType | "all" | undefined,
         );
         break;
       }
@@ -1034,6 +1166,34 @@ Examples:
           (await promptPassword(`Enter password for ${handle}:`));
 
         await tool.getStats(handle, password, endpointCert, endpointKey);
+        break;
+      }
+
+      case "send-email": {
+        const handle = parsedArgs["handle"] as string;
+        const recipient = parsedArgs["recipient"] as string;
+        const subject = parsedArgs["subject"] as string;
+        const message = parsedArgs["message"] as string;
+        const fromName = parsedArgs["from-name"] as string | undefined;
+
+        if (!handle || !recipient || !subject || !message) {
+          throw new Error(
+            "Missing required arguments: --handle, --recipient, --subject, --message",
+          );
+        }
+
+        const password =
+          (parsedArgs["password"] as string) ||
+          (await promptPassword(`Enter password for ${handle}:`));
+
+        await tool.sendEmail(
+          handle,
+          password,
+          recipient,
+          subject,
+          message,
+          fromName,
+        );
         break;
       }
 

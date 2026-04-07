@@ -10,7 +10,9 @@
 
 import {
   type ATSMSConfig,
+  type ATSMSEmailAttachment,
   type ATSMSListMessagesResponse,
+  type ATSMSMessageType,
   type ATSMSSendMessageResponse,
   type ATSMSSendRecipient,
   type ATSMSStatsResponse,
@@ -66,6 +68,7 @@ export class ATSMSApiClient {
     certSerial: string,
     afterSequence?: number,
     limit?: number,
+    messageType?: ATSMSMessageType | "all",
   ): Promise<ATSMSListMessagesResponse> {
     try {
       const url = new URL(
@@ -76,6 +79,9 @@ export class ATSMSApiClient {
       }
       if (limit !== undefined) {
         url.searchParams.set("limit", limit.toString());
+      }
+      if (messageType && messageType !== "all") {
+        url.searchParams.set("type", messageType);
       }
 
       const response = await fetch(url.toString(), {
@@ -177,54 +183,88 @@ export class ATSMSApiClient {
   }
 
   /**
-   * Send encrypted message via ATSMS API (HTTPS)
+   * Send an atsms or atsms-email message via HTTP POST /send-message
+   * No authentication required (public send endpoint).
    *
-   * NOTE: This is a stub implementation for the new multi-recipient send API.
-   * The HTTPS version is not yet implemented on the server.
-   * Use WebSocket send instead (via transport layer).
-   *
-   * @param recipients - Array of recipient objects with DID, certSerial, and email
-   * @param encryptedContent - The encrypted message content (base64 encoded)
-   * @throws Error indicating HTTPS send is not yet implemented
+   * @param did - Recipient DID
+   * @param encryptedContent - Base64-encoded encrypted content
+   * @param messageType - "atsms" (default) or "atsms-email"
    */
   async sendMessage(
-    _recipients: ATSMSSendRecipient[],
-    _encryptedContent: string,
+    did: string,
+    encryptedContent: string,
+    messageType: "atsms" | "atsms-email" = "atsms",
   ): Promise<ATSMSSendMessageResponse> {
-    // Stub: HTTPS send endpoint not yet implemented on server
-    // When implemented, it should POST to /send-message with the new format
-    throw new Error(
-      "HTTPS send-message endpoint not yet implemented. " +
-        "Use WebSocket send instead (transport layer will handle this automatically).",
-    );
-
-    // Future implementation (when server supports it):
-    /*
     try {
-      const url = `${this.config.apiUrl}/send-message`
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...this.getAuthHeaders()
-        },
-        body: JSON.stringify({
-          to: recipients,
-          encryptedContent: encryptedContent
-        }),
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`API error: ${response.status} ${response.statusText} ${errorText}`)
+      const url = `${this.config.apiUrl}/send-message`;
+      const body: Record<string, string> = {
+        did,
+        encryptedContent,
+      };
+      if (messageType !== "atsms") {
+        body.messageType = messageType;
       }
 
-      return await response.json()
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `API error: ${response.status} ${response.statusText} ${errorText}`,
+        );
+      }
+
+      return (await response.json()) as ATSMSSendMessageResponse;
     } catch (error) {
-      throw new Error(`Failed to send message: ${error}`)
+      throw new Error(`Failed to send message: ${error}`);
     }
-    */
+  }
+
+  /**
+   * Send an email message via HTTP POST /send-message
+   * No authentication required (public send endpoint).
+   */
+  async sendEmail(options: {
+    did: string;
+    subject: string;
+    textBody?: string;
+    htmlBody?: string;
+    from?: string;
+    fromName?: string;
+    attachments?: ATSMSEmailAttachment[];
+    messageId?: string;
+  }): Promise<ATSMSSendMessageResponse> {
+    try {
+      const url = `${this.config.apiUrl}/send-message`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...options,
+          messageType: "email",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `API error: ${response.status} ${response.statusText} ${errorText}`,
+        );
+      }
+
+      return (await response.json()) as ATSMSSendMessageResponse;
+    } catch (error) {
+      throw new Error(`Failed to send email: ${error}`);
+    }
   }
 
   /**

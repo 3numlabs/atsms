@@ -1,5 +1,5 @@
 /**
- * Tests for RSA-OAEP encryption/decryption functions
+ * Tests for CMS EnvelopedData encryption/decryption (P-256 ECDH)
  */
 
 import { describe, expect, test } from "bun:test";
@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { ATSMSEndpointCertificate } from "../lib/certificates/index.js";
 import { decryptMessageOAEP, encryptMessageOAEP } from "../lib/crypto-oaep.js";
 
-describe("RSA-OAEP Encryption/Decryption", () => {
+describe("CMS EnvelopedData Encryption/Decryption (P-256 ECDH)", () => {
   test("should encrypt and decrypt message successfully", async () => {
     // Generate self-signed endpoint certificate
     const endpointCert = await ATSMSEndpointCertificate.generate(
@@ -18,7 +18,7 @@ describe("RSA-OAEP Encryption/Decryption", () => {
 
     // Test message
     const testMessage =
-      "Hello, World! This is a test message for RSA-OAEP encryption.";
+      "Hello, World! This is a test message for CMS encryption.";
     const messageBytes = new TextEncoder().encode(testMessage);
 
     // Encrypt the message
@@ -140,8 +140,8 @@ describe("RSA-OAEP Encryption/Decryption", () => {
       "test.acme.xyz",
     );
 
-    // Create a large message (but within RSA limits)
-    const largeMessage = "x".repeat(100); // 100 bytes should be fine for RSA
+    // Create a large message
+    const largeMessage = "x".repeat(100);
     const messageBytes = new TextEncoder().encode(largeMessage);
 
     // Encrypt and decrypt

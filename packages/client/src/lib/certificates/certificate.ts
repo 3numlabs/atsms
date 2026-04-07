@@ -48,7 +48,7 @@ export abstract class ATSMSCertificate extends X509Certificate {
   protected constructor(
     rawData: ArrayBuffer | Uint8Array | string,
     privateKey?: CryptoKey,
-    privateKeyPEM?: string, // Root cert has special logic to handle private secp256k1 key import. We keep also the PEM so we don't have to also write special export logic.
+    privateKeyPEM?: string, // PEM kept alongside CryptoKey for storage/export convenience
   ) {
     super(rawData as any);
     this._privateKey = privateKey;

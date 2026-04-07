@@ -1,13 +1,13 @@
 /**
  * ATSMSClient - Library for AT Protocol secure messaging
  * This is the core library that handles messaging operations
- * Supports both RSA and P-256 certificates
+ * Uses P-256 ECDSA endpoint certificates
  */
 
 import { AtpAgent } from "@atproto/api";
 
 import {
-  type ATSMSAnyEndpointCertificate,
+  ATSMSEndpointCertificate,
   loadEndpointCertificate,
 } from "./certificates/index";
 
@@ -29,10 +29,9 @@ export class ATSMSClient {
 
   /**
    * Store endpoint certificate in PDS
-   * Supports both RSA and P-256 certificates
    */
   async storeEndpointCertificate(
-    endpointCert: ATSMSAnyEndpointCertificate,
+    endpointCert: ATSMSEndpointCertificate,
   ): Promise<void> {
     const endpointCertPEM = endpointCert.certificatePEM;
     const serialNumber = endpointCert.serialNumber;
@@ -87,18 +86,18 @@ export class ATSMSClient {
 
   /**
    * Get user certificates from their PDS
-   * Returns all endpoint certificates for the user (RSA or P-256)
+   * Returns all endpoint certificates for the user
    * @param did - The DID to fetch certificates for (must be a valid DID)
    */
   async getUserCertificates(did: string): Promise<{
-    endpointCerts: ATSMSAnyEndpointCertificate[];
+    endpointCerts: ATSMSEndpointCertificate[];
     error?:
       | "NOT_ATPROTO_USER"
       | "NO_ATSMS_CERTS"
       | "NO_ENDPOINT_CERTS"
       | "FETCH_ERROR";
   }> {
-    const endpointCerts: ATSMSAnyEndpointCertificate[] = [];
+    const endpointCerts: ATSMSEndpointCertificate[] = [];
 
     try {
       // Resolve DID to PDS URL
@@ -134,18 +133,11 @@ export class ATSMSClient {
       }
 
       // Parse the results into endpoint certificates
-      // Skip legacy root certificates (rkey = 'root')
       for (const record of response.data.records) {
         try {
           const certPEM = (record.value as any)?.certificate;
           if (!certPEM) continue;
 
-          // Skip legacy root certificates
-          if (record.uri.endsWith("/root")) {
-            continue;
-          }
-
-          // Parse as endpoint certificate (auto-detects RSA or P-256, no private key for external DIDs)
           const endpointCert = loadEndpointCertificate(certPEM);
           endpointCerts.push(endpointCert);
         } catch (error) {

@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
 import { ATSMSApiClient } from "../lib/atsms-api.js";
-import { type ATSMSConfig, type ATSMSSendRecipient } from "../lib/types.js";
+import { type ATSMSConfig } from "../lib/types.js";
 
 describe("ATSMSApiClient", () => {
   let client: ATSMSApiClient;
@@ -218,46 +218,59 @@ describe("ATSMSApiClient", () => {
   });
 
   describe("sendMessage", () => {
-    test("should throw error indicating HTTPS not implemented", async () => {
-      const recipients: ATSMSSendRecipient[] = [
-        {
-          did: "did:plc:recipient",
-          endpoints: [
-            {
-              certSerial: "12345678",
-              email: "user@example.com",
-            },
-          ],
-        },
-      ];
-      const encryptedContent = "base64encodedcontent==";
+    test("should send atsms message with correct payload", async () => {
+      const originalFetch = global.fetch;
+      let capturedBody: any;
+      let capturedUrl = "";
 
-      // New sendMessage signature throws error for HTTPS (not yet implemented)
-      await expect(
-        client.sendMessage(recipients, encryptedContent),
-      ).rejects.toThrow("HTTPS send-message endpoint not yet implemented");
+      global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        capturedUrl = input.toString();
+        capturedBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            results: [
+              { certSerial: "1a2b3c4d", success: true, seq: 5 },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      };
+
+      try {
+        await client.sendMessage("did:plc:recipient", "base64content==");
+        expect(capturedUrl).toBe(`${testConfig.apiUrl}/send-message`);
+        expect(capturedBody).toEqual({
+          did: "did:plc:recipient",
+          encryptedContent: "base64content==",
+        });
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
 
-    test("should accept new multi-recipient grouped format", async () => {
-      const recipients: ATSMSSendRecipient[] = [
-        {
-          did: "did:plc:recipient1",
-          endpoints: [
-            { certSerial: "12345678", email: "user1@example.com" },
-            { certSerial: "abcdef12", email: "user1-backup@example.com" },
-          ],
-        },
-        {
-          did: "did:plc:recipient2",
-          endpoints: [{ certSerial: "87654321", email: "user2@example.com" }],
-        },
-      ];
-      const encryptedContent = "base64encodedcontent==";
+    test("should include messageType when not atsms", async () => {
+      const originalFetch = global.fetch;
+      let capturedBody: any;
 
-      // Should accept the new grouped format even though it throws (not implemented)
-      await expect(
-        client.sendMessage(recipients, encryptedContent),
-      ).rejects.toThrow("HTTPS send-message endpoint not yet implemented");
+      global.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return new Response(
+          JSON.stringify({ success: true, results: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      };
+
+      try {
+        await client.sendMessage(
+          "did:plc:recipient",
+          "base64content==",
+          "atsms-email",
+        );
+        expect(capturedBody.messageType).toBe("atsms-email");
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
   });
 

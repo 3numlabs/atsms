@@ -1,6 +1,6 @@
 /**
- * P-256 Endpoint Certificate class for self-signed ECDSA certificates
- * Uses P-256 (prime256v1/secp256r1) for signing with ECDH for encryption
+ * Endpoint Certificate class for self-signed P-256 ECDSA certificates
+ * Uses P-256 (prime256v1/secp256r1) for signing (ECDSA) and key agreement (ECDH)
  */
 
 import {
@@ -18,10 +18,10 @@ import { ATSMSCertificate } from "./certificate";
 import { computeATSMSEmail, generateSerialNumber } from "./san-utils";
 
 /**
- * P-256 Endpoint Certificate class - self-signed ECDSA certificates
+ * Endpoint Certificate class - self-signed P-256 ECDSA certificates
  * Uses P-256 for both signing (ECDSA) and key agreement (ECDH)
  */
-export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
+export class ATSMSEndpointCertificate extends ATSMSCertificate {
   /**
    * Generate a new self-signed P-256 endpoint certificate
    * Uses ECDSA with P-256 curve for signing
@@ -43,7 +43,7 @@ export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
     domain: string,
     emailDomain: string,
     validityDays = 3652, // Default to ten years
-  ): Promise<ATSMSP256EndpointCertificate> {
+  ): Promise<ATSMSEndpointCertificate> {
     // Validate parameters to prevent common errors
     if (
       typeof validityDays !== "number" ||
@@ -110,9 +110,13 @@ export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
             true,
           ),
           new ExtendedKeyUsageExtension(
-            ["1.3.6.1.5.5.7.3.1", "1.3.6.1.5.5.7.3.2"],
+            [
+              "1.3.6.1.5.5.7.3.1", // serverAuth (future TLS capability)
+              "1.3.6.1.5.5.7.3.2", // clientAuth (future TLS capability)
+              "1.3.6.1.5.5.7.3.4", // emailProtection (S/MIME)
+            ],
             false,
-          ), // serverAuth, clientAuth
+          ),
           new SubjectAlternativeNameExtension([
             { type: "dns", value: domain },
             { type: "url", value: `at://${did}/at.atsms.x509/${serialNumber.hex}` },
@@ -134,7 +138,7 @@ export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
     );
 
     // Create P-256 endpoint certificate instance
-    const endpointCert = new ATSMSP256EndpointCertificate(
+    const endpointCert = new ATSMSEndpointCertificate(
       cert.rawData,
       ecKeys.privateKey,
       privateKeyPEM,
@@ -144,27 +148,27 @@ export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
   }
 
   /**
-   * Create an ATSMSP256EndpointCertificate from DER-encoded bytes (public certificate only)
+   * Create an ATSMSEndpointCertificate from DER-encoded bytes (public certificate only)
    */
-  static fromDER(derBytes: Uint8Array): ATSMSP256EndpointCertificate {
-    return new ATSMSP256EndpointCertificate(derBytes, undefined, undefined);
+  static fromDER(derBytes: Uint8Array): ATSMSEndpointCertificate {
+    return new ATSMSEndpointCertificate(derBytes, undefined, undefined);
   }
 
   /**
-   * Create an ATSMSP256EndpointCertificate from PEM (certificate only, no private key)
+   * Create an ATSMSEndpointCertificate from PEM (certificate only, no private key)
    */
-  static fromPEM(certPEM: string): ATSMSP256EndpointCertificate {
+  static fromPEM(certPEM: string): ATSMSEndpointCertificate {
     const derBytes = ATSMSCertificate.pemToDER(certPEM);
-    return new ATSMSP256EndpointCertificate(derBytes, undefined, undefined);
+    return new ATSMSEndpointCertificate(derBytes, undefined, undefined);
   }
 
   /**
-   * Create an ATSMSP256EndpointCertificate from PEM with private key
+   * Create an ATSMSEndpointCertificate from PEM with private key
    */
   static async fromPEMWithKey(
     certPEM: string,
     privateKeyPEM: string,
-  ): Promise<ATSMSP256EndpointCertificate> {
+  ): Promise<ATSMSEndpointCertificate> {
     const derBytes = ATSMSCertificate.pemToDER(certPEM);
 
     // P-256 certificates use ECDSA
@@ -178,7 +182,7 @@ export class ATSMSP256EndpointCertificate extends ATSMSCertificate {
     );
 
     // Create certificate instance and verify the private key matches
-    const cert = new ATSMSP256EndpointCertificate(
+    const cert = new ATSMSEndpointCertificate(
       derBytes,
       privateKey,
       privateKeyPEM,

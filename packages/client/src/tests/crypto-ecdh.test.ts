@@ -4,10 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  ATSMSEndpointCertificate,
-  ATSMSP256EndpointCertificate,
-} from "../lib/certificates/index.js";
+import { ATSMSEndpointCertificate } from "../lib/certificates/index.js";
 import {
   decryptAndVerifyMessageSignature,
   encryptMessage,
@@ -17,7 +14,7 @@ import { decryptMessageOAEP, encryptMessageOAEP } from "../lib/crypto-oaep.js";
 
 describe("P-256 ECDH Encryption/Decryption", () => {
   test("should encrypt and decrypt message with P-256 certificate", async () => {
-    const endpointCert = await ATSMSP256EndpointCertificate.generate(
+    const endpointCert = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
       "test.acme.xyz",
@@ -44,12 +41,12 @@ describe("P-256 ECDH Encryption/Decryption", () => {
   });
 
   test("should handle multiple P-256 recipients", async () => {
-    const recipient1 = await ATSMSP256EndpointCertificate.generate(
+    const recipient1 = await ATSMSEndpointCertificate.generate(
       "did:test:recipient1",
       "recipient1.acme.xyz",
       "recipient1.acme.xyz",
     );
-    const recipient2 = await ATSMSP256EndpointCertificate.generate(
+    const recipient2 = await ATSMSEndpointCertificate.generate(
       "did:test:recipient2",
       "recipient2.acme.xyz",
       "recipient2.acme.xyz",
@@ -71,13 +68,13 @@ describe("P-256 ECDH Encryption/Decryption", () => {
   });
 
   test("should fail to decrypt P-256 message without private key", async () => {
-    const certWithKey = await ATSMSP256EndpointCertificate.generate(
+    const certWithKey = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
       "test.acme.xyz",
     );
 
-    const certNoKey = ATSMSP256EndpointCertificate.fromPEM(
+    const certNoKey = ATSMSEndpointCertificate.fromPEM(
       certWithKey.certificatePEM,
     );
 
@@ -94,12 +91,12 @@ describe("P-256 ECDH Encryption/Decryption", () => {
   });
 
   test("should fail to decrypt P-256 message with wrong certificate", async () => {
-    const rightCert = await ATSMSP256EndpointCertificate.generate(
+    const rightCert = await ATSMSEndpointCertificate.generate(
       "did:test:right",
       "right.acme.xyz",
       "right.acme.xyz",
     );
-    const wrongCert = await ATSMSP256EndpointCertificate.generate(
+    const wrongCert = await ATSMSEndpointCertificate.generate(
       "did:test:wrong",
       "wrong.acme.xyz",
       "wrong.acme.xyz",
@@ -118,7 +115,7 @@ describe("P-256 ECDH Encryption/Decryption", () => {
   });
 
   test("should handle binary data with P-256", async () => {
-    const endpointCert = await ATSMSP256EndpointCertificate.generate(
+    const endpointCert = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
       "test.acme.xyz",
@@ -138,7 +135,7 @@ describe("P-256 ECDH Encryption/Decryption", () => {
   });
 
   test("should handle empty message with P-256", async () => {
-    const endpointCert = await ATSMSP256EndpointCertificate.generate(
+    const endpointCert = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
       "test.acme.xyz",
@@ -158,7 +155,7 @@ describe("P-256 ECDH Encryption/Decryption", () => {
   });
 
   test("should produce different ciphertext for same message with P-256", async () => {
-    const endpointCert = await ATSMSP256EndpointCertificate.generate(
+    const endpointCert = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
       "test.acme.xyz",
@@ -186,7 +183,7 @@ describe("Mixed RSA and P-256 Encryption", () => {
       "rsa.acme.xyz",
       "rsa.acme.xyz",
     );
-    const p256Cert = await ATSMSP256EndpointCertificate.generate(
+    const p256Cert = await ATSMSEndpointCertificate.generate(
       "did:test:p256",
       "p256.acme.xyz",
       "p256.acme.xyz",
@@ -210,13 +207,13 @@ describe("Mixed RSA and P-256 Encryption", () => {
   });
 
   test("should work with P-256 certificate without private key for encryption", async () => {
-    const certWithKey = await ATSMSP256EndpointCertificate.generate(
+    const certWithKey = await ATSMSEndpointCertificate.generate(
       "did:test:123",
       "test.acme.xyz",
       "test.acme.xyz",
     );
 
-    const certNoKey = ATSMSP256EndpointCertificate.fromPEM(
+    const certNoKey = ATSMSEndpointCertificate.fromPEM(
       certWithKey.certificatePEM,
     );
 
@@ -237,12 +234,12 @@ describe("Mixed RSA and P-256 Encryption", () => {
 
 describe("P-256 Signing and Encryption Full Flow", () => {
   test("should sign with P-256, encrypt for P-256, and decrypt/verify", async () => {
-    const senderCert = await ATSMSP256EndpointCertificate.generate(
+    const senderCert = await ATSMSEndpointCertificate.generate(
       "did:test:sender",
       "sender.acme.xyz",
       "sender.acme.xyz",
     );
-    const recipientCert = await ATSMSP256EndpointCertificate.generate(
+    const recipientCert = await ATSMSEndpointCertificate.generate(
       "did:test:recipient",
       "recipient.acme.xyz",
       "recipient.acme.xyz",
@@ -277,7 +274,7 @@ describe("P-256 Signing and Encryption Full Flow", () => {
       "sender.acme.xyz",
       "sender.acme.xyz",
     );
-    const recipientCert = await ATSMSP256EndpointCertificate.generate(
+    const recipientCert = await ATSMSEndpointCertificate.generate(
       "did:test:recipient",
       "recipient.acme.xyz",
       "recipient.acme.xyz",
@@ -299,7 +296,7 @@ describe("P-256 Signing and Encryption Full Flow", () => {
   });
 
   test("should sign with P-256, encrypt for RSA, and decrypt/verify", async () => {
-    const senderCert = await ATSMSP256EndpointCertificate.generate(
+    const senderCert = await ATSMSEndpointCertificate.generate(
       "did:test:sender",
       "sender.acme.xyz",
       "sender.acme.xyz",
@@ -336,7 +333,7 @@ describe("P-256 Signing and Encryption Full Flow", () => {
       "rsa-recipient.acme.xyz",
       "rsa.recipient.acme.xyz",
     );
-    const p256Recipient = await ATSMSP256EndpointCertificate.generate(
+    const p256Recipient = await ATSMSEndpointCertificate.generate(
       "did:test:p256-recipient",
       "p256-recipient.acme.xyz",
       "p256.recipient.acme.xyz",

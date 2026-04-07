@@ -16,7 +16,7 @@ import * as readline from "readline";
 
 import { ATSMSClient } from "../lib/atsms-client";
 import {
-  type ATSMSAnyEndpointCertificate,
+  ATSMSEndpointCertificate,
   generateEndpointCertificate,
   loadEndpointCertificateWithKey,
 } from "../lib/certificates/index";
@@ -94,7 +94,7 @@ interface ChatState {
   storageManager: ATSMSStorageManager;
   wsClient: ATSMSWebSocketClient | null;
   currentConversation: string | null;
-  endpointCert: ATSMSAnyEndpointCertificate | null;
+  endpointCert: ATSMSEndpointCertificate | null;
 }
 
 class ChatClient {
@@ -650,7 +650,7 @@ class ChatClient {
     const storage = new SQLiteAdapter(this.db);
 
     // Check for endpoint certificate
-    let endpointCert: ATSMSAnyEndpointCertificate | null = null;
+    let endpointCert: ATSMSEndpointCertificate | null = null;
     let hasPrivateKey = false;
 
     try {
@@ -1888,7 +1888,6 @@ Account Info:
       // Generate self-signed endpoint certificate (P-256 ECDSA by default)
       // Email is computed deterministically from DID and email domain
       const endpointCert = await generateEndpointCertificate(
-        "P256",
         this.state.did,
         this.state.handle,
         ATSMS_API_DOMAIN,

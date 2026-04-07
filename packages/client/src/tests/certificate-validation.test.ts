@@ -67,18 +67,18 @@ describe("Certificate Validation", () => {
       expect(stdout).toContain("Subject:");
       expect(stdout).toContain("Issuer:");
 
-      // Check for RSA key (self-signed endpoint certificates use RSA)
-      const hasRSA =
-        stdout.includes("RSA") ||
-        stdout.includes("rsaEncryption") ||
-        stdout.includes("rsassaPss");
+      // Check for P-256 ECDSA key
+      const hasEC =
+        stdout.includes("EC") ||
+        stdout.includes("prime256v1") ||
+        stdout.includes("ecdsa");
 
-      if (hasRSA) {
-        console.log("✓ Certificate uses RSA key");
+      if (hasEC) {
+        console.log("✓ Certificate uses P-256 ECDSA key");
       } else {
         console.log("Certificate content for debugging:");
         console.log(stdout);
-        console.log("Certificate may not be using RSA key");
+        console.log("Certificate may not be using P-256 ECDSA key");
       }
     } catch (error: any) {
       const certPEM = readFileSync(certPath, "utf8");

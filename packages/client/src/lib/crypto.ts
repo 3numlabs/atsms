@@ -1,14 +1,13 @@
 /**
  * Cryptographic operations for signing, encryption, and decryption
- * Uses the Certificate classes for all certificate operations
- * Supports both RSA and P-256 ECDSA certificates
+ * Uses P-256 ECDSA endpoint certificates for all operations
  */
 
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 
 import {
-  type ATSMSAnyEndpointCertificate,
+  ATSMSEndpointCertificate,
   loadEndpointCertificate,
 } from "./certificates/index";
 import { decryptMessageOAEP, encryptMessageOAEP } from "./crypto-oaep";
@@ -34,14 +33,14 @@ async function ensureInitialized() {
 }
 
 /**
- * Sign message using PKCS#7 (S/MIME) - supports both RSA and ECDSA
+ * Sign message using PKCS#7 (S/MIME) with P-256 ECDSA
  * @param message - The message content to sign
- * @param signerCert - Certificate containing the private key for signing (RSA or P-256)
+ * @param signerCert - Certificate containing the private key for signing
  * @returns Signed content as binary data
  */
 export async function signMessage(
   message: string,
-  signerCert: ATSMSAnyEndpointCertificate,
+  signerCert: ATSMSEndpointCertificate,
 ): Promise<Uint8Array> {
   await ensureInitialized();
 
@@ -112,32 +111,31 @@ export async function signMessage(
 
 /**
  * Encrypt signed content for recipients
- * Supports both RSA-OAEP and ECDH encryption based on certificate type
+ * Encrypt signed content for multiple recipients using CMS EnvelopedData
  */
 export async function encryptMessage(
   signedContent: Uint8Array,
-  recipientCerts: ATSMSAnyEndpointCertificate[],
+  recipientCerts: ATSMSEndpointCertificate[],
 ): Promise<Uint8Array> {
-  // Directly pass through to encryptMessageOAEP (which handles both RSA and ECDH)
+  // Pass through to encryptMessageOAEP (ECDH with P-256)
   return await encryptMessageOAEP(signedContent, recipientCerts);
 }
 
 /**
  * Decrypt and verify message signature
- * Supports both RSA and P-256 certificates
  *
  * @param encryptedContent - The encrypted content as raw bytes
- * @param recipientCert - The recipient's certificate (must contain private key, RSA or P-256)
+ * @param recipientCert - The recipient's certificate (must contain private key)
  * @returns ATSMSDecryptedMessage containing the signer's certificate and decrypted content
  */
 export async function decryptAndVerifyMessageSignature(
   encryptedContent: Uint8Array,
-  recipientCert: ATSMSAnyEndpointCertificate,
+  recipientCert: ATSMSEndpointCertificate,
 ): Promise<ATSMSDecryptedMessage> {
   await ensureInitialized();
 
   try {
-    // Step 1: Decrypt the message (supports both RSA-OAEP and ECDH)
+    // Step 1: Decrypt the message (ECDH with P-256)
     const decryptedBytes = await decryptMessageOAEP(
       encryptedContent,
       recipientCert,
@@ -172,8 +170,6 @@ export async function decryptAndVerifyMessageSignature(
     const signerCertDer = signerCert.toSchema().toBER();
     const signerCertPEM = arrayBufferToPEM(signerCertDer, "CERTIFICATE");
 
-    // Use loadEndpointCertificate to detect algorithm and create appropriate certificate type
-    // This handles both RSA and P-256 signer certificates
     const endpointCert = loadEndpointCertificate(signerCertPEM);
 
     // Extract the content
@@ -206,8 +202,23 @@ export async function decryptAndVerifyMessageSignature(
       throw new Error("No content found in SignedData");
     }
 
-    // TODO: Implement actual signature verification
-    // For now, we trust the content if we can decrypt it
+    // ==========================================================================
+    // TODO [SECURITY]: Implement cryptographic signature verification.
+    //
+    // Currently we trust the message if decryption succeeds, but we do NOT
+    // verify the PKCS#7 SignedData signature against the signer's public key.
+    // Without this step, a man-in-the-middle who can inject messages into the
+    // inbox could forge the signer identity — the signer certificate embedded
+    // in the message is taken at face value.
+    //
+    // To close this gap:
+    //   1. Call cmsSignedData.verify() with the signer's public key
+    //   2. Cross-check the signer's certificate against the PDS record
+    //      (fetch the cert from at.atsms.x509 for the claimed DID and compare
+    //      fingerprints) to prevent substitution of a different valid cert.
+    //
+    // This is a prerequisite for any production deployment.
+    // ==========================================================================
 
     return {
       messageSigner: endpointCert,

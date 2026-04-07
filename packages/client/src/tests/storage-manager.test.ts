@@ -258,7 +258,6 @@ ywJtC5IxIDJRr4JSdBHBXBj6h+dKFhnoHEQQzcIASJYqiwnjz7FZvlCr
     return {
       did,
       handle: "test.handle",
-      rootCert: null,
       clientCerts: [
         {
           serialNumber: "test-cert-001",

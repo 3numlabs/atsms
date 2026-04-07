@@ -67,7 +67,7 @@ ywJtC5IxIDJRr4JSdBHBXBj6h+dKFhnoHEQQzcIASJYqiwnjz7FZvlCr
 
     await adapter.saveCertificate(
       did,
-      "root",
+      "endpoint",
       "test-serial-123",
       certificatePEM,
       privateKeyPEM,
@@ -77,7 +77,7 @@ ywJtC5IxIDJRr4JSdBHBXBj6h+dKFhnoHEQQzcIASJYqiwnjz7FZvlCr
 
     const retrieved = await adapter.getCertificate(
       did,
-      "root",
+      "endpoint",
       "test-serial-123",
     );
     expect(retrieved).toBeDefined();
@@ -147,8 +147,7 @@ tOpA8eBWCGev2pG8LfrCNy6QZ1n7zP5cVL0cg5wCIF3rWGlFF4F3mOhHSQcKBJMx
 p1J7dq0cL7a3AQ3sVoX9
 -----END CERTIFICATE-----`;
 
-    // Save multiple certificates
-    await adapter.saveCertificate(did, "root", "root-001", certificatePEM);
+    // Save multiple endpoint certificates
     await adapter.saveCertificate(
       did,
       "endpoint",
@@ -165,15 +164,11 @@ p1J7dq0cL7a3AQ3sVoX9
     );
 
     const certs = await adapter.listCertificates(did);
-    expect(certs).toHaveLength(3);
-
-    const rootCert = certs.find((c) => c.type === "root");
-    expect(rootCert).toBeDefined();
-    expect(rootCert?.serialNumber).toBe("root-001");
-    expect(rootCert?.hasPrivateKey).toBe(false);
+    expect(certs).toHaveLength(2);
 
     const clientWithKey = certs.find((c) => c.serialNumber === "client-001");
     expect(clientWithKey?.hasPrivateKey).toBe(true);
+    expect(clientWithKey?.type).toBe("endpoint");
 
     const clientWithoutKey = certs.find((c) => c.serialNumber === "client-002");
     expect(clientWithoutKey?.hasPrivateKey).toBe(false);
@@ -191,17 +186,22 @@ tOpA8eBWCGev2pG8LfrCNy6QZ1n7zP5cVL0cg5wCIF3rWGlFF4F3mOhHSQcKBJMx
 p1J7dq0cL7a3AQ3sVoX9
 -----END CERTIFICATE-----`;
 
-    await adapter.saveCertificate(did, "root", "delete-me", certificatePEM);
+    await adapter.saveCertificate(
+      did,
+      "endpoint",
+      "delete-me",
+      certificatePEM,
+    );
 
     // Verify it exists
-    let retrieved = await adapter.getCertificate(did, "root", "delete-me");
+    let retrieved = await adapter.getCertificate(did, "endpoint", "delete-me");
     expect(retrieved).toBeDefined();
 
     // Delete it
-    await adapter.deleteCertificate(did, "root", "delete-me");
+    await adapter.deleteCertificate(did, "endpoint", "delete-me");
 
     // Verify it's gone
-    retrieved = await adapter.getCertificate(did, "root", "delete-me");
+    retrieved = await adapter.getCertificate(did, "endpoint", "delete-me");
     expect(retrieved).toBeNull();
   });
 

@@ -62,7 +62,7 @@ describe("Crypto Functions", () => {
       clientCertPath = path.join(testDir, "client-cert.pem");
     });
 
-    test("should generate self-signed RSA endpoint certificate", async () => {
+    test("should generate self-signed P-256 endpoint certificate", async () => {
       const result = await generateTestEndpointCertificate(testDID, testHandle);
 
       expect(result.cert).toBeTruthy();
@@ -91,11 +91,11 @@ describe("Crypto Functions", () => {
       expect(endpointCert.isSimpleSelfSigned()).toBe(true);
     });
 
-    test("should verify endpoint certificate uses RSA with openssl", async () => {
+    test("should verify endpoint certificate uses P-256 ECDSA with openssl", async () => {
       const result = await generateTestEndpointCertificate(testDID, testHandle);
 
       // Write certificate to temp file
-      const tempCertPath = path.join(testDir, "test-rsa-cert.pem");
+      const tempCertPath = path.join(testDir, "test-p256-cert.pem");
       writeFileSync(tempCertPath, result.cert, "utf8");
 
       // Use openssl to check the certificate's public key algorithm
@@ -109,18 +109,18 @@ describe("Crypto Functions", () => {
           `openssl x509 -in ${tempCertPath} -text -noout`,
         );
 
-        // Check for RSA key
-        const hasRSA =
-          stdout.includes("RSA") ||
-          stdout.includes("rsaEncryption") ||
-          stdout.includes("rsassaPss");
+        // Check for EC/P-256 key
+        const hasEC =
+          stdout.includes("EC") ||
+          stdout.includes("prime256v1") ||
+          stdout.includes("ecdsa");
 
-        if (!hasRSA) {
-          console.error("Certificate does not use RSA. OpenSSL output:");
+        if (!hasEC) {
+          console.error("Certificate does not use P-256 ECDSA. OpenSSL output:");
           console.error(stdout);
         }
 
-        expect(hasRSA).toBe(true);
+        expect(hasEC).toBe(true);
       } catch (error) {
         console.error("OpenSSL verification failed:", error);
         throw error;

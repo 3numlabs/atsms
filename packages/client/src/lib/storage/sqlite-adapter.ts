@@ -66,7 +66,7 @@ export class SQLiteAdapter implements StorageAdapter {
       CREATE TABLE IF NOT EXISTS certificates (
         id TEXT PRIMARY KEY,
         did TEXT NOT NULL,
-        type TEXT NOT NULL, -- 'root' or 'endpoint'
+        type TEXT NOT NULL, -- 'endpoint'
         serialNumber TEXT NOT NULL,
         certificatePEM TEXT NOT NULL,
         privateKeyPEM TEXT, -- Encrypted private key in PEM format

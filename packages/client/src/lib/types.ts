@@ -2,28 +2,28 @@
  * Shared types for AT-SMS Library
  */
 
-import type { ATSMSAnyEndpointCertificate } from "./certificates/index.js";
+import type { ATSMSEndpointCertificate } from "./certificates/index.js";
 
 /**
  * AT-SMS Certificate Types
  * - 'endpoint': Self-signed endpoint certificate (one per device)
- * - 'root': Legacy type, kept for backwards compatibility with older databases
  */
-export type ATSMSCertificateType = "endpoint" | "root";
+export type ATSMSCertificateType = "endpoint";
 
 /**
- * AT-SMS Certificate Algorithm Types
- * - 'RSA': RSA-2048 with RSA-OAEP encryption (legacy)
- * - 'P256': P-256 ECDSA with ECDH encryption (modern)
+ * AT-SMS Message Types stored in per-certificate inboxes
+ * - 'atsms': AT-SMS P7M encrypted payloads (opaque blob)
+ * - 'atsms-email': S/MIME encrypted email (enveloped-data, opaque blob)
+ * - 'email': Normal parsed email with subject, body, attachments
  */
-export type ATSMSCertificateAlgorithm = "RSA" | "P256";
+export type ATSMSMessageType = "atsms" | "atsms-email" | "email";
 
 /**
  * Result of decrypting and verifying an AT-SMS message signature
  */
 export interface ATSMSDecryptedMessage {
   /** The certificate of the message signer */
-  messageSigner: ATSMSAnyEndpointCertificate;
+  messageSigner: ATSMSEndpointCertificate;
   /** The decrypted content as raw bytes */
   decryptedContent: Uint8Array;
 }
@@ -114,8 +114,12 @@ export interface ATSMSTransportReceipt {
  */
 export interface ATSMSMessageMetadata {
   id: string; // Message ID (hash of encrypted content)
+  messageType: ATSMSMessageType; // Message type (atsms, atsms-email, email)
   seq: number; // Sequence number for ordering
+  length: number; // Content length in bytes
   storedAt: string; // ISO timestamp when stored
+  transportSource?: string; // How message arrived (email, api, websocket)
+  subject?: string; // Email subject (only for messageType: "email")
 }
 
 /**
@@ -123,7 +127,16 @@ export interface ATSMSMessageMetadata {
  * Returned by get/download operations
  */
 export interface ATSMSTransportMessage extends ATSMSMessageMetadata {
-  encryptedContent: string; // Base64-encoded PKCS#7 content
+  encryptedContent?: string; // Base64-encoded PKCS#7 content (atsms, atsms-email)
+  // Email-specific fields (messageType: "email")
+  from?: string; // Sender email/DID
+  fromName?: string; // Sender display name
+  to?: string; // Recipient email
+  textBody?: string; // Plain text body
+  htmlBody?: string; // HTML body
+  attachments?: ATSMSEmailAttachment[];
+  smimeVerification?: ATSMSSmimeVerification;
+  read?: boolean; // Read flag
 }
 
 /**
@@ -131,6 +144,28 @@ export interface ATSMSTransportMessage extends ATSMSMessageMetadata {
  */
 export interface ATSMSTransportMessageDebug extends ATSMSTransportMessage {
   transportReceipt: ATSMSTransportReceipt; // Transport metadata
+}
+
+/**
+ * Email attachment
+ */
+export interface ATSMSEmailAttachment {
+  filename: string;
+  contentType: string;
+  content: string; // Base64-encoded
+  size: number;
+}
+
+/**
+ * S/MIME verification result for email messages
+ */
+export interface ATSMSSmimeVerification {
+  signed: boolean;
+  signerEmail?: string;
+  signerCertificate?: string;
+  verified?: boolean;
+  verificationError?: string;
+  verifiedAt?: string;
 }
 
 export interface ATSMSConfig {
@@ -162,10 +197,11 @@ export interface ATSMSSendRecipient {
 export interface ATSMSSendMessageResponse {
   results: Array<{
     did: string; // Recipient DID
-    certSerial: string; // Recipient certificate serial
-    email: string; // Recipient email
+    certSerial?: string; // Recipient certificate serial (atsms/atsms-email)
+    email?: string; // Recipient email (atsms/atsms-email)
     status: "sent" | "failed"; // Delivery status
     error?: string; // Error message (if failed)
+    deliveredTo?: number; // Number of certs delivered to (email type)
   }>;
 }
 

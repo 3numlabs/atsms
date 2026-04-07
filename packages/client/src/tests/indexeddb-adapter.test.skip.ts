@@ -212,7 +212,7 @@ describe("IndexedDBAdapter", () => {
 
       await adapter.saveCertificate(
         "did:plc:test",
-        "root",
+        "endpoint",
         rootCert.serialNumber,
         rootCert.toString(),
         rootCert.certificatePrivateKeyPEM,
@@ -222,7 +222,7 @@ describe("IndexedDBAdapter", () => {
 
       const retrieved = await adapter.getCertificate(
         "did:plc:test",
-        "root",
+        "endpoint",
         rootCert.serialNumber,
       );
       expect(retrieved).toBeDefined();
@@ -240,7 +240,7 @@ describe("IndexedDBAdapter", () => {
 
       await adapter.saveCertificate(
         "did:plc:test",
-        "root",
+        "endpoint",
         rootCert.serialNumber,
         rootCert.toString(),
         rootCert.certificatePrivateKeyPEM,
@@ -249,7 +249,7 @@ describe("IndexedDBAdapter", () => {
       const certs = await adapter.listCertificates("did:plc:test");
       expect(certs).toHaveLength(1);
       expect(certs[0].did).toBe("did:plc:test");
-      expect(certs[0].type).toBe("root");
+      expect(certs[0].type).toBe("endpoint");
       expect(certs[0].hasPrivateKey).toBe(true);
     });
 
@@ -261,20 +261,20 @@ describe("IndexedDBAdapter", () => {
 
       await adapter.saveCertificate(
         "did:plc:test",
-        "root",
+        "endpoint",
         rootCert.serialNumber,
         rootCert.toString(),
       );
 
       await adapter.deleteCertificate(
         "did:plc:test",
-        "root",
+        "endpoint",
         rootCert.serialNumber,
       );
 
       const retrieved = await adapter.getCertificate(
         "did:plc:test",
-        "root",
+        "endpoint",
         rootCert.serialNumber,
       );
       expect(retrieved).toBeNull();
