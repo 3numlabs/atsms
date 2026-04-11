@@ -245,6 +245,147 @@ describe("P-256 ECDSA Endpoint Certificate", () => {
     });
   });
 
+  describe("generateWithKey - reuse existing private key", () => {
+    it("should generate a certificate using an existing private key", async () => {
+      // Generate an initial cert to get a P-256 private key
+      const originalCert = await ATSMSEndpointCertificate.generate(
+        "did:plc:test123",
+        "test.acme.xyz",
+        "test.acme.xyz",
+      );
+      const privateKeyPEM = originalCert.certificatePrivateKeyPEM!;
+
+      // Create a new cert reusing the same private key
+      const newCert = await ATSMSEndpointCertificate.generateWithKey(
+        privateKeyPEM,
+        "did:plc:test123",
+        "test.acme.xyz",
+        "test.acme.xyz",
+      );
+
+      expect(newCert).toBeInstanceOf(ATSMSEndpointCertificate);
+      expect(newCert.getType()).toBe("endpoint");
+      expect(newCert.commonName).toBe("did:plc:test123");
+      expect(newCert.did).toBe("did:plc:test123");
+      expect(newCert.email).toBe("plc.test123@test.acme.xyz");
+      expect(newCert.hasPrivateKey()).toBe(true);
+      expect(newCert.isValid()).toBe(true);
+      expect(newCert.isCA).toBe(false);
+      expect(newCert.isSimpleSelfSigned()).toBe(true);
+    });
+
+    it("reused private key produces certs with the same public key", async () => {
+      const originalCert = await ATSMSEndpointCertificate.generate(
+        "did:plc:test",
+        "test.com",
+        "example.com",
+      );
+      const privateKeyPEM = originalCert.certificatePrivateKeyPEM!;
+
+      const newCert = await ATSMSEndpointCertificate.generateWithKey(
+        privateKeyPEM,
+        "did:plc:test",
+        "test.com",
+        "example.com",
+      );
+
+      // Both certs should have the same public key (since they share the private key)
+      const originalPubKey = await originalCert.getPublicKey();
+      const newPubKey = await newCert.getPublicKey();
+
+      const originalJwk = await crypto.subtle.exportKey("jwk", originalPubKey);
+      const newJwk = await crypto.subtle.exportKey("jwk", newPubKey);
+
+      expect(newJwk.x).toBe(originalJwk.x);
+      expect(newJwk.y).toBe(originalJwk.y);
+      expect(newJwk.crv).toBe(originalJwk.crv);
+    });
+
+    it("each call produces a different serial number", async () => {
+      const originalCert = await ATSMSEndpointCertificate.generate(
+        "did:plc:test",
+        "test.com",
+        "example.com",
+      );
+      const privateKeyPEM = originalCert.certificatePrivateKeyPEM!;
+
+      const cert1 = await ATSMSEndpointCertificate.generateWithKey(
+        privateKeyPEM,
+        "did:plc:test",
+        "test.com",
+        "example.com",
+      );
+      const cert2 = await ATSMSEndpointCertificate.generateWithKey(
+        privateKeyPEM,
+        "did:plc:test",
+        "test.com",
+        "example.com",
+      );
+
+      expect(cert1.serialNumber).not.toBe(cert2.serialNumber);
+    });
+
+    it("should reject invalid DID format", async () => {
+      const originalCert = await ATSMSEndpointCertificate.generate(
+        "did:plc:test",
+        "test.com",
+        "example.com",
+      );
+      const privateKeyPEM = originalCert.certificatePrivateKeyPEM!;
+
+      await expect(
+        ATSMSEndpointCertificate.generateWithKey(
+          privateKeyPEM,
+          "not-a-did",
+          "test.com",
+          "example.com",
+        ),
+      ).rejects.toThrow("Invalid DID");
+    });
+
+    it("should reject empty emailDomain", async () => {
+      const originalCert = await ATSMSEndpointCertificate.generate(
+        "did:plc:test",
+        "test.com",
+        "example.com",
+      );
+      const privateKeyPEM = originalCert.certificatePrivateKeyPEM!;
+
+      await expect(
+        ATSMSEndpointCertificate.generateWithKey(
+          privateKeyPEM,
+          "did:plc:test",
+          "test.com",
+          "",
+        ),
+      ).rejects.toThrow("Invalid emailDomain");
+    });
+
+    it("loadEndpointCertificateWithKey works on cert generated with reused key", async () => {
+      const originalCert = await ATSMSEndpointCertificate.generate(
+        "did:plc:test",
+        "test.com",
+        "example.com",
+      );
+      const privateKeyPEM = originalCert.certificatePrivateKeyPEM!;
+
+      const newCert = await ATSMSEndpointCertificate.generateWithKey(
+        privateKeyPEM,
+        "did:plc:test",
+        "test.com",
+        "example.com",
+      );
+
+      // Should be able to load the new cert with the same private key
+      const loaded = await loadEndpointCertificateWithKey(
+        newCert.certificatePEM,
+        privateKeyPEM,
+      );
+      expect(loaded.hasPrivateKey()).toBe(true);
+      expect(loaded.serialNumber).toBe(newCert.serialNumber);
+    });
+  });
+
   describe("Self-Signed Certificate Properties", () => {
     it("should correctly identify self-signed endpoint certificate", async () => {
       const endpointCert = await ATSMSEndpointCertificate.generate(

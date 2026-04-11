@@ -148,6 +148,103 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
   }
 
   /**
+   * Generate a new self-signed P-256 endpoint certificate using an existing private key.
+   * The private key must be a P-256 ECDSA key in PEM format.
+   *
+   * @param privateKeyPEM - PEM-encoded PKCS#8 P-256 private key
+   * @param did - Decentralized identifier
+   * @param domain - Domain name / handle
+   * @param emailDomain - Email provider domain for deterministic email
+   * @param validityDays - Certificate validity period (default: 10 years)
+   */
+  static async generateWithKey(
+    privateKeyPEM: string,
+    did: string,
+    domain: string,
+    emailDomain: string,
+    validityDays = 3652,
+  ): Promise<ATSMSEndpointCertificate> {
+    // Validate parameters
+    if (typeof did !== "string" || !did.startsWith("did:")) {
+      throw new Error(`Invalid DID: must start with 'did:', got: ${did}`);
+    }
+    if (typeof domain !== "string" || !domain.trim()) {
+      throw new Error(`Invalid domain: must be a non-empty string`);
+    }
+    if (typeof emailDomain !== "string" || !emailDomain.trim()) {
+      throw new Error(`Invalid emailDomain: must be a non-empty string`);
+    }
+
+    // Import the provided private key
+    const ecAlg = { name: "ECDSA", namedCurve: "P-256" };
+    const privateKey = await ATSMSCertificate.importPrivateKeyPEM(
+      privateKeyPEM,
+      ecAlg,
+    );
+
+    // Derive public key from private key
+    const privateJwk = await cryptoProvider.subtle.exportKey("jwk", privateKey);
+    const { d: _, ...publicJwk } = privateJwk;
+    const publicKey = await cryptoProvider.subtle.importKey(
+      "jwk",
+      { ...publicJwk, key_ops: ["verify"] },
+      ecAlg,
+      true,
+      ["verify"],
+    );
+
+    const ecKeys = { privateKey, publicKey } as CryptoKeyPair;
+
+    // Generate serial number and compute email
+    const serialNumber = await generateSerialNumber();
+    const sanEmail = computeATSMSEmail(did, emailDomain);
+
+    // Create self-signed certificate
+    const cert = await X509CertificateGenerator.createSelfSigned(
+      {
+        serialNumber: serialNumber.hex,
+        name: `CN=${did}`,
+        notBefore: new Date(),
+        notAfter: new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000),
+        signingAlgorithm: {
+          name: "ECDSA",
+          hash: "SHA-256",
+        } as EcdsaParams,
+        keys: ecKeys,
+        extensions: [
+          new BasicConstraintsExtension(false, undefined, true),
+          new KeyUsagesExtension(
+            KeyUsageFlags.digitalSignature | KeyUsageFlags.keyAgreement,
+            true,
+          ),
+          new ExtendedKeyUsageExtension(
+            [
+              "1.3.6.1.5.5.7.3.1",
+              "1.3.6.1.5.5.7.3.2",
+              "1.3.6.1.5.5.7.3.4",
+            ],
+            false,
+          ),
+          new SubjectAlternativeNameExtension([
+            { type: "dns", value: domain },
+            { type: "url", value: `at://${did}/at.atsms.x509/${serialNumber.hex}` },
+            { type: "email", value: sanEmail },
+          ]),
+        ],
+      },
+      cryptoProvider as any,
+    );
+
+    const endpointCert = new ATSMSEndpointCertificate(
+      cert.rawData,
+      ecKeys.privateKey,
+      privateKeyPEM,
+    );
+
+    return endpointCert;
+  }
+
+  /**
    * Create an ATSMSEndpointCertificate from DER-encoded bytes (public certificate only)
    */
   static fromDER(derBytes: Uint8Array): ATSMSEndpointCertificate {

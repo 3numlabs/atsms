@@ -41,6 +41,8 @@ export {
   createTextContent,
   createWebRTCContent,
   extractP7MFromEmail,
+  generateDMConvoId,
+  isDMConvoId,
   parseTextContent,
   parseWebRTCContent,
   prepareMessageForSending,
