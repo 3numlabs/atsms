@@ -116,12 +116,20 @@ derivation change. D10 survives with an updated joint-use argument. **D8 must be
 **Adopt BeeKEM as the CGKA core — proposed decision D11, gated on two design spikes** (write
 before any spec rewrite):
 
-- **Spike A — messaging profile** (§4.1): eviction/deletion schedule, per-sender chains, grace
-  windows, replay/GC reconciliation. Exit: a `beekem-core.md` §-level draft + agreement that FS
-  properties match or exceed the current spec's stated guarantees.
-- **Spike B — DGM reconciliation** (§4 item in `dgm.md`): map strong-remove (SR1–SR5), roles, and
-  same-DID authorization onto `CgkaOperation` gating; confirm the removes-last merge rule doesn't
-  reopen the concurrent-remove collusion window beyond what dcgka-core §10 accepted.
+- **Spike A — messaging profile** — ✅ **COMPLETE 2026-07-22, PASS**
+  ([`spike-a-messaging-profile.md`](./spike-a-messaging-profile.md)): eviction/deletion schedule,
+  per-sender chains over `PcsKey`, coverage-replaces-acks (PCS latency *improves* — no ack
+  round-trip), checkpoint frontier reconciling replay with GC, and a new `rootCommit` check that
+  upgrades seed-equivocation handling from detect to reject. FS parity table at §7: parity or
+  better on every row.
+- **Spike B — DGM reconciliation** — ✅ **COMPLETE 2026-07-22, PASS**
+  ([`spike-b-dgm-reconciliation.md`](./spike-b-dgm-reconciliation.md)): DGM survives as the pure
+  validity filter gating tree application (P1–P5 lift through); SR2 cascades ride BeeKEM's own
+  replay trigger; the concurrent-remove collusion window is not reopened (it narrows on the
+  processing side); checkpoint-cascade safety proven (frontier lemma, §6). Port requirements
+  PR-1..3 recorded.
+
+**Both gates passed → D11 is ready for sign-off.** On sign-off, Phase 0b (§6) executes.
 
 If either spike fails, fall back to the current DCGKA specs (they remain complete and signed off
 through D10). The rejected alternatives stay rejected: MLS still requires the sequencer (D0),
