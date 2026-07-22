@@ -1,0 +1,21 @@
+{
+  "name": "@atsms/dcgka",
+  "version": "0.1.0",
+  "description": "ATSMS advanced E2EE engine: BeeKEM tree + ATSMS messaging profile (spec/beekem-core.md)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^1.2.0",
+    "@noble/curves": "^1.8.0",
+    "@noble/hashes": "^1.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

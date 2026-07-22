@@ -292,8 +292,9 @@ prose `description`.
 - ~~Member identity encoding~~ **decided 2026-07-17**: `MemberID` split into `DeviceID` + `Membership`
   (§1); `create`/`add` payloads name DeviceIDs, `remove` names a Membership.
 - ~~`atsms-2sm:v1:x3dh-kdf` label~~ **retired 2026-07-22 (D11)** with the X3DH layer (§7).
-- **Numeric enum freeze** — class/opType/reason/contentType/mode/suite assignments freeze when Phase 1
-  starts; until then renumbering is free.
+- ~~Numeric enum freeze~~ **FROZEN 2026-07-22** — Phase 1 started (user sign-off): the §3.1/§4.1/§4.5/§6
+  class/opType/reason/contentType/mode/suite assignments as printed are final for v1; any change from
+  here is a version break.
 - ~~Envelope modes~~ **decided 2026-07-20**: two-mode `SealedEnvelope` (§6) — asym (bootstrap-class, with
   KEM `suite` id reserved for the PQ hybrid) and sym (in-conversation, per-recipient PRF tag lookup); the
   X3DH KDF gains a reserved `KEM_ss` slot (§5). A mod-P truncated-tag variant was considered and rejected

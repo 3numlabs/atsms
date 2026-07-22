@@ -18,9 +18,10 @@
 | Stale-member **warn** | 7 days silent | PROPOSED | Surface to app: member neither sending nor acking — PCS hole + GC blocker forming. | ordering-auth §9 / dgm.md §7 |
 | Stale-member **alarm** / eviction proposal | 30 days silent | PROPOSED | Escalation: propose admin eviction (ordinary remove); aligns with repair give-up. | ordering-auth §9 / dgm.md §7 |
 | ~~`T_ACK`~~ | — | RETIRED (2026-07-22, D11) | Acks retired; PCS completes on processing the update op itself. Coverage replaces the GC signal (`T_COVER` below). | beekem-core §5 |
-| `T_COVER` | 24 h | PROPOSED (2026-07-22) | Max delay before a member with nothing else to send emits a `coverage` frame after processing a membership op/update — GC/eviction signal only, jittered, digest carrier. | beekem-core §5 |
-| `T_EPOCH_GRACE` | 30 d (= `T_REPAIR_GIVEUP`) | PROPOSED (2026-07-22) | Hard cap on how long an uncovered epoch stays open before its keys are evicted regardless (FS bound). | beekem-core §8 |
-| Checkpoint cadence | every covered-by-all membership op | PROPOSED (2026-07-22) | When the tree checkpoint (replay base + op-graph prune frontier) advances. | beekem-core §6 |
+| `T_COVER` | 24 h | DECIDED (2026-07-22, user sign-off) | Max delay before a member with nothing else to send emits a `coverage` frame after processing a membership op/update — GC/eviction signal only, jittered, digest carrier. | beekem-core §5 |
+| `T_EPOCH_GRACE` | 30 d (= `T_REPAIR_GIVEUP`) | DECIDED (2026-07-22, user sign-off) | Hard cap on how long an uncovered epoch stays open before its keys are evicted regardless (FS bound). | beekem-core §8 |
+| Checkpoint cadence | every covered-by-all membership op | DECIDED (2026-07-22, user sign-off) | When the tree checkpoint (replay base + op-graph prune frontier) advances. | beekem-core §6 |
+| KDF split | BLAKE3 below the `PcsKey` seam / HKDF-SHA256 above | DECIDED (2026-07-22, user sign-off) | Oracle byte-fidelity for tree internals; house label discipline for the profile layer. Frozen before vector generation. | beekem-core §3 |
 | `OUT_OF_ORDER_TOLERANCE` | 100 | DECIDED (2026-07-16; from p2panda) | Max backward gap per sender chain: how many missing earlier messages can still be decrypted later (skipped-key cache per epoch). | beekem-core §7 |
 | `MAX_FORWARD_DISTANCE` | 1000 | DECIDED (2026-07-16; from p2panda) | Max fast-forward per sender chain in one step; caps CPU on a malicious/huge index jump. | beekem-core §7 |
 | `MAX_SKIPPED_TOTAL` | 2000 per group | DECIDED (2026-07-16; from p2panda hardening) | Global cap on cached skipped message keys — memory-DoS bound. | beekem-core §7 |

@@ -49,7 +49,7 @@ All of γ is serializable, encrypted at rest, and mutated **copy-on-success only
 
 ## 3. Key schedule — byte-exact domain separation
 
-**KDF split (PROPOSED, D11 follow-on)**: *below* the `PcsKey` seam, derivations are **BLAKE3**
+**KDF split (DECIDED 2026-07-22, user sign-off)**: *below* the `PcsKey` seam, derivations are **BLAKE3**
 exactly as the oracle computes them (`blake3::derive_key`; per-level path ratchet, DH→symmetric
 key derivation) — byte-fidelity to the reference implementation is the port's primary correctness
 anchor in the absence of a formal proof. *Above* the seam, derivations are **HKDF-SHA256**
@@ -236,10 +236,9 @@ chains, stuff skipped-key stores, grow the op graph, or perturb tree state.
 
 ## 12. Open questions (tracked for review)
 
-- **KDF split** (§3): BLAKE3 below / HKDF-SHA256 above the seam — PROPOSED; freeze before Phase 1
-  test-vector generation (bytes change).
-- **`T_COVER` = 24 h, `T_EPOCH_GRACE` = 30 d, checkpoint cadence** — PROPOSED defaults
-  ([`parameters.md`](./parameters.md)).
+- ~~KDF split~~ **DECIDED 2026-07-22 (user sign-off)**: BLAKE3 below / HKDF-SHA256 above the seam (§3).
+- ~~`T_COVER` / `T_EPOCH_GRACE` / checkpoint cadence~~ **DECIDED 2026-07-22 (user sign-off)**: 24 h /
+  30 d / every covered-by-all membership op ([`parameters.md`](./parameters.md)).
 - **Coverage frames as digest carriers** (§5, dgm.md §8 cadence interaction) — drafted as
   natural pairing; confirm.
 - **`rootCommit` upstream divergence** (§4.3): consider proposing upstream to keyhive; until

@@ -1,0 +1,240 @@
+{
+  "cipherSamples": {
+    "deriveSymmetricKey": {
+      "out": "47c1b0f69166dcb1d775946ecd6cd9541903a19ee5c3d3fd7cb226969af8e561",
+      "pk": "219e4d800da968d2a5fcb009c784f4746c7138edb9ee4844b739e830b05cf424",
+      "sk": "5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "encryptSecret": {
+      "ciphertext": "e8ecc6f1178aca7ee112fa152e2283cc951c9eeb86cb3caa0d05cf6a46acf6ca7470e43b86b5c04ebb0dbabbedb897ee",
+      "docId": "d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7",
+      "nonce": "9df2d95d7cf3e7b0258997040787d81ccaea716de8ac77de",
+      "pairedPk": "0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f20",
+      "secret": "3333333333333333333333333333333333333333333333333333333333333333",
+      "sk": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "ratchetForward": {
+      "in": "4444444444444444444444444444444444444444444444444444444444444444",
+      "out": "2fcbbb86b469c009a404eae4308993520dd9d831d84ac5f7efde61520f87fe0d"
+    },
+    "shareKeyOf": {
+      "in": "7777777777777777777777777777777777777777777777777777777777777777",
+      "out": "1cf579aba45a10ba1d1ef06d91fca2aa9ed0a1150515653155405d0b18cb9a67"
+    }
+  },
+  "concurrent": {
+    "aUpdaterSk": "25242726212023222d2c2f2e29282b2a35343736313033323d3c3f3e39383b3a",
+    "bUpdaterSk": "26272425222320212e2f2c2d2a2b282936373435323330313e3f3c3d3a3b3839",
+    "docId": "e72c28fe718e3a30afc47438da779d508d2dad5a265fafeb4f377e1d57fb098c",
+    "expectRootSecret": "782c24d3eb294619c079bba5f4f350de31cd2eefd0e6491ffce01d140d296a3e",
+    "members": [
+      {
+        "id": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+        "initialSk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      },
+      {
+        "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+        "initialSk": "010003020504070609080b0a0d0c0f0e111013121514171619181b1a1d1c1f1e"
+      },
+      {
+        "id": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+        "initialSk": "02030001060704050a0b08090e0f0c0d12131011161714151a1b18191e1f1c1d"
+      },
+      {
+        "id": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+        "initialSk": "03020100070605040b0a09080f0e0d0c13121110171615141b1a19181f1e1d1c"
+      }
+    ],
+    "name": "concurrent_n4_a0_b3_resolve1",
+    "resolverSk": "24252627202122232c2d2e2f28292a2b34353637303132333c3d3e3f38393a3b"
+  },
+  "generator": "beekem-vectors (inkandswitch/keyhive clone @ 2026-07-09)",
+  "scenarios": [
+    {
+      "docId": "e72c28fe718e3a30afc47438da779d508d2dad5a265fafeb4f377e1d57fb098c",
+      "members": [
+        {
+          "id": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+          "initialSk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        }
+      ],
+      "name": "seq_n1_u[0]",
+      "steps": [
+        {
+          "expectRootSecret": "9714c4f61c9466ee29e4a372ce2dcd878e44442c366e8e4910b30aa30d91268a",
+          "member": 0,
+          "newLeafSk": "25242726212023222d2c2f2e29282b2a35343736313033323d3c3f3e39383b3a",
+          "op": "update"
+        }
+      ]
+    },
+    {
+      "docId": "e72c28fe718e3a30afc47438da779d508d2dad5a265fafeb4f377e1d57fb098c",
+      "members": [
+        {
+          "id": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+          "initialSk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        },
+        {
+          "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "initialSk": "010003020504070609080b0a0d0c0f0e111013121514171619181b1a1d1c1f1e"
+        }
+      ],
+      "name": "seq_n2_u[0, 1]",
+      "steps": [
+        {
+          "expectRootSecret": "9714c4f61c9466ee29e4a372ce2dcd878e44442c366e8e4910b30aa30d91268a",
+          "member": 0,
+          "newLeafSk": "25242726212023222d2c2f2e29282b2a35343736313033323d3c3f3e39383b3a",
+          "op": "update"
+        },
+        {
+          "expectRootSecret": "39402cc28e1a2a75916a74cbcee49a33e0e95c5310a5aef71b3fc181911befbe",
+          "member": 1,
+          "newLeafSk": "24252627202122232c2d2e2f28292a2b34353637303132333c3d3e3f38393a3b",
+          "op": "update"
+        }
+      ]
+    },
+    {
+      "docId": "e72c28fe718e3a30afc47438da779d508d2dad5a265fafeb4f377e1d57fb098c",
+      "members": [
+        {
+          "id": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+          "initialSk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        },
+        {
+          "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "initialSk": "010003020504070609080b0a0d0c0f0e111013121514171619181b1a1d1c1f1e"
+        },
+        {
+          "id": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+          "initialSk": "02030001060704050a0b08090e0f0c0d12131011161714151a1b18191e1f1c1d"
+        }
+      ],
+      "name": "seq_n3_u[0, 2]",
+      "steps": [
+        {
+          "expectRootSecret": "52385736bb72d4265ca591bdc73523bc2c0c25b01194888426638e5b4f8127b5",
+          "member": 0,
+          "newLeafSk": "25242726212023222d2c2f2e29282b2a35343736313033323d3c3f3e39383b3a",
+          "op": "update"
+        },
+        {
+          "expectRootSecret": "1000990b8ddb6f586bf60c348adae0939c9786b14ef6d052203e1b074fb25085",
+          "member": 2,
+          "newLeafSk": "27262524232221202f2e2d2c2b2a292837363534333231303f3e3d3c3b3a3938",
+          "op": "update"
+        }
+      ]
+    },
+    {
+      "docId": "e72c28fe718e3a30afc47438da779d508d2dad5a265fafeb4f377e1d57fb098c",
+      "members": [
+        {
+          "id": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+          "initialSk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        },
+        {
+          "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "initialSk": "010003020504070609080b0a0d0c0f0e111013121514171619181b1a1d1c1f1e"
+        },
+        {
+          "id": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+          "initialSk": "02030001060704050a0b08090e0f0c0d12131011161714151a1b18191e1f1c1d"
+        },
+        {
+          "id": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+          "initialSk": "03020100070605040b0a09080f0e0d0c13121110171615141b1a19181f1e1d1c"
+        },
+        {
+          "id": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+          "initialSk": "04050607000102030c0d0e0f08090a0b14151617101112131c1d1e1f18191a1b"
+        }
+      ],
+      "name": "seq_n5_u[4, 0, 2]",
+      "steps": [
+        {
+          "expectRootSecret": "f5b442bf8a1a27d9bc12b0c87de7eeb7e524a997b84d6681c849c447a3902bb8",
+          "member": 4,
+          "newLeafSk": "212023222524272629282b2a2d2c2f2e313033323534373639383b3a3d3c3f3e",
+          "op": "update"
+        },
+        {
+          "expectRootSecret": "8c31c18ff15292f40ac298402eb4e9037b0db1539a7f10da1459835388e4a4be",
+          "member": 0,
+          "newLeafSk": "25242726212023222d2c2f2e29282b2a35343736313033323d3c3f3e39383b3a",
+          "op": "update"
+        },
+        {
+          "expectRootSecret": "a817c6a73e3ee7f0c416476935d352cae210af066a0ba1b3f6f9039c54df162a",
+          "member": 2,
+          "newLeafSk": "27262524232221202f2e2d2c2b2a292837363534333231303f3e3d3c3b3a3938",
+          "op": "update"
+        }
+      ]
+    },
+    {
+      "docId": "e72c28fe718e3a30afc47438da779d508d2dad5a265fafeb4f377e1d57fb098c",
+      "members": [
+        {
+          "id": "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29",
+          "initialSk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        },
+        {
+          "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+          "initialSk": "010003020504070609080b0a0d0c0f0e111013121514171619181b1a1d1c1f1e"
+        },
+        {
+          "id": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+          "initialSk": "02030001060704050a0b08090e0f0c0d12131011161714151a1b18191e1f1c1d"
+        },
+        {
+          "id": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+          "initialSk": "03020100070605040b0a09080f0e0d0c13121110171615141b1a19181f1e1d1c"
+        },
+        {
+          "id": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+          "initialSk": "04050607000102030c0d0e0f08090a0b14151617101112131c1d1e1f18191a1b"
+        },
+        {
+          "id": "6e7a1cdd29b0b78fd13af4c5598feff4ef2a97166e3ca6f2e4fbfccd80505bf1",
+          "initialSk": "05040706010003020d0c0f0e09080b0a15141716111013121d1c1f1e19181b1a"
+        },
+        {
+          "id": "8a875fff1eb38451577acd5afee405456568dd7c89e090863a0557bc7af49f17",
+          "initialSk": "06070405020300010e0f0c0d0a0b080916171415121310111e1f1c1d1a1b1819"
+        },
+        {
+          "id": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+          "initialSk": "07060504030201000f0e0d0c0b0a090817161514131211101f1e1d1c1b1a1918"
+        },
+        {
+          "id": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+          "initialSk": "08090a0b0c0d0e0f000102030405060718191a1b1c1d1e1f1011121314151617"
+        }
+      ],
+      "name": "seq_n9_u[0, 8, 3]",
+      "steps": [
+        {
+          "expectRootSecret": "30a74cd9ab7cd3cb8184718eac16d038ed73f5f0c788f4a7e9ff4e938f36cbe1",
+          "member": 0,
+          "newLeafSk": "25242726212023222d2c2f2e29282b2a35343736313033323d3c3f3e39383b3a",
+          "op": "update"
+        },
+        {
+          "expectRootSecret": "e6f6d0e1aa09e405bf731e503d32e282732f10bd70713850e5519a2333362bf1",
+          "member": 8,
+          "newLeafSk": "2d2c2f2e29282b2a25242726212023223d3c3f3e39383b3a3534373631303332",
+          "op": "update"
+        },
+        {
+          "expectRootSecret": "af824e877591255c4acbffe83dcf88fa2a234a0226eb20884cb08e70220ade66",
+          "member": 3,
+          "newLeafSk": "26272425222320212e2f2c2d2a2b282936373435323330313e3f3c3d3a3b3839",
+          "op": "update"
+        }
+      ]
+    }
+  ]
+}
