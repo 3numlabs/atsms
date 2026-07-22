@@ -277,6 +277,59 @@ export class BeeKem {
     this.currentSecretEncrypterLeafIdx = this.hasRootKey() ? leafIdx : null;
   }
 
+  /**
+   * Deep clone — the engine's copy-on-success mutation discipline
+   * (beekem-core §9) applies ops to a clone and commits only on success.
+   */
+  clone(): BeeKem {
+    const t = Object.create(BeeKem.prototype) as BeeKem;
+    Object.defineProperty(t, 'docId', { value: this.docId, enumerable: true });
+    (t as unknown as Record<string, unknown>)['nextLeafIdx'] = this.nextLeafIdx;
+    (t as unknown as Record<string, unknown>)['leaves'] = this.leaves.map((l) =>
+      l === null ? null : { id: l.id, pk: l.pk },
+    );
+    (t as unknown as Record<string, unknown>)['innerNodes'] = this.innerNodes.map((n) =>
+      n === null ? null : n.clone(),
+    );
+    (t as unknown as Record<string, unknown>)['treeSize'] = this.treeSize.clone();
+    (t as unknown as Record<string, unknown>)['idToLeafIdx'] = new Map(this.idToLeafIdx);
+    t.currentSecretEncrypterLeafIdx = this.currentSecretEncrypterLeafIdx;
+    return t;
+  }
+
+  /**
+   * Hash of the public tree state (leaves, node keys, encrypted stores) —
+   * convergence assertions (Spike B §9: identical filtered-tree hashes).
+   */
+  publicStateBytes(): Uint8Array {
+    const parts: string[] = [`n:${this.nextLeafIdx}`, `s:${this.treeSize.u32()}`];
+    this.leaves.forEach((l, i) => {
+      parts.push(
+        l === null
+          ? `L${i}:_`
+          : `L${i}:${bytesToHex(l.id)}:${nodeKeyKeys(l.pk).map(bytesToHex).join(',')}`,
+      );
+    });
+    this.innerNodes.forEach((n, i) => {
+      if (n === null) {
+        parts.push(`I${i}:_`);
+        return;
+      }
+      const vs = n.versions
+        .map(
+          (v) =>
+            `${bytesToHex(v.pk)}/${bytesToHex(v.encrypterPk)}/` +
+            [...v.sk.entries()]
+              .sort((a, b) => a[0] - b[0])
+              .map(([k, e]) => `${k}=${bytesToHex(e.nonce)}${bytesToHex(e.ciphertext)}${bytesToHex(e.pairedPk)}`)
+              .join('|'),
+        )
+        .join(';');
+      parts.push(`I${i}:${vs}`);
+    });
+    return new TextEncoder().encode(parts.join('\n'));
+  }
+
   // ── internals ────────────────────────────────────────────────────────────
 
   private maybeDecryptParentKey(
