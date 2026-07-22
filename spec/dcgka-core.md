@@ -1,5 +1,13 @@
 # spec/dcgka-core.md — DCGKA State Machine & Key Schedule
 
+> ## ⚠️ SUPERSEDED (2026-07-22, decision D11) by [`beekem-core.md`](./beekem-core.md)
+> The CGKA core is now BeeKEM (concurrent TreeKEM, Ink & Switch — [`../beekem-analysis.md`](../beekem-analysis.md)).
+> This document is retained as the design record of the Weidner-DCGKA phase (through D10): the
+> acks-are-PCS mechanism, the outer/inner two-ratchet schedule, and the 2SM seed fan-out it
+> specifies are no longer part of the protocol. Constructions that survived — the per-sender
+> FS-AEAD application ratchet (§7), the state-mutation discipline (§9), and the skipped-key
+> constants — were carried into beekem-core.md §7–§9. Do not implement from this document.
+
 > **Status: DRAFT v0.1 (2026-07-15) — for review.** [Protocol] · Phase 0 deliverable.
 > Closes gaps **G2** (ack lifecycle), **G3** (application ratchet), **G7** (welcome contents/compaction),
 > **G11** (concurrency mitigations), **G15** (storage/GC) from [`../gap-analysis.md`](../gap-analysis.md).

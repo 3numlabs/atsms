@@ -1,7 +1,8 @@
 # spec/sealed-sender.md — Sealed-Sender Envelope Layer
 
-> **Status: DRAFT v0.3 (2026-07-22) — for review.** *(v0.2: two envelope modes — `sealed-sym` added, §11.
-> v0.3: D9/D10 — `sealed-asym` targets the signed prekey; sealing cert removed.)* [Protocol] · Phase 0 deliverable.
+> **Status: DRAFT v0.4 (2026-07-22) — for review.** *(v0.2: two envelope modes — `sealed-sym` added, §11.
+> v0.3: D9/D10 — `sealed-asym` targets the signed prekey; sealing cert removed. v0.4: D11 — sym envKey
+> derived from `PcsKey_e` with the sender in the info; ack references retired.)* [Protocol] · Phase 0 deliverable.
 > Closes gap **G9** (anonymous ingress, padding, key separation, envelope dedup) from
 > [`../gap-analysis.md`](../gap-analysis.md); implements decision **D5** (anonymous relay ingress).
 > Inputs: spec v1.1 §6 (construction + envelope-FS and X509-unification design notes), Signal sealed-sender
@@ -11,8 +12,8 @@
 
 ## 1. Role and scope
 
-The sealed envelope is the **outermost cryptographic layer**: every ATSMS-DCGKA transmission — control,
-ack, welcome, app, repair, and the 2SM direct messages riding inside them — crosses the network and rests
+The sealed envelope is the **outermost cryptographic layer**: every ATSMS transmission — control
+(including coverage), welcome, app, and repair frames — crosses the network and rests
 in mailboxes only as a `SealedEnvelope`. Its single job is **metadata protection against outsiders**: an
 observer on the wire, a mailbox provider, or anyone who obtains a stored envelope learns neither the
 sender's identity nor anything about the payload beyond its size bucket (§5) and arrival time. Recipients
@@ -36,9 +37,9 @@ recipient share no state yet. The envelope therefore has two modes:
   state. This is the only surface that ever pays KEM costs (including the future post-quantum hybrid,
   overview §6.12).
 - **`sealed-sym`** (§11, AEAD under a per-sender-epoch key derived from group state, located via a
-  pseudonymous per-recipient tag) — **all in-conversation traffic**: app, control, ack, and repair frames
-  between established members. KEM-free, ~55 B overhead, envelope FS/PCS inherited from the ratchet, and
-  quantum-safe as-is.
+  pseudonymous per-recipient tag) — **all in-conversation traffic**: app, control, coverage, and repair
+  frames between established members. KEM-free, ~55 B overhead, envelope FS/PCS inherited from the epoch
+  schedule, and quantum-safe as-is.
 
 ## 2. Keys
 
@@ -81,8 +82,8 @@ SealedEnvelope (sym)  = [ version = 1, mode = 2, tag, nonce, ct ]   — §11
 
 ## 4. Sealing construction (`sealed-asym`)
 
-- **HPKE Base mode** (RFC 9180), `DHKEM(X25519, HKDF-SHA256)` + `HKDF-SHA256` + `ChaCha20-Poly1305` — the
-  same suite as 2SM ([`2sm.md`](./2sm.md) §3). `info = "atsms-seal:v1"`. No PSK, no HPKE Auth mode (sender
+- **HPKE Base mode** (RFC 9180), `DHKEM(X25519, HKDF-SHA256)` + `HKDF-SHA256` + `ChaCha20-Poly1305`.
+  `info = "atsms-seal:v1"`. No PSK, no HPKE Auth mode (sender
   authentication is deliberately *inside* the seal).
 - **Sealed plaintext** = deterministic CBOR `[ contentType, body, pad ]`:
   - `contentType = 1` — `body` is a signed ordering-layer frame (wire-format.md §3). The frame's signature,
@@ -120,10 +121,14 @@ structure is shared).
 Size buckets close only one channel. The spec's other layers already remove the worst timing signatures,
 restated here as the envelope layer's dependencies:
 
-- **Acks piggyback/batch** on outgoing frames (dcgka-core §5) — blunts the post-op ack burst.
-- **No standalone digest frames** (dgm.md §8) — a quiet group emits no heartbeat pattern.
-- Clients MAY add random send jitter (suggested 0–30 s for non-interactive frames like acks and digests;
-  never for user-visible messages).
+- **Protocol acks no longer exist** (retired by D11 — beekem-core §5): the post-op ack storm, the
+  single worst traffic classifier this layer had to blunt, is gone. `coverage` frames are the residual
+  non-interactive traffic: lazy (≤ `T_COVER` = 24 h), padded like everything else, and SHOULD be
+  heavily jittered.
+- **No standalone digest frames** (dgm.md §8) — a quiet group emits no heartbeat pattern; digests ride
+  coverage or ordinary frames.
+- Clients MAY add random send jitter (suggested 0–30 s for non-interactive frames like coverage and
+  digest carriers; never for user-visible messages).
 - **Residual (documented)**: burst timing correlation across n mailboxes at fan-out time, and sender IP
   visibility to the provider, remain. IP privacy requires Tor/mixnet transport (optional profile,
   spec v1.1 §7); full recipient unlinkability requires a mixnet — out of scope for v1 (spec v1.1 §2).
@@ -200,22 +205,23 @@ at the 150-device max ≲ 0.15 s CPU per send — negligible next to the network
 
 ### 11.1 Applicability (normative)
 
-All in-conversation traffic — `app`, `control`, `ack`, `repair` frames between established members — MUST
-use `sealed-sym`. `sealed-asym` is reserved for bootstrap-class traffic (§1) and MUST NOT be used where a
+All in-conversation traffic — `app`, `control` (including `coverage`), `repair` frames between
+established members — MUST use `sealed-sym`. `sealed-asym` is reserved for bootstrap-class traffic (§1) and MUST NOT be used where a
 sym key exists (a KEM there is pure cost). A receiver that cannot yet locate a sym envelope's key buffers
 briefly (§11.4); senders never fall back to asym mid-conversation.
 
-### 11.2 Key derivation
+### 11.2 Key derivation *(re-based 2026-07-22, D11)*
 
 ```
-envKey(sender, epoch) = Expand(I_sender, "atsms-seal:v1:sym")
+envKey(e, S) = Expand(PcsKey_e, "atsms-seal:v1:sym" ‖ enc(S))      // S = sender Membership
 ```
 
-where `I_sender` is that sender's update secret for the epoch (dcgka-core §3). Every member derives every
-member's update secrets (that is what acks do), so every member can open every sender's envelopes; nobody
-outside the group can. Keys are inherently **per-group** (update secrets are per-group; 2SM meshes are
-never shared across groups — 2sm.md §1), and **per-sender-epoch** — there is no group-global epoch, and
-none is needed.
+where `PcsKey_e` is the group's root secret for epoch `e` (beekem-core §3). The sender moved into the
+info string because the ikm is now shared: every member derives `PcsKey_e` by processing epoch `e`'s
+`update` op (no ack round-trip), so every member can compute every sender's `envKey` — nobody outside the
+group can. Keys remain **per-group** (root secrets are per-group) and **per-sender-epoch** (distinct
+`envKey`/tag per sender). Epochs are now group-scoped rather than per-sender — all senders' envelope keys
+and tags rotate together on each update; more tag-table churn, no protocol change.
 
 ### 11.3 Wire shape, tag, and AEAD
 
@@ -243,15 +249,17 @@ none is needed.
 
 ### 11.4 Table maintenance & epoch rules
 
-- Entries are added the moment a sender's new update secret is derived — including a joiner's first epoch,
-  derived by existing members when they process the `add` (dcgka-core §4).
-- A frame that *establishes* a new epoch (an `update`) rides under the sender's **pre-op** epoch key —
-  receivers cannot hold the new one yet.
+- Entries (all members' envKeys/tags for epoch `e`) are added the moment `PcsKey_e` is derived — i.e.,
+  on processing epoch `e`'s `update` op (beekem-core §4.2). A joiner's first entries come from the first
+  post-add update.
+- A frame that *establishes* a new epoch (an `update`) rides under the sender's **latest established**
+  epoch key — receivers cannot hold the new one yet. The first update after `create` has no prior epoch
+  and rides `sealed-asym` (bootstrap-class, §1).
 - **Unknown tag** → buffer briefly under the ordering-layer bounds (mirror of the unknown-Membership rule,
-  ordering-auth §7) — it may precede the `add`/ack processing that creates the expected entry — else drop.
+  ordering-auth §7) — it may precede the `update` whose processing creates the expected entry — else drop.
 - **Grace retention**: superseded epoch `envKey`s are retained while their epoch's messages may still
-  legitimately arrive — until that epoch's ops are acked-by-all, capped at `T_REPAIR_GIVEUP` (30 d)
-  ([`parameters.md`](./parameters.md), PROPOSED) — so a receiver offline through several of a sender's
+  legitimately arrive — until the epoch **closes** (covered-by-all, capped at `T_EPOCH_GRACE` = 30 d —
+  beekem-core §8, [`parameters.md`](./parameters.md), PROPOSED) — so a receiver offline through several
   epochs still recognizes the missed epochs' envelopes.
 
 ### 11.5 Security properties
@@ -260,14 +268,14 @@ none is needed.
 - **Insiders**: any member can mint a well-formed group envelope; sender authenticity was never the
   envelope's job — it is the frame signature (ordering-auth §5). No regression.
 - **Compromise scope**: a leaked `envKey` exposes envelope *metadata* of one sender-epoch of one group
-  (never content), healed by the next update+ack — strictly narrower than a signed-prekey compromise
+  (never content), healed by the next update — strictly narrower than a signed-prekey compromise
   (bootstrap-class envelope metadata across conversations for the ≤ 2-week key window, §9). Envelope
-  FS/PCS = ratchet FS/PCS.
+  FS/PCS = epoch-schedule FS/PCS (beekem-core §8 eviction).
 - **Post-quantum**: KEM-free — `sealed-sym` is quantum-safe as specified (overview §6, Tier 1), which
   confines the PQ-hybrid cost to the rare `sealed-asym` surface.
-- **2SM invariant preserved**: 2SM ciphertexts continue to ride only *inside* signed frames inside
-  envelopes and carry no cleartext fields (2sm.md §1.1) — sealed-sym changes where the wrap key comes
-  from, not the nesting.
+- **Identity-freeness preserved** *(the old 2SM invariant, generalized after D11 retired 2SM)*: all key
+  material — `PathChange` secret stores included — rides only *inside* signed frames inside envelopes,
+  with no cleartext identity fields anywhere in the envelope layer.
 
 ### 11.6 Relation to the drop-point profile
 
@@ -293,7 +301,7 @@ per-recipient rules exist to avoid. Documented trade, not an accident.
 
 6. **Sealed-sym vectors**: tag derivation/lookup (incl. multi-hit trial-open); per-recipient nonce/ct
    uniqueness across a fan-out (assert no two recipient copies share bytes); unknown-tag buffering then
-   resolution after `add` processing; grace-epoch recognition after simulated offline gap; mode-misuse
+   resolution after `update` processing; grace-epoch recognition after simulated offline gap; mode-misuse
    rejection (asym where sym established, and vice versa).
 
 ## 13. Open questions (tracked for review)
@@ -309,8 +317,8 @@ per-recipient rules exist to avoid. Documented trade, not an accident.
   in-conversation traffic (§11); asym reserved for bootstrap-class. Per-recipient PRF tags, full-width
   (mod-P truncation dial considered and rejected for simplicity); per-recipient fresh-nonce re-encryption
   mandatory.
-- **Sym grace-retention window** (§11.4): acked-by-all capped at 30 d is PROPOSED — confirm alongside the
-  other repair-aligned constants.
+- **Sym grace-retention window** (§11.4): covered-by-all capped at 30 d (= `T_EPOCH_GRACE`) is PROPOSED —
+  confirm alongside the other repair-aligned constants.
 - ~~Sealing key vs signed prekey~~ **decided 2026-07-22 (user sign-off, D9/D10)**: merged — `sealed-asym`
   seals to `at.atsms.prekey.signedPrekey`; the sealing cert type is deleted; the encryption floor is HPKE
   to raw keys (CMS = `SignedData` only, §10). Joint-use security argument in identity-devices §3.1;

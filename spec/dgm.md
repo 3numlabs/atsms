@@ -1,6 +1,10 @@
 # spec/dgm.md — Decentralized Group Membership for ATSMS-DCGKA
 
-> **Status: DRAFT v0.1 (2026-07-15) — for review.** [Protocol] · Phase 0 deliverable.
+> **Status: DRAFT v0.2 (2026-07-22) — for review.** *(v0.2: D11 reconciliation — the key-agreement
+> executor is now the BeeKEM tree; the DGM is unchanged as policy and additionally acts as the
+> validity filter gating tree application ([`../spike-b-dgm-reconciliation.md`](../spike-b-dgm-reconciliation.md));
+> ack-tracking in §6 re-based on coverage; §8 digests narrowed by `rootCommit`.)*
+> [Protocol] · Phase 0 deliverable.
 > Closes gaps **G5** (group-management model) and **G14** (insider-divergence detection) from
 > [`../gap-analysis.md`](../gap-analysis.md).
 > Inputs: DCGKA paper §5.2/§6.2 (required DGM properties), prototype `StrongRemoveDgm.java`,
@@ -17,9 +21,13 @@ members_view(history, viewer) → { membership → role }
 ```
 
 It holds **no state of its own** beyond what is derivable from `history`; it performs **no I/O**; it consults
-**no clocks**. DCGKA calls it to compute seed-recipient sets (`member-view(sender)`), welcome contents, and
-message-acceptance gating. Implementations MAY cache/evaluate incrementally, but incremental evaluation MUST
-be extensionally equal to batch re-evaluation from scratch (test obligation, §9).
+**no clocks**. The core calls it for welcome contents and message-acceptance gating, and — since D11 — as the
+**validity filter for the BeeKEM tree**: a CGKA op (`create`/`add`/`remove`/`update`) is applied to the tree
+iff this function judges it valid at its causal position in the full frame DAG; invalid ops remain causal
+history but never touch tree state (beekem-core §4.1, PR-1/PR-2). Because validity is deterministic over the
+op set + causal order, all honest members apply the same subset and BeeKEM's deterministic merge/replay
+yields identical trees (P5 lifts through). Implementations MAY cache/evaluate incrementally, but incremental
+evaluation MUST be extensionally equal to batch re-evaluation from scratch (test obligation, §9).
 
 ## 2. Identifiers
 
@@ -28,9 +36,10 @@ be extensionally equal to batch re-evaluation from scratch (test obligation, §9
   endpoint-cert SubjectPublicKeyInfo (also the `at.atsms.x509` rkey).
 - **Membership** `= (DeviceID, admittedBy)` — the group-layer member identifier: one device's tenure in
   one group. **`admittedBy` = the MessageID of the op that admitted this member** (the `create` for
-  founding members, the `add` otherwise) — derived data, never client-chosen. Re-adding a device
-  therefore yields a fresh Membership with no coordination — prior 2SM/ratchet state MUST never be
-  resumed. *(Renamed 2026-07-17 from the earlier `MemberID = (DID, fingerprint, instanceNonce)` triple:
+  founding members, the `add` otherwise; identical construction to BeeKEM's
+  `Digest<Signed<CgkaOperation>>`) — derived data, never client-chosen. Re-adding a device
+  therefore yields a fresh Membership with no coordination — prior chain/envelope-key state MUST never be
+  resumed (all profile keys are Membership-keyed, beekem-core §3, so resumption is structurally impossible). *(Renamed 2026-07-17 from the earlier `MemberID = (DID, fingerprint, instanceNonce)` triple:
   the split separates who the device is from which admission is speaking.)*
 - **OpID** = the MessageID (content hash of the signed message, per ordering-auth §2) of a membership
   operation.
@@ -104,20 +113,23 @@ authorization (§4) fails — mark invalid; (ii) apply SR1–SR5 retroactively w
 is concurrent with already-applied ops — implementations MAY re-evaluate from the nearest checkpoint; the
 result MUST equal batch evaluation (P5).
 
-**DCGKA interaction note**: ops invalidated retroactively may already have distributed seeds. Per paper
-App. C, invalidated operations contribute no trusted fresh secret; after any retroactive invalidation the
-client MUST schedule a PCS `update` before its next application message (same rule as the concurrent-remove
-mitigation, gap G11).
+**Core interaction note**: ops invalidated retroactively may already have contributed key material (an
+invalidated `add`'s leaf may sit in a surviving root's resolutions). After any retroactive invalidation the
+client MUST schedule a PCS `update` before its next application message (beekem-core §10 — the one case the
+no-root-→-update rule does not absorb). Mechanically, retroactive invalidation rides the replay BeeKEM
+already performs on concurrent membership changes (PR-3, [`../spike-b-dgm-reconciliation.md`](../spike-b-dgm-reconciliation.md) §4).
 
-## 6. Ack tracking and `members_view(viewer)`
+## 6. Coverage tracking and `members_view(viewer)` *(re-based 2026-07-22 — acks retired by D11)*
 
-DCGKA requires each member to evaluate membership **as another member sees it**. The DGM therefore records,
-from the ordering layer: (i) which membership ops each member has authored, and (ii) which it has **acked**
-(`ack`/`add-ack` referencing the op). `members_view(history, viewer)` = the §5 evaluation restricted to ops
-the viewer has authored, acked, or that causally precede those. Welcome messages carry the adder's
-**processed DGM state** (spec v1.1 deviation, adopted from p2panda) — the state MUST include enough op/ack
-history for the joiner to evaluate `members_view` for every current member, and is validated by the joiner
-against the ops' signatures, not trusted blindly.
+The core still needs membership **as another member sees it**. With acks retired (beekem-core §5), the
+signal is **coverage**: op `X` is in `viewer`'s vantage iff `viewer` authored `X` or authored any frame
+causally descending from `X` (the ordering layer's `deps`). `members_view(history, viewer)` = the §5
+evaluation restricted to ops the viewer has authored or covered, plus their causal predecessors — same
+shape as before, different (and cheaper) signal: coverage is implicit in all ordinary traffic, topped up
+by `coverage` frames within `T_COVER` (beekem-core §5). Welcome messages carry a **checkpoint + op
+suffix** (beekem-core §6) instead of the old processed-DGM-state form: the joiner re-validates every
+suffix signature and evaluates the DGM itself; the checkpoint portion is adder-asserted — the same trust
+the adder already held under the old `ackMatrix`.
 
 ## 7. Eviction policy hook (stale members)
 
@@ -129,28 +141,32 @@ surfaced to the application; an application/operator policy MAY respond by issui
 
 ## 8. Insider-divergence detection & recovery (G14)
 
-A malicious member can send different seed secrets to different members (undetectable at the DGM layer;
-permanent ratchet divergence). Detection (SHOULD, v1):
+*(Narrowed 2026-07-22 by D11.)* The worst insider attack of the DCGKA era — one signed op delivering
+**different key material to different members** — is now **rejected at processing time** by the
+`rootCommit` check (beekem-core §4.3): a single root secret per epoch makes divergent derivation
+detectable by every member individually, no comparison protocol needed. What remains for the digest is
+**op-set equivocation** (showing different signed-op histories to different members):
 
-- **Consistency digest**: `H(groupId ‖ sorted valid-op OpIDs at the sender's heads ‖ for each member m:
-  H(outer-ratchet state of m))`. Computable only by members (ratchet states are secret); reveals nothing to
-  outsiders. Carried as an optional signed field on **any** outgoing frame — app, ack, or control (decided
-  2026-07-16; no standalone digest frames, which would hand relays a heartbeat pattern for quiet groups):
-  attach whenever sending if the last attached digest is older than 7 days, and at least every `K = 50` own
-  messages. A member emitting no frames at all is handled by the stale-member machinery (§7), not the
-  digest cadence — and a member who sends nothing cannot be spreading divergent state.
-- **Mismatch procedure**: on digest mismatch with equal head-sets, members exchange per-member ratchet-state
-  hashes (encrypted, pairwise via 2SM) to isolate the divergent (sender, op). The op's author is the
-  equivocator → any admin SHOULD `remove` the author (ordinary op); the group then heals via `update`. If
-  no admin acts or isolation fails, clients MUST surface a persistent security warning; the fallback is
-  group re-creation (new `create`, fresh GroupID) excluding the suspect.
-- Guarantee preserved either way (paper §7): the equivocator cannot resist removal, and post-removal it
-  decrypts nothing.
+- **Consistency digest**: `H(groupId ‖ sorted valid-op OpIDs at the sender's heads ‖ H(tree public
+  state))`. No secret inputs remain (ratchet-state hashes are retired with the outer ratchet) — but the
+  digest stays inside the sealed envelope like everything else. Carried as an optional signed field on
+  **any** outgoing frame (decided 2026-07-16; no standalone digest frames) — attach if the last one is
+  older than 7 days, at least every `K = 50` own messages; `coverage` frames are natural carriers
+  (beekem-core §5). Silent members are the stale-member machinery's job (§7), not the digest's.
+- **Mismatch procedure**: head-set differences resolve through ordinary `repair` (someone is missing
+  ops — liveness, not attack). Equal head-sets with unequal digests means disagreement on op *validity*
+  or tree state — deterministic from the op set, so it isolates to a missing/withheld op or an
+  implementation fault; exchange the op lists via repair and re-evaluate. A member persistently
+  presenting signed, conflicting head-sets **is** the equivocator → any admin SHOULD `remove` it
+  (ordinary op); if no admin acts, clients MUST surface a persistent security warning; the fallback
+  remains group re-creation (fresh `create`) excluding the suspect.
+- Guarantee preserved: the equivocator cannot resist removal, and post-removal it decrypts nothing.
 
 ## 9. Test obligations (normative for the implementation)
 
 1. **Permutation determinism**: randomized op schedules (≥ 32 members, adds/removes/grants/leaves incl.
-   same-DID device ops), evaluated under many delivery interleavings — identical views (P1/P5).
+   same-DID device ops), evaluated under many delivery interleavings — identical views (P1/P5) **and
+   identical filtered-tree hashes** (the D11 filter composed with BeeKEM merge/replay; Spike B §9).
 2. **Strong-remove vectors** (fixed, reviewable): add∥remove-of-adder; mutual admin remove; revoke∥admin-op;
    remove-user∥target-adds-device; re-add after remove (fresh Membership — new `admittedBy` — no state
    resumption); cascade depth ≥ 3;

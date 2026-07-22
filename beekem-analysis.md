@@ -5,8 +5,10 @@
 > (canonical algorithm description), and a source read of `keyhive/beekem/src` (~3.5k lines Rust,
 > clone at commit 2026-07-09 "Improve API for access levels (#209)").
 > Companion to [`mls-analysis.md`](./mls-analysis.md), [`p2panda-analysis.md`](./p2panda-analysis.md),
-> [`q-channel-analysis.md`](./q-channel-analysis.md). Everything here is **PROPOSED** — the switch
-> decision (D11 below) awaits user sign-off.
+> [`q-channel-analysis.md`](./q-channel-analysis.md).
+> **D11 SIGNED OFF 2026-07-22** (both spike gates passed); **Phase 0b executed same day** — see
+> [`spec/beekem-core.md`](./spec/beekem-core.md) and the D11/D8 entries in
+> [`implementation-plan.md`](./implementation-plan.md) §1.
 
 ## 1. What BeeKEM is
 

@@ -1,11 +1,13 @@
 # spec/wire-format.md — Wire Formats, Versioning & Test Vectors
 
-> **Status: DRAFT v0.1 (2026-07-16) — for review.** [Protocol] · Phase 0 deliverable.
+> **Status: DRAFT v0.2 (2026-07-22) — for review.** *(v0.2: D11 — `ack` class and 2SM/X3DH structures
+> retired; CGKA op payloads re-drafted around BeeKEM `PathChange`; classes renumbered while renumbering
+> is still free.)* [Protocol] · Phase 0 deliverable.
 > Closes gap **G13** (wire formats, versioning, test vectors) from [`../gap-analysis.md`](../gap-analysis.md).
 > Inputs: [`ordering-auth.md`](./ordering-auth.md) §2 (canonical bytes / MessageID contract),
-> [`dcgka-core.md`](./dcgka-core.md) §3 (key-schedule labels), [`2sm.md`](./2sm.md) §4/§5,
-> [`sealed-sender.md`](./sealed-sender.md) §3–§5, [`dgm.md`](./dgm.md) §2/§6, p2panda-encryption wire shapes
-> (differential-oracle alignment). MUST/MAY per RFC 2119.
+> [`beekem-core.md`](./beekem-core.md) §3 (key-schedule labels) + the `beekem` crate's op/tree shapes
+> (differential-oracle alignment), [`sealed-sender.md`](./sealed-sender.md) §3–§5, [`dgm.md`](./dgm.md)
+> §2/§6. MUST/MAY per RFC 2119.
 > This document **freezes the byte layer**: if a structure is not defined here, it is not on the wire.
 
 ## 1. Encoding profile: deterministic CBOR
@@ -20,7 +22,7 @@ All protocol structures are **RFC 8949 CBOR under the Core Deterministic Encodin
   forward extension live in dedicated `ext` maps, never in variable array length.
 - **Never re-encode**: signatures and MessageIDs are computed over, and verified against, the received
   bytes. Implementations MUST store received canonical bytes alongside decoded views (the retained-message
-  store, dcgka-core §2, holds bytes). Readers MUST reject non-canonically-encoded signed structures.
+  store, beekem-core §2, holds bytes). Readers MUST reject non-canonically-encoded signed structures.
 
 Primitive conventions:
 
@@ -69,18 +71,20 @@ MessageID   = SHA-256( body ‖ sig )
 
 - `sig` is Ed25519 under the sender's current **protocol signing key** (ordering-auth §5) over the
   embedded `body` bytes. Embedding the body as a `bstr` makes signature input framing unambiguous.
-- The signature covers `ext` (it is inside `body`): piggybacked attachments are authenticated, per
-  dcgka-core §12's attachment-only decision.
+- The signature covers `ext` (it is inside `body`): piggybacked attachments (the consistency digest,
+  dgm.md §8) are authenticated, per the 2026-07-16 attachment-only decision.
 
 ### 3.1 Class registry
+
+*(Renumbered 2026-07-22 — the `ack` class is retired by D11; numbering stays free until the Phase 1
+freeze, §11.)*
 
 | `class` | Name | `ctrlSeq` | Payload → §4 |
 |---|---|---|---|
 | 1 | `control` | uint | §4.1 |
-| 2 | `ack` | uint | §4.2 |
-| 3 | `welcome` | uint | §4.3 |
-| 4 | `app` | null | §4.4 |
-| 5 | `repair` | null | §4.5 |
+| 2 | `welcome` | uint | §4.3 |
+| 3 | `app` | null | §4.4 |
+| 4 | `repair` | null | §4.5 |
 
 ### 3.2 `ext` key registry
 
@@ -88,73 +92,69 @@ Unknown keys MUST be preserved for signature verification and ignored semantical
 
 | Key | Contents | Semantics |
 |---|---|---|
-| 1 | `[ * AckEntry ]` (§4.2) | piggybacked acks (dcgka-core §5) — processed under control-plane rules regardless of the carrying frame's class |
-| 2 | `[ digest: bstr32, heads: [ * bstr32 ] ]` | consistency digest + the sender's valid-op heads it was computed at (dgm.md §8) |
+| 1 | *retired* (was piggybacked acks — D11) | MUST NOT be emitted; preserved if received (signature rule above) |
+| 2 | `[ digest: bstr32, heads: [ * bstr32 ] ]` | consistency digest + the sender's valid-op heads it was computed at (dgm.md §8 — digest now covers op-set + tree public state) |
 
 ## 4. Class payloads
 
 ### 4.1 `control`
 
 ```
-ControlPayload = [ opType: uint, args, dms: [ * [ recipient: Membership, ct: bstr ] ] ]
+ControlPayload = [ opType: uint, args ]          ; dms field retired with 2SM (D11) — key material for
+                                                 ; the group rides inside PathChange secret stores
 ```
 
 | `opType` | Name | `args` |
 |---|---|---|
-| 1 | `create` | `[ initialDevices: [ * DeviceID ], initialAdmins: [ * tstr DID ] ]` |
-| 2 | `add` | `[ device: DeviceID ]` (the new Membership = `(device, this op's MessageID)` — §2) |
-| 3 | `remove` | `[ membership: Membership ]` |
-| 4 | `update` | `[]` |
+| 1 | `create` | `[ initialDevices: [ * [ device: DeviceID, leafPk: bstr32 ] ], initialAdmins: [ * tstr DID ] ]` (leafPk = the device's verified `signedPrekey`, pinned) |
+| 2 | `add` | `[ device: DeviceID, leafPk: bstr32, leafIndex: uint ]` (the new Membership = `(device, this op's MessageID)` — §2; leafPk = verified `signedPrekey`, pinned; final position deterministic after concurrent-add re-sort) |
+| 3 | `remove` | `[ membership: Membership, removedKeys: [ * bstr32 ] ]` (merge bookkeeping, beekem-core §4.2) |
+| 4 | `update` | `[ path: PathChange, rootCommit: bstr32 ]` (beekem-core §4.2/§4.3) |
 | 5 | `grantAdmin` | `[ did: tstr ]` |
 | 6 | `revokeAdmin` | `[ did: tstr ]` |
-
-**`dms` — direct messages ride inside the signed frame (normative decision, flagged for review §10).**
-`create`/`update`/`remove` carry their per-recipient 2SM ciphertexts (seed secrets) as `dms`, sorted by the
-recipient Membership's encoded bytes; `add`/`grant`/`revoke` carry `[]`. Rationale:
-
-- **One canonical frame** → one MessageID for all recipients, which the whole ordering/ack design assumes.
-- **Authenticity for free**: 2SM ciphertexts are not independently signed (2sm.md §7); inside the frame
-  they are covered by the frame signature, exactly the "authenticity is the ordering layer's job" split.
-- **Fan-out-profile agnostic**: the identical bytes work for per-recipient envelopes and the future group
-  drop-point (spec v1.1 §9).
-- Cost: every member downloads all n ciphertexts (~250 B each → ~37 kB at n = 150) — this *is* the paper's
-  measured ~40 kB/update envelope (G16 budget); it is not new overhead, only made explicit.
-
-Recipients locate their own entry by Membership match; entries for others are opaque.
-
-### 4.2 `ack`
+| 7 | `coverage` | `[]` (beekem-core §5 — the frame's `deps` are the content; natural digest carrier) |
 
 ```
-AckPayload = [ * AckEntry ]                      ; one frame MAY ack several ops (batching)
-AckEntry   = [ ackedId: bstr32,
-               ackType: uint,                     ; 1 = ack, 2 = add-ack
-               dm: bstr / null ]                  ; add-ack: 2SM ct to the joiner (own ratchet state,
-                                                  ; dcgka-core §4); plain ack: a Forward 2SM ct when the
-                                                  ; concurrent-add rule applies (§6.2.5), else null
+PathChange      = [ leafIndex: uint,
+                    newLeafPk:  bstr32,
+                    removedKeys: [ * bstr32 ],             ; pks this update superseded (merge bookkeeping)
+                    nodes: [ * SecretStoreNode ] ]         ; leaf-parent → root, one per path node
+SecretStoreNode = [ nodePk: bstr32,
+                    encrypterChildPk: bstr32,
+                    secrets: [ * [ idx: uint, pairedPk: bstr32, nonce: bstr, ct: bstr ] ] ]
+                                                           ; one entry per sibling-resolution member
+                                                           ; (+ the encrypter's own-index copy)
 ```
 
-The same `AckEntry` array shape is used for piggybacked acks (`ext` key 1).
+*(Field-level layout mirrors `beekem::tree::PathChange` / the secret-store version shape and is frozen
+against the ported implementation at Phase 1 — byte-compatibility with the Rust oracle is the design
+constraint, beekem-core §3/§11.)*
+
+### 4.2 `ack` — RETIRED (2026-07-22, D11)
+
+Acks are gone (coverage replaces them — beekem-core §5). The class number was reclaimed in the §3.1
+renumbering; `AckPayload`/`AckEntry` and ext key 1 MUST NOT be emitted.
 
 ### 4.3 `welcome`
 
 ```
-WelcomePayload  = [ addOpId: bstr32, welcomeCt: bstr ]   ; welcomeCt = TwoSmMessage (§5) to the joiner
+WelcomePayload  = [ addOpId: bstr32, welcomeCt: bstr ]   ; welcomeCt = the WelcomeBody below, carried in
+                                                          ; a sealed-asym envelope to the joiner's prekey
 ```
 
-Decrypted welcome plaintext (deterministic CBOR):
+Welcome plaintext (deterministic CBOR):
 
 ```
-WelcomeBody = [ dgmState:      [ ops: [ * SignedFrame ], ackMatrix: [ * [ Membership, [ * bstr32 ] ] ] ],
-                ratchetStates: [ * [ Membership, chain: bstr32 ] ],
-                deliveryMap:   [ * [ Membership, MailboxAddress ] ],
-                profile:       uint ]                     ; fan-out profile, spec v1.1 §9 (1 = baseline)
+WelcomeBody = [ checkpoint:  [ frontier: [ * bstr32 ], treeState: bstr ] / null,
+                ops:         [ * SignedFrame ],           ; op suffix since the checkpoint (or since create)
+                deliveryMap: [ * [ Membership, MailboxAddress ] ],
+                profile:     uint ]                       ; fan-out profile, spec v1.1 §9 (1 = baseline)
 ```
 
-`dgmState.ops` are the retained (not-yet-pruned) membership-op SignedFrames — the joiner re-validates every
-signature and evaluates the DGM itself (dgm.md §6). `ackMatrix` (who has acked which OpIDs) is
-adder-asserted: its integrity rests on the adder, the same trust the adder already has (it could equally
-omit ops); the insider-divergence digest is the detector for abuse (dgm.md §8). A welcome exceeding the
-largest padding bucket moves to blob offload (sealed-sender.md §5).
+`ops` are re-validated by the joiner (every signature; DGM evaluated by the joiner itself — dgm.md §6).
+`checkpoint` is adder-asserted (pruned history cannot be re-validated — beekem-core §6): the same trust
+the adder already has; the digest/`rootCommit` machinery is the abuse detector (dgm.md §8). A welcome
+exceeding the largest padding bucket moves to blob offload (sealed-sender.md §5).
 
 ### 4.4 `app`
 
@@ -163,7 +163,7 @@ AppPayload = [ generation: uint, ct: bstr ]
 ```
 
 Matches the p2panda oracle's `(ciphertext, generation)` shape. The epoch anchor is the frame's single
-`deps` entry (ordering-auth §3); it appears **nowhere** in the payload or AEAD (dcgka-core §7).
+`deps` entry (ordering-auth §3); it appears **nowhere** in the payload or AEAD (beekem-core §7).
 AEAD associated data = `enc(groupId ‖ senderMembership ‖ generation)` where `enc` is this profile's CBOR of
 the 3-tuple.
 
@@ -180,34 +180,19 @@ RepairPayload = [ reason: uint,
 | 1 | seq gap |
 | 2 | unresolved dep |
 | 3 | buffer overflow drop (ordering-auth §4.4) |
-| 4 | *reserved*: `retry-signed-only` (2sm.md §10 — lands with the OPK design if option B is confirmed) |
+| 4 | *unassigned* (was reserved for `retry-signed-only`; retired with the OPK design, D11 — identity-devices §8) |
 
 **Repair responses are not a class**: the responder re-delivers the requested retained `SignedFrame`s in
 fresh sealed envelopes — frames are self-authenticating (author's signature, not the resealer's), and A5
 dedup absorbs duplicates (ordering-auth §8).
 
-## 5. 2SM messages
+## 5. 2SM messages — RETIRED (2026-07-22, D11)
 
-```
-TwoSmMessage = [ version: 1,
-                 keyClass:  uint,               ; 1 = prekey (X3DH bootstrap), 2 = receivedKey, 3 = ownKey
-                 usedIndex: uint,               ; per 2sm.md §4 header
-                 bootstrap: X3dhHeader / null,  ; non-null iff keyClass = 1
-                 ct:        bstr ]              ; HPKE ct (2sm.md §4.2 tuple, or X3DH first message)
-
-X3dhHeader   = [ ephPk:            bstr32,      ; initiator's ephemeral X25519
-                 initiatorIdentityDh: bstr32,   ; initiator's identityDh pub (verifiable against its
-                                                ; at.atsms.prekey record; carried so the responder can
-                                                ; process offline, verify against PDS opportunistically)
-                 usedSignedPrekey: bstr32,      ; the responder prekey pub used (selects current vs grace)
-                 usedOpk:          bstr32 / null ]  ; reserved null until the OPK design lands
-```
-
-The X3DH KDF layout reserves two trailing slots (both absent in v1 baseline):
-`IKM = 0xFF×32 ‖ DH1 ‖ DH2 ‖ DH3 [‖ DH4] [‖ KEM_ss]` — DH4 for the deferred OPK (2sm.md §5.0.1),
-`KEM_ss` for the post-quantum hybrid's encapsulated shared secret (2sm.md §5.2 / overview §6.12; the
-phase-1 reservation). HKDF-SHA256 with info `atsms-2sm:v1:x3dh-kdf` (§7), salt = 32 zero bytes,
-AD = `enc(initiator Membership ‖ responder Membership)`.
+`TwoSmMessage`, `X3dhHeader`, and the X3DH KDF layout (including its `DH4`/`KEM_ss` reserved slots) are
+retired with 2sm.md — BeeKEM has no pairwise channel; group key material rides in `PathChange` secret
+stores (§4.1) and welcomes ride `sealed-asym` (§4.3). The post-quantum reservation formerly carried by
+`KEM_ss` now lives entirely in the envelope `suite` id (§6) — see overview §6.12 for the re-opened D8
+position (the tree's DH-based path encryption is the remaining classical surface).
 
 ## 6. Sealed envelope
 
@@ -221,7 +206,8 @@ AsymEnvelope    = [ version: 1, mode: 1, suite: uint, enc: bstr32, ct: bstr ]
 SymEnvelope     = [ version: 1, mode: 2, tag: bstr8, nonce: bstr24, ct: bstr ]
                   ; sealed-sender.md §11: tag = Expand(envKey, "atsms-seal:v1:hint" ‖
                   ; enc(recipientMembership))[0..8]; XChaCha20-Poly1305 under
-                  ; envKey = Expand(I_sender, "atsms-seal:v1:sym"); AAD = enc([version, mode, tag]).
+                  ; envKey = Expand(PcsKey_e, "atsms-seal:v1:sym" ‖ enc(senderMembership));
+                  ; AAD = enc([version, mode, tag]).   (re-based 2026-07-22, D11)
 
 SealedPlaintext = [ contentType: uint, body: bstr, pad: bstr ]    ; both modes; padded per sealed-sender.md §5
 ```
@@ -241,14 +227,14 @@ version break):
 
 | Label | Used in |
 |---|---|
-| `atsms-dcgka:v1:member` / `:update` / `:chain` / `:welcome` / `:add` / `:msgkey` / `:nonce` / `:next` | dcgka-core §3 key schedule |
-| `atsms-2sm:v1:msg` | 2SM steady-state HPKE info (2sm.md §3) |
-| `atsms-2sm:v1:x3dh` | 2SM first-message HPKE info (2sm.md §3) |
-| `atsms-2sm:v1:x3dh-kdf` | X3DH HKDF info (§5 — **assigned here**, flagged §10) |
+| `atsms-beekem:v1:chain` | per-sender chain seed from `PcsKey_e` (beekem-core §3) |
+| `atsms-beekem:v1:msgkey` / `:nonce` / `:next` | app-chain steps (beekem-core §3/§7) |
+| *(tree-internal BLAKE3 contexts)* | defined by the `beekem` oracle (path ratchet, DH→symmetric key, SIV); adopted verbatim for byte-compatibility — enumerated in the `kdf/` vectors at Phase 1 (beekem-core §3, KDF-split PROPOSED) |
 | `atsms-seal:v1` | sealed-asym HPKE info (sealed-sender.md §4) |
-| `atsms-seal:v1:sym` | sealed-sym envelope key from `I_sender` (sealed-sender.md §11.2) |
+| `atsms-seal:v1:sym` | sealed-sym envelope key from `PcsKey_e` ‖ sender (sealed-sender.md §11.2, re-based 2026-07-22) |
 | `atsms-seal:v1:hint` | sealed-sym per-recipient tag (sealed-sender.md §11.3) |
 | `atsms-seal:v1:group` | *reserved* for the group drop-point epoch key (sealed-sender.md §11.6) |
+| ~~`atsms-dcgka:v1:*`~~, ~~`atsms-2sm:v1:*`~~ | **retired 2026-07-22 (D11)** with dcgka-core/2sm; MUST NOT be assigned new meanings |
 
 ## 8. Versioning & negotiation
 
@@ -270,16 +256,14 @@ prose `description`.
 | Directory | Contents | Source of truth |
 |---|---|---|
 | `cbor/` | canonical-encoding cases + **rejection** cases (indefinite length, non-minimal int, float, unsorted/duplicate ext keys) | hand-written |
-| `kdf/` | every §7 label: (ikm, info) → output | reference implementation, hand-checked |
-| `x3dh/` | bootstrap vectors incl. grace-window prekey, zeroed-OPK slot | reference implementation |
-| `2sm/` | seeded multi-message transcripts (rotation discipline, key deletion) | seeded p2panda `two_party` (byte-compare modulo documented deviations, 2sm.md §9) |
-| `dcgka/` | scenario transcripts (create/add/remove/update/ack, concurrent §6.2.5 walkthrough) | seeded p2panda `message_scheme` at structure level; **our frozen vectors pin the bytes** (dcgka-core §11 allowlist for deviations) |
+| `kdf/` | every §7 label incl. the oracle's tree-internal BLAKE3 contexts: (ikm, context/info) → output | `beekem` crate + reference implementation, hand-checked |
+| `beekem/` | seeded scenario transcripts (create/add/remove/update, concurrent-update merge with conflict keys, membership-change replay, `PathChange` bytes, `PcsKey`s) | seeded `beekem` Rust crate, byte-compared below the seam; profile features on the explicit allowlist (beekem-core §11) |
+| `profile/` | chain/eviction/coverage/checkpoint/`rootCommit` vectors (the ATSMS messaging profile above the seam) | reference implementation; **our frozen vectors pin the bytes** |
 | `frames/` | FrameBody → MessageID vectors, incl. bootstrap zeroing (§2) and ext-key preservation | hand-written + reference implementation |
 | `envelopes/` | seal/unseal per bucket and contentType; EnvelopeID | reference implementation |
 
-The Java prototype (trvedata/key-agreement) is a **semantic** cross-check for DCGKA state transitions
-only — its wire bytes are not authoritative for us (different serialization); p2panda is the byte-level
-oracle where our deviations don't apply.
+*(Retired 2026-07-22 with D11: `x3dh/`, `2sm/`, and the p2panda/Java-prototype oracle roles — the
+`beekem` crate is the sole differential oracle.)*
 
 ## 10. Sizes (informative)
 
@@ -287,24 +271,27 @@ oracle where our deviations don't apply.
 |---|---|
 | FrameBody overhead (no payload) | ~120–180 B (the sender Membership dominates: DID string + 64 B of hashes) |
 | SignedFrame overhead | + 64 B sig + framing |
-| steady-state ack frame (1 entry) | ~250 B → 1 KiB bucket |
+| coverage frame | ~200 B → 1 KiB bucket |
 | app frame (short text) | ~300–600 B → 1 KiB bucket |
-| update/remove at n = 150 (150 dms) | ~40 kB → 64 KiB bucket (the G16 envelope) |
-| welcome (n = 150, modest history) | tens of kB → top bucket or blob offload |
+| `update` at n = 150 (log₂ n ≈ 8 path nodes, single-key siblings) | **~2–3 kB → 4 KiB bucket** (was ~40 kB under DCGKA — the D11 headline; degrades toward O(n) only under heavy blanking/conflicts, healing on the next update) |
+| `add` / `remove` | ~300–500 B → 1 KiB bucket (no key material — the following update carries it) |
+| welcome (n = 150: checkpoint tree + op suffix) | tens of kB → top bucket or blob offload |
 | AsymEnvelope overhead | ~70 B over the padded plaintext (X25519; + ~1.1 KB under the future ML-KEM hybrid suite) |
 | SymEnvelope overhead | ~55 B over the padded plaintext (tag 8 + nonce 24 + AEAD tag 16 + CBOR) |
 
 ## 11. Open questions (tracked for review)
 
-- **`dms` inside the signed control frame** (§4.1) — drafted as normative for the reasons given; needs
-  sign-off (the alternative — per-recipient side-cars with an in-frame hash list — re-opens DM
-  authenticity and drop-point compatibility for ~37 kB saved per *download*, not per store).
+- ~~`dms` inside the signed control frame~~ **resolved by removal 2026-07-22 (D11)** — 2SM direct
+  messages no longer exist; `PathChange` secret stores ride inside the signed `update` frame, keeping
+  every property the `dms` design bought (one canonical frame/MessageID, signature-covered key material,
+  fan-out-profile agnosticism) at ~1/15th the size.
+- **`PathChange`/`SecretStoreNode` field layout** (§4.1) — mirrors the `beekem` crate; byte-frozen
+  against the ported implementation when Phase 1 vectors are generated (beekem-core §11).
 - ~~Bootstrap zeroing rule~~ **shrunk 2026-07-17**: the DeviceID/Membership split removed zeroed member
   references from payloads; only `groupId` + the create-sender's `admittedBy` remain (§2).
 - ~~Member identity encoding~~ **decided 2026-07-17**: `MemberID` split into `DeviceID` + `Membership`
   (§1); `create`/`add` payloads name DeviceIDs, `remove` names a Membership.
-- **`atsms-2sm:v1:x3dh-kdf` label** (§7) — assigned in this draft; 2sm.md should adopt it on its next
-  revision.
+- ~~`atsms-2sm:v1:x3dh-kdf` label~~ **retired 2026-07-22 (D11)** with the X3DH layer (§7).
 - **Numeric enum freeze** — class/opType/reason/contentType/mode/suite assignments freeze when Phase 1
   starts; until then renumbering is free.
 - ~~Envelope modes~~ **decided 2026-07-20**: two-mode `SealedEnvelope` (§6) — asym (bootstrap-class, with

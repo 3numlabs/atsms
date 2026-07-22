@@ -25,12 +25,13 @@
 
 The engine exposes, per group: `create/add/remove/update/leave` (op builders returning frames + envelopes
 to send), `ingest(envelopeBytes)` (returns readiness-resolved events: decrypted app payloads, membership
-changes, acks needed, repair requests due), `sendApp(plaintextBytes)`, and serializable state
-(γ + ordering buffers + 2SM stores — dcgka-core §2). The host (`@atsms/sms`) owns: persistence of engine
+changes, coverage due, repair requests due, security events — `rootCommit` mismatch, digest mismatch),
+`sendApp(plaintextBytes)`, and serializable state (tree + op graph + checkpoint + chain states + ordering
+buffers — beekem-core §2). The host (`@atsms/sms`) owns: persistence of engine
 state and retained frames (encrypted at rest), all network I/O, PDS resolution
-([`identity-devices.md`](./identity-devices.md) §4), timers (`T_ACK`, `T_REPAIR`, staleness — the engine
-reports *deadlines*, the host schedules them), and the UX surfacing duties (stale members, digest
-mismatches, "sent before removal was known").
+([`identity-devices.md`](./identity-devices.md) §4), timers (`T_COVER`, `T_REPAIR`, staleness — the engine
+reports *deadlines*, the host schedules them), and the UX surfacing duties (stale members, security
+events, "sent before removal was known").
 
 ## 3. Capability discovery & path selection (normative)
 
@@ -91,8 +92,8 @@ Per the implementation-plan §2 inventory, with the concrete surface from the su
 | `getCachedOrFetchCertificatesForDID` (:1084) | **Extended** — resolves prekey bundles too (identity-devices §4); gains the §7-cache rules (revocation honoring) |
 
 New persistence (adapter schema additions, encrypted at rest, key-deletion verified — FS depends on it):
-engine state per group, retained SignedFrames (repair store), 2SM sessions, pending-envelope buffer,
-processed-EnvelopeID window.
+engine state per group (tree + op graph + checkpoint + open-epoch keys + chain states), retained
+SignedFrames (repair store), pending-envelope buffer, processed-EnvelopeID window.
 
 ## 7. Transport mapping
 

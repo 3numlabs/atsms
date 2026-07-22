@@ -1,5 +1,13 @@
 # spec/2sm.md — Two-Party Secure Messaging (2SM)
 
+> ## ⚠️ SUPERSEDED (2026-07-22, decision D11) by [`beekem-core.md`](./beekem-core.md)
+> BeeKEM has no pairwise channel: admission encrypts to the joiner's published prekey via tree
+> path encryption, so 2SM, X3DH, the App-D rotation discipline, the one-time-prekey serve-once
+> problem (§5.0.1), and the `retry-signed-only` signal are all **retired with this document**.
+> It is retained as the design record of why that complexity existed and what it took to satisfy
+> the DCGKA paper's 2SM security notion. The `at.atsms.prekey` record survives with a simplified
+> shape (identity-devices.md §4.2 — `identityDh` removed). Do not implement from this document.
+
 > **Status: DRAFT v0.1 (2026-07-15) — for review.** [Protocol] · Phase 0 deliverable.
 > Closes gap **G1** from [`../gap-analysis.md`](../gap-analysis.md) — the original one-page spec's 2SM
 > recommendation (X3DH + Double Ratchet, or bare HPKE) does not satisfy the DCGKA proof and is replaced by

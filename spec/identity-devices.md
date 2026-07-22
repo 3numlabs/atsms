@@ -1,13 +1,16 @@
 # spec/identity-devices.md — Identity, Devices & Key Material
 
-> **Status: DRAFT v0.2 (2026-07-22) — for review.** *(v0.2: D9/D10 applied — sealing cert type removed;
-> the signed prekey is the sealed-asym recipient key, joint-use analysis in §3.1.)* [Protocol] · Phase 0 deliverable.
+> **Status: DRAFT v0.3 (2026-07-22) — for review.** *(v0.2: D9/D10 applied — sealing cert type removed;
+> the signed prekey is the sealed-asym recipient key, joint-use analysis in §3.1. v0.3: D11 — X3DH retired
+> with 2SM, so `identityDh` and the OPK layer are removed; the signed prekey's second role is now the
+> BeeKEM admission leaf key.)* [Protocol] · Phase 0 deliverable.
 > Closes gaps **G6** (multi-device model at the group layer) and **G8** (prekeys on a public PDS; lexicon)
 > from [`../gap-analysis.md`](../gap-analysis.md).
 > Inputs: spec v1.1 §4/§4.1 (identity/device model, cert profiles — normative text consolidated here),
-> [`dgm.md`](./dgm.md) §2/§4 (DeviceID/Membership, same-DID authorization), [`2sm.md`](./2sm.md) §5 (X3DH consumption),
-> decisions D3/D4, the 2026-07-15/16 lexicon decisions. MUST/SHOULD/MAY per RFC 2119.
-> **This document is the canonical home of the `at.atsms.prekey` record shape** (moved from 2sm.md §5.0)
+> [`dgm.md`](./dgm.md) §2/§4 (DeviceID/Membership, same-DID authorization), [`beekem-core.md`](./beekem-core.md)
+> §4.2/§6 (prekey consumption at admission), decisions D3/D4, the 2026-07-15/16 lexicon decisions.
+> MUST/SHOULD/MAY per RFC 2119.
+> **This document is the canonical home of the `at.atsms.prekey` record shape**
 > and of the two-certificate `at.atsms.x509` profile.
 
 ## 1. Identity model
@@ -44,48 +47,54 @@
 
 Strict purpose separation — a key appears in exactly one row and MUST NOT be used for any other row's
 purpose (no cross-protocol reuse; gap G9 key-separation requirement), with **one deliberate, documented
-exception**: the signed prekey serves both X3DH and the sealed-asym envelope (§3.1; D10 amends G9's
-dedicated-sealing-key recommendation):
+exception**: the signed prekey serves both BeeKEM admission and the sealed-asym envelope (§3.1; D10/D11
+amend G9's dedicated-sealing-key recommendation):
 
 | Key | Algorithm | Lifetime | Purpose | Published as |
 |---|---|---|---|---|
 | Device identity (endpoint) key | ECDSA P-256 | ~10 y (device lifetime) | Device identity; signs all subordinate material; JWT mailbox auth; S/MIME floor | `at.atsms.x509` endpoint record |
-| X3DH identity-DH key (`identityDh`) | X25519 | = device lifetime | X3DH long-term DH (the P-256 key cannot DH) | `at.atsms.prekey.identityDh` |
-| Signed prekey | X25519 | 1 week (+1 week grace secret) | X3DH medium-term DH **and** sealed-asym HPKE recipient key (joint use, §3.1; [`sealed-sender.md`](./sealed-sender.md) §2) | `at.atsms.prekey.signedPrekey` |
-| One-time prekeys | X25519 | single use | X3DH DH4 — **design deferred, ships pre-v1** (§8) | (deferred) |
+| Signed prekey | X25519 | 1 week (+1 week grace secret) | BeeKEM **admission leaf key** (until the joiner's first self-update) **and** sealed-asym HPKE recipient key (joint use, §3.1; beekem-core §4.2/§6, [`sealed-sender.md`](./sealed-sender.md) §2) | `at.atsms.prekey.signedPrekey` |
 | Protocol signing key | Ed25519 | per group; rotates on every own `update`/`remove`/`create` | Signs ordering-layer frames (ordering-auth §5) | never published — declared in create/welcome material, signed by the device identity key |
-| 2SM / ratchet keys | X25519 / symmetric | per message / per epoch | [`2sm.md`](./2sm.md), dcgka-core §3/§7 | never published |
+| Tree leaf/path & chain keys | X25519 / symmetric | per update / per epoch / per message | beekem-core §3/§7/§8 | never published |
+
+*(Removed 2026-07-22 by D11: the X3DH `identityDh` row — X3DH is retired with 2SM — and the one-time
+prekey row — the OPK layer's problem dissolved with it, §8.)*
 
 Trust chain: **DID repo → device identity cert → { prekey bundle, protocol signing keys }**.
 
-### 3.1 Joint use of the signed prekey (D9/D10 — decided 2026-07-22)
+### 3.1 Joint use of the signed prekey (D9/D10 decided 2026-07-22; re-based same day by D11)
 
-The signed prekey is deliberately consumed by two protocols: **X3DH** (the DH1/DH3 legs, 2sm.md §5) and
-**HPKE DHKEM** as the `sealed-asym` envelope recipient key (sealed-sender §2). This replaces the earlier
-dedicated sealing cert (deleted; §10), under the relaxed encryption floor **D9**: X509/CMS is the
-*identity + signing* floor only — every ATSMS encryption path is HPKE to a raw X25519 key resolved from
-PDS records, so the sealed-to key never needed to be a certificate. Security argument, recorded so it is
-never re-litigated:
+The signed prekey is deliberately consumed by two protocols: the **BeeKEM tree** (it is the device's
+leaf key from admission until the mandatory first self-update — `add` ops pin it, and path encryptions
+DH against it while it is a live leaf; beekem-core §4.2/§6) and **HPKE DHKEM** as the `sealed-asym`
+envelope recipient key (sealed-sender §2). This stems from **D9** (the relaxed encryption floor: every
+ATSMS encryption path is HPKE to a raw X25519 key from PDS records — no certificate needed) and **D10**
+(the dedicated sealing cert deleted; §10); **D11** replaced the original X3DH role with the BeeKEM
+admission role when 2SM/X3DH were retired. Security argument, recorded so it is never re-litigated:
 
-- **KDF-label domain separation.** Both usages consume the key solely as X25519 DH input whose raw output
-  is immediately bound into a labeled KDF: X3DH under `atsms-2sm:v1:x3dh-kdf` (with the 32×0xFF prefix,
-  2sm.md §5), HPKE under RFC 9180's labeled `HPKE-v1`/suite-id derivation with `info = "atsms-seal:v1"`.
-  The KDF transcripts cannot collide, and neither protocol ever exposes a raw DH output — so neither acts
-  as a DH oracle for the other.
-- **Bootstrap coincidence is fine.** An X3DH bootstrap message rides a `sealed-asym` envelope wrapped to
-  the *same* signed prekey the X3DH inside it consumes — two independent sender ephemerals, two KDF
-  labels; only the recipient static key is shared (2sm.md §1.1).
+- **KDF-label domain separation.** Both usages consume the key solely as X25519 DH input whose raw
+  output is immediately bound into a labeled KDF: BeeKEM under its BLAKE3 `derive_symmetric_key` /
+  path-ratchet labels (beekem-core §3, oracle-defined), HPKE under RFC 9180's labeled
+  `HPKE-v1`/suite-id derivation with `info = "atsms-seal:v1"`. The KDF transcripts cannot collide, and
+  neither protocol ever exposes a raw DH output — so neither acts as a DH oracle for the other.
+- **Bootstrap coincidence is fine.** A welcome rides a `sealed-asym` envelope wrapped to the *same*
+  signed prekey that sits at the joiner's leaf — two independent sender ephemerals, two KDF families;
+  only the recipient static key is shared.
+- **Time-bounding.** The tree role is admission-window-only: the mandatory post-join self-update
+  (beekem-core §6) replaces the leaf key with a never-published one, so steady-state tree operation
+  never touches the published prekey.
 - **Precedent.** Signal's identity key serves X3DH, sealed sender, *and* XEdDSA signing — a strictly
   stronger reuse, shipped with commissioned analysis.
 - **Compromise scope (bounded).** A leaked signed-prekey secret yields (a) sealed-asym envelope
-  *metadata* of captured bootstrap-class envelopes and (b) the DH1/DH3 X3DH legs — but message content in
-  neither role (DH2 requires the `identityDh` secret; envelope payloads keep ratchet FS/PCS). The window
-  is weekly rotation + one-week grace — strictly tighter than the deleted sealing cert's 30–97 days.
-- **Review obligation.** No off-the-shelf joint proof covers this exact pair; it is a `[deviation]`-class
-  item for the Phase 6 external cryptographic review (overview §6.13).
+  *metadata* of captured bootstrap-class envelopes and (b) the path secrets encrypted toward that leaf
+  during its admission window — i.e., epoch keys up to the joiner's first self-update, the same window
+  the healing rule already treats as exposed. The window is weekly rotation + one-week grace, and the
+  update-first rule caps it further.
+- **Review obligation.** No off-the-shelf joint proof covers this exact pair; it is a
+  `[deviation]`-class item for the Phase 6 external cryptographic review (overview §6.13).
 
-Every other row remains strictly single-purpose — in particular, senders MUST NOT seal to `identityDh`,
-the endpoint P-256 key, or any ratchet key (sealed-sender §2).
+Every other row remains strictly single-purpose — in particular, senders MUST NOT seal to the endpoint
+P-256 key, any tree-internal key, or any chain key (sealed-sender §2).
 
 ## 4. PDS records
 
@@ -132,19 +141,17 @@ carries device identity, JWT auth, and CMS `SignedData`; it is never an encrypti
 path (the encryption floor is HPKE to raw keys — sealed-sender §10). Classic S/MIME `EnvelopedData` to
 the P-256 endpoint cert survives solely for inbound mail from external, non-ATSMS senders.
 
-### 4.2 `at.atsms.prekey` — the X3DH bundle (canonical shape)
+### 4.2 `at.atsms.prekey` — the prekey record (canonical shape)
 
-One record per device — the always-available bootstrap bundle. **rkey = the device fingerprint**, so the
+One record per device — the always-available bootstrap key. **rkey = the device fingerprint**, so the
 pairing with `at.atsms.x509/<fingerprint>` is structural (same rkey, two collections) and a DeviceID
-resolves to its bundle with a single `getRecord`:
+resolves to its record with a single `getRecord`. *(Simplified 2026-07-22 by D11: `identityDh` removed —
+it existed solely for X3DH, which retired with 2SM.)*
 
 ```
 at.atsms.prekey (rkey = device fingerprint)
 {
   $type:         "at.atsms.prekey",
-  identityDh:    X25519Pub,        // device's long-lived X3DH identity-DH key — the X25519 alias of the
-                                   // device identity (the P-256 cert key cannot DH); rotates only with
-                                   // the device identity itself, constant across re-publishes
   signedPrekey:  X25519Pub,        // rotated WEEKLY (parameters.md)
   createdAt, expiresAt: datetime,
   bundleSig:     bytes             // ECDSA-P256 by the device identity key over the deterministic CBOR
@@ -152,12 +159,9 @@ at.atsms.prekey (rkey = device fingerprint)
 }
 ```
 
-Contains **only** E2EE bootstrap material (`identityDh` + `signedPrekey` + `bundleSig`). It has two
-consumer classes: **every DCGKA bootstrap** (the signed prekey is a mandatory X3DH ingredient; the future
-OPK is the optional fourth DH, never a substitute — 2sm.md §5.0.1) and, since **D10**, **every
-`sealed-asym` sender** (welcomes, first contact, X509-floor one-shots seal to `signedPrekey` —
-sealed-sender §2; joint-use analysis §3.1). `identityDh` stays here despite its long lifetime: only X3DH
-consumes it (§4.1 layering criterion).
+Two consumer classes: **admission** — an `add` op pins the verified `signedPrekey` as the joiner's
+BeeKEM leaf key (beekem-core §4.2) — and **every `sealed-asym` sender** (welcomes, first contact,
+X509-floor one-shots seal to it — sealed-sender §2; joint-use analysis §3.1).
 
 **Resolution & verification path (cert ↔ prekey pairing, normative)**:
 
@@ -171,8 +175,9 @@ consumes it (§4.1 layering criterion).
 
 **Rotation**: `signedPrekey` rotates **weekly**; the retained-secret grace window equals one full rotation
 period — the device holds exactly two signed-prekey private halves (current + previous); each rotation
-promotes current → previous and deletes the old previous. X3DHs computed against a just-superseded bundle
-complete for up to a week; older ones fail and the initiator re-fetches ([`parameters.md`](./parameters.md)).
+promotes current → previous and deletes the old previous. An `add` pinning a just-superseded prekey
+still admits correctly for up to a week (the device holds the previous secret); older ones fail and the
+adder re-fetches ([`parameters.md`](./parameters.md)).
 The same two live secrets serve `sealed-asym` trial-decryption — recipients trial-open incoming asym
 envelopes against current + previous, unchanged in count from the deleted sealing cert's current + grace
 pair (sealed-sender §4).
@@ -211,7 +216,7 @@ A device identity keypair is **never updated in place** at the group layer:
 - **Loss / compromise (another device acts)**: any *other* device of the same DID performs the `remove` (no
   `add`) in every group, and revokes the lost device's records (§7). Compromise and loss need no
   protocol-level distinction: both reduce to "remove the device member" — exactly the operation that
-  triggers DCGKA's PCS healing (dcgka-core §5/§10).
+  triggers the group's PCS healing (beekem-core §10).
 - **The invariant**: a device can rotate **its own** keypair; it can **remove — but never rotate —** other
   devices' keypairs. Enforced cryptographically, not by PDS ACLs: subordinate material is valid only under
   the owning device's `bundleSig` (§4.2), and same-DID group ops are signed by the acting
@@ -240,23 +245,26 @@ tombstone, then deletion**:
   re-validation); and SHOULD re-fetch the live record before failing hard on a signature/pairing mismatch
   (the mismatch may be rotation, not attack).
 
-## 8. One-time prekeys — deferred (pointer)
+## 8. One-time prekeys — RETIRED (2026-07-22, D11)
 
-The OPK layer (X3DH DH4) is **deferred during prototyping and ships before v1**; the open serve-once
-dispenser problem, the interim signed-prekey-only mode, and the mandatory post-join healing update are
-specified in [`2sm.md`](./2sm.md) §5.0.1/§5.1. Whatever design lands (PDS checkout endpoint is the
-candidate), the record/lexicon changes belong to this document and MUST preserve the §3 purpose-separation
-rule and the §4.2 pairing discipline.
+The OPK layer was an X3DH ingredient (the optional DH4); with X3DH retired alongside 2SM
+(beekem-core, D11) **the serve-once dispenser problem dissolves — nothing replaces it because nothing
+needs it**. The admission-window exposure that OPKs would have narrowed is instead bounded by the weekly
+prekey rotation plus the **mandatory post-join self-update** (beekem-core §6), which replaces the
+published leaf key with a never-published one — the same healing rule the interim signed-prekey-only
+X3DH mode relied on, now permanent and sufficient. (Design record: 2sm.md §5.0.1 and the
+`retry-signed-only` discussion, both superseded.)
 
 ## 9. Test obligations
 
 1. **Endpoint-record vectors**: valid endpoint cert accepted; wrong EKU / expired / revoked — rejected
    for JWT auth, S/MIME, and as the `bundleSig` verification parent.
-2. **Bundle vectors**: valid bundle; `bundleSig` over reordered fields rejected (deterministic-CBOR
-   coverage); expired bundle; bundle signed by a *different* valid device of the same DID rejected
+2. **Record vectors**: valid record; `bundleSig` over reordered fields rejected (deterministic-CBOR
+   coverage); expired record; record signed by a *different* valid device of the same DID rejected
    (cross-device mix-and-match); sealed-asym seal/unseal against current vs grace `signedPrekey`, and a
-   seal attempt against an expired or revoked bundle rejected sender-side (envelope vectors proper in
-   sealed-sender §12).
+   seal attempt against an expired or revoked record rejected sender-side (envelope vectors proper in
+   sealed-sender §12); an `add` op pinning a prekey that fails record verification rejected
+   (beekem-core §4.2).
 3. **Rotation flows**: routine self-rotation end-to-end (records + per-group remove/add + old-record
    revocation); loss flow driven from a second device; verify old-instance state is unreachable afterward
    (fresh Membership, dgm.md §2).
@@ -268,7 +276,8 @@ rule and the §4.2 pairing discipline.
 ## 10. Open questions (tracked for review)
 
 - **Revocation grace + cache staleness values** (§7) — 30 d / 24 h are PROPOSED defaults awaiting sign-off.
-- **OPK design** — deferred, tracked in 2sm.md §5.0.1 (ships pre-v1); its lexicon additions land here.
+- ~~OPK design~~ **RETIRED 2026-07-22 (D11)** — the problem dissolved with X3DH (§8).
+- ~~`identityDh` field~~ **removed 2026-07-22 (D11)** — X3DH-only consumer, retired with 2sm.md (§4.2).
 - ~~`inviteAddress` placement~~ **resolved 2026-07-16** — on the `at.atsms.x509` endpoint record (§4.1).
 - ~~Prekey record name/rkey~~ **resolved 2026-07-16** — `at.atsms.prekey` (singular); rkey originally the
   endpoint-cert serial, **re-keyed 2026-07-17 to the device fingerprint** (below).
