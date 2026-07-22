@@ -1,0 +1,174 @@
+# spec/dgm.md — Decentralized Group Membership for ATSMS-DCGKA
+
+> **Status: DRAFT v0.1 (2026-07-15) — for review.** [Protocol] · Phase 0 deliverable.
+> Closes gaps **G5** (group-management model) and **G14** (insider-divergence detection) from
+> [`../gap-analysis.md`](../gap-analysis.md).
+> Inputs: DCGKA paper §5.2/§6.2 (required DGM properties), prototype `StrongRemoveDgm.java`,
+> p2panda-auth `StrongRemove` resolver semantics, spec v1.1 §4 identity/device model.
+> Terminology: MUST/SHOULD/MAY per RFC 2119. "Ordering layer" = [`ordering-auth.md`](./ordering-auth.md).
+
+## 1. Role in the stack
+
+The DGM is a **pure, deterministic function** from a set of membership operations plus their causal relation
+(the op DAG supplied by the ordering layer) to a membership view:
+
+```
+members_view(history, viewer) → { membership → role }
+```
+
+It holds **no state of its own** beyond what is derivable from `history`; it performs **no I/O**; it consults
+**no clocks**. DCGKA calls it to compute seed-recipient sets (`member-view(sender)`), welcome contents, and
+message-acceptance gating. Implementations MAY cache/evaluate incrementally, but incremental evaluation MUST
+be extensionally equal to batch re-evaluation from scratch (test obligation, §9).
+
+## 2. Identifiers
+
+- **DeviceID** `= (DID, deviceFingerprint)` — the identity-layer device handle
+  ([`identity-devices.md`](./identity-devices.md) §2). `deviceFingerprint` is the SHA-256 of the device's
+  endpoint-cert SubjectPublicKeyInfo (also the `at.atsms.x509` rkey).
+- **Membership** `= (DeviceID, admittedBy)` — the group-layer member identifier: one device's tenure in
+  one group. **`admittedBy` = the MessageID of the op that admitted this member** (the `create` for
+  founding members, the `add` otherwise) — derived data, never client-chosen. Re-adding a device
+  therefore yields a fresh Membership with no coordination — prior 2SM/ratchet state MUST never be
+  resumed. *(Renamed 2026-07-17 from the earlier `MemberID = (DID, fingerprint, instanceNonce)` triple:
+  the split separates who the device is from which admission is speaking.)*
+- **OpID** = the MessageID (content hash of the signed message, per ordering-auth §2) of a membership
+  operation.
+- **GroupID** = the MessageID of the `create` operation (ordering-auth §2.1).
+
+## 3. Required properties (from the DCGKA proof — all normative)
+
+- **P1 Determinism**: output depends only on the *set* of valid ops and their causal partial order — never on
+  local arrival order, wall-clock time, or any tie-break derived from them.
+- **P2 Sequential self-consistency**: from each sender's own vantage, its ops apply with ordinary sequential
+  semantics.
+- **P3 Add-only entry**: a member enters the group **only** via a `create`/`add` naming its DeviceID (the
+  resulting Membership is derived from the admitting op). No conflict-resolution rule may (re)admit a
+  member as a side effect.
+- **P4 No remove-undo**: a processed remove is never negated by a concurrent or later op (re-entry only via
+  P3 with a fresh Membership). Matrix-style "remove undoes concurrent remove" is explicitly excluded.
+- **P5 Convergence**: any two evaluators holding the same op set compute identical views (follows from P1;
+  stated separately as the property the test harness asserts).
+
+## 4. Roles and authorization
+
+Two roles: **admin** and **member**. Authorization is evaluated **inside the pure function**, from history
+alone, at the op's causal position (an op's validity depends on the authorizer's role *in the view formed by
+the op's causal predecessors*).
+
+| Op | Authorized when author is… |
+|---|---|
+| `create(initialMembers, initialAdmins)` | n/a — the creator's devices are admins; other founding members as listed |
+| `add(deviceID)` — cross-DID | admin |
+| `remove(membership)` — cross-DID | admin, or the target itself (self-leave, any device of the target DID) |
+| `add(deviceID)` / `remove(membership)` — **same-DID** (author DID == target DID) | **any member device of that DID**, regardless of role (device rotation/loss, spec v1.1 §4) |
+| `grantAdmin(DID)` / `revokeAdmin(DID)` | admin |
+
+Notes:
+- Roles attach to **DIDs**, not devices: every device of an admin DID authors admin ops. `grantAdmin`/
+  `revokeAdmin` target DIDs; `add` targets a DeviceID (the new Membership is derived from the op), `remove` targets a Membership. **`grantAdmin` is valid only if the
+  grantee DID has at least one current member device in the author's view at the op's causal position**
+  (decided 2026-07-16).
+- **User-level intents expand client-side** into per-device ops: "remove user U" = a causally sequential
+  batch of `remove` for every U-device in the author's current view (strong removal, §5, catches devices
+  added concurrently); "add user U" = `add` per U-device discovered via U's PDS (`at.atsms.x509` +
+  `at.atsms.prekey`). The DGM validates each op individually; batches have no atomicity semantics.
+- An admin DID whose last device is removed loses admin trivially (no members left to act). A group whose
+  last admin leaves is frozen for cross-DID membership change; clients SHOULD warn before allowing the last
+  admin to leave (an admin MUST `grantAdmin` first). Same-DID device ops and PCS updates remain possible.
+- `revokeAdmin` on the last admin DID is **invalid** (prevents adminless-by-malice; adminless-by-departure
+  is handled above).
+
+## 5. Conflict resolution: strong remove
+
+Let `R` be a valid `remove` (or `revokeAdmin`) and `M` its target. Definitions use the ordering layer's
+happens-before (`≺`); "concurrent" = neither `≺` direction holds.
+
+- **SR1 (invalidate the removed member's concurrent ops)**: every op authored by `M` that is concurrent with
+  `R`, and every op authored by `M` after `R` in `M`'s own sequence, is **invalid**. (For `revokeAdmin`,
+  only ops *requiring admin* become invalid; the demoted DID's ordinary membership continues.)
+- **SR2 (transitive cascade)**: if an invalid op is an `add`, the added member is treated as never admitted:
+  all of its ops are invalid, recursively. Invalidation MUST NOT remove ops that merely *causally follow* a
+  valid op by an invalidated member (only authorship matters, per SR1's authorship test applied recursively).
+- **SR3 (mutual removes)**: two admins concurrently removing each other — **both removes are valid** (both
+  DIDs' devices are out); each party's *other* concurrent ops are invalid per SR1.
+- **SR4 (no resurrection)**: cascades only shrink the member set (P3/P4). In particular a cascade never
+  restores a member that an invalidated op had removed — instead, a remove authored by a *later-invalidated*
+  member is itself invalid, and the target's membership is decided by the remaining valid ops alone.
+- **SR5 (self-leave priority)**: a self-leave is valid regardless of any concurrent remove targeting the
+  same member (both yield "out"; recorded independently for audit).
+
+**Evaluation algorithm (reference)**: iterate ops in any topological order of `≺`; maintain
+`(members, roles, invalid)`. For each op: (i) skip if author ∉ members at its causal position or
+authorization (§4) fails — mark invalid; (ii) apply SR1–SR5 retroactively when a remove/revoke arrives that
+is concurrent with already-applied ops — implementations MAY re-evaluate from the nearest checkpoint; the
+result MUST equal batch evaluation (P5).
+
+**DCGKA interaction note**: ops invalidated retroactively may already have distributed seeds. Per paper
+App. C, invalidated operations contribute no trusted fresh secret; after any retroactive invalidation the
+client MUST schedule a PCS `update` before its next application message (same rule as the concurrent-remove
+mitigation, gap G11).
+
+## 6. Ack tracking and `members_view(viewer)`
+
+DCGKA requires each member to evaluate membership **as another member sees it**. The DGM therefore records,
+from the ordering layer: (i) which membership ops each member has authored, and (ii) which it has **acked**
+(`ack`/`add-ack` referencing the op). `members_view(history, viewer)` = the §5 evaluation restricted to ops
+the viewer has authored, acked, or that causally precede those. Welcome messages carry the adder's
+**processed DGM state** (spec v1.1 deviation, adopted from p2panda) — the state MUST include enough op/ack
+history for the joiner to evaluate `members_view` for every current member, and is validated by the joiner
+against the ops' signatures, not trusted blindly.
+
+## 7. Eviction policy hook (stale members)
+
+The DGM defines **no timers** (P1). Staleness is detected by the ordering layer (ordering-auth §9) and
+surfaced to the application; an application/operator policy MAY respond by issuing an **ordinary authorized
+`remove`** (nothing else — auto-eviction has no special status in the DGM). Recommended default policy
+(SHOULD): warn the group UI at 7 days of a member neither sending nor acking; propose eviction to admins at
+30 days. Rationale: unacked members block PCS healing and state GC (gap G2/G15).
+
+## 8. Insider-divergence detection & recovery (G14)
+
+A malicious member can send different seed secrets to different members (undetectable at the DGM layer;
+permanent ratchet divergence). Detection (SHOULD, v1):
+
+- **Consistency digest**: `H(groupId ‖ sorted valid-op OpIDs at the sender's heads ‖ for each member m:
+  H(outer-ratchet state of m))`. Computable only by members (ratchet states are secret); reveals nothing to
+  outsiders. Carried as an optional signed field on **any** outgoing frame — app, ack, or control (decided
+  2026-07-16; no standalone digest frames, which would hand relays a heartbeat pattern for quiet groups):
+  attach whenever sending if the last attached digest is older than 7 days, and at least every `K = 50` own
+  messages. A member emitting no frames at all is handled by the stale-member machinery (§7), not the
+  digest cadence — and a member who sends nothing cannot be spreading divergent state.
+- **Mismatch procedure**: on digest mismatch with equal head-sets, members exchange per-member ratchet-state
+  hashes (encrypted, pairwise via 2SM) to isolate the divergent (sender, op). The op's author is the
+  equivocator → any admin SHOULD `remove` the author (ordinary op); the group then heals via `update`. If
+  no admin acts or isolation fails, clients MUST surface a persistent security warning; the fallback is
+  group re-creation (new `create`, fresh GroupID) excluding the suspect.
+- Guarantee preserved either way (paper §7): the equivocator cannot resist removal, and post-removal it
+  decrypts nothing.
+
+## 9. Test obligations (normative for the implementation)
+
+1. **Permutation determinism**: randomized op schedules (≥ 32 members, adds/removes/grants/leaves incl.
+   same-DID device ops), evaluated under many delivery interleavings — identical views (P1/P5).
+2. **Strong-remove vectors** (fixed, reviewable): add∥remove-of-adder; mutual admin remove; revoke∥admin-op;
+   remove-user∥target-adds-device; re-add after remove (fresh Membership — new `admittedBy` — no state
+   resumption); cascade depth ≥ 3;
+   last-admin rules.
+3. **Cross-check** against p2panda-auth's `StrongRemove` resolver on the scenario subset where semantics
+   coincide (documented divergences: our role model, self-leave, last-admin rule).
+4. **Incremental ≡ batch**: property test that cached evaluation equals from-scratch evaluation after every
+   op.
+
+## 10. Open questions (tracked for review)
+
+- ~~grantAdmin target~~ **decided 2026-07-16: yes** — grantee DID must be a current member (normative in §4).
+- ~~Digest cadence~~ **decided 2026-07-16**: `K` = 50 own messages / 7 d backstop (§8; registered in
+  [`parameters.md`](./parameters.md)).
+- ~~Third role (e.g., read-only)~~ **decided 2026-07-16**: v1 ships admin/member only.
+- ~~MemberID shape~~ **decided 2026-07-17**: split into `DeviceID` + `Membership(admittedBy)` (§2);
+  `add` targets DeviceIDs, `remove` targets Memberships; the device fingerprint (not cert serial) is the
+  sole protocol identifier (identity-devices.md §4).
+- **Ban-on-remove (compromised-device re-add veto)** — discussed 2026-07-17, **parked by user** pending
+  the MemberID-shape resolution above; revisit: same-DID re-adds need no admin, so a group-level,
+  history-derived ban is the deterministic complement to identity-layer revocation.
