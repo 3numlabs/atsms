@@ -1,6 +1,6 @@
 /** Byte-faithful port of beekem/src/secret_store.rs. */
 
-import { bytesToHex } from './bytes.js';
+import { bytesToHex, compareBytes } from './bytes.js';
 import { tryEncrypterDecrypt, type EncryptedSecret } from './encrypted.js';
 import { nodeKeyContains, type NodeKey, type ShareKeyMap } from './keys.js';
 
@@ -76,10 +76,19 @@ export class SecretStore {
     return decryptVersionSecret(this.versions[0]!, childNodeKey, childSks, seenIdxs);
   }
 
-  /** Rust `merge(other, removed_keys)`: drop removed versions, then append other's. */
+  /**
+   * Rust `merge(other, removed_keys)`: drop removed versions, then append
+   * other's. **[deviation, ATSMS]** we then sort versions by public-key bytes so
+   * the conflict representation is canonical regardless of application order —
+   * required for decentralized convergence (two members reaching the same
+   * concurrent-update set via different orders must produce byte-identical tree
+   * state, not just an equivalent one). Root secrets are order-independent, so
+   * this does not affect the differential oracle (beekem-core §11 allowlist).
+   */
   merge(other: SecretStore, removedKeys: Set<string>): void {
     this.removeKeysFrom(removedKeys);
     this.versions.push(...other.versions.map(cloneVersion));
+    this.versions.sort((a, b) => compareBytes(a.pk, b.pk));
   }
 
   private removeKeysFrom(removedKeys: Set<string>): void {

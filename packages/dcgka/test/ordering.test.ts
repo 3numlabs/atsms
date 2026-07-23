@@ -185,6 +185,38 @@ describe('ordering-auth Session', () => {
     expect(sb.engine.treeHash()).toBe(sa.engine.treeHash());
   });
 
+  it('head reconciliation: a member missing ops recovers them from a frontier advert (dgm §8)', () => {
+    const { sa, sb, sc } = foundSessions();
+    // Alice and Carol advance; Bob is partitioned and misses everything.
+    const u0 = sa.update();
+    sc.ingestFrame(u0);
+    const cov = sc.coverage();
+    sa.ingestFrame(cov);
+    const u1 = sa.update();
+    sc.ingestFrame(u1);
+    // Bob is behind and, crucially, has NOTHING buffered — he cannot know what
+    // he's missing until someone advertises their frontier.
+    expect(sb.bufferedCount()).toBe(0);
+    expect([...sb.headSet()].sort()).not.toEqual([...sa.headSet()].sort());
+
+    // Alice advertises her frontier (coverage frame; deps = her heads). Bob
+    // receives it, cannot process it (missing deps), and buffers it.
+    const advert = sa.advertiseHeads();
+    sb.ingestFrame(advert);
+    expect(sb.bufferedCount()).toBeGreaterThan(0);
+
+    // Bob repairs the exposed gap end-to-end; Alice serves the missing frames.
+    let guard = 0;
+    while (sb.bufferedCount() > 0 && guard++ < 20) {
+      const req = sb.buildRepairRequest();
+      expect(req).not.toBeNull();
+      for (const resp of sa.serveRepair(req!)) sb.ingestFrame(resp);
+    }
+    // Bob now shares Alice's op set → identical frontier and tree.
+    expect([...sb.headSet()].sort()).toEqual([...sa.headSet()].sort());
+    expect(sb.engine.treeHash()).toBe(sa.engine.treeHash());
+  });
+
   it('concurrent membership over frames converges (three-way, mixed delivery)', () => {
     const { sa, sb, sc } = foundSessions();
     const u0 = sa.update();

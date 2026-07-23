@@ -13,7 +13,7 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2';
-import { bytesEqual, bytesToHex, hexToBytes } from './bytes.js';
+import { bytesEqual, bytesToHex, concatBytes, hexToBytes } from './bytes.js';
 import { cborEncode } from './cbor.js';
 import { ReceiverChain, SenderChain, openApp, sealApp } from './chains.js';
 import { evaluate, normalizeCreateAuthor, type DgmSeed, type DgmView } from './dgm.js';
@@ -248,6 +248,9 @@ export class Engine {
   }
 
   buildCoverage(): Op {
+    // Settle first so the advertised consistency digest reflects the canonical
+    // (replayed) tree, not a transient pending-concurrency state (dgm §8).
+    this.settle();
     const op = this.mint({ type: 'coverage' });
     this.recordOp(op);
     return op;
@@ -400,6 +403,39 @@ export class Engine {
 
   opCount(): number {
     return this.ops.size;
+  }
+
+  /** The current causal frontier — op ids no processed op depends on (dgm §8). */
+  headsList(): Uint8Array[] {
+    return [...this.heads].map(hexToBytes);
+  }
+
+  /**
+   * Consistency digest (dgm.md §8, narrowed by D11 — no secret inputs):
+   * `H(groupId ‖ sorted valid-op ids ‖ H(tree public state))`. Two members
+   * with the same head-set have the same op set (deterministic ancestor
+   * closure) and therefore the same digest; a mismatch at equal heads is a
+   * divergence (bug or equivocation).
+   */
+  validDigest(): Uint8Array {
+    const parts: Uint8Array[] = [this.groupId];
+    for (const idHex of [...this.dgm.valid].sort()) parts.push(hexToBytes(idHex));
+    parts.push(this.canonicalTreeHashBytes());
+    return sha256(concatBytes(...parts));
+  }
+
+  /**
+   * Tree hash of the CANONICAL (deterministically replayed) tree — a pure
+   * function of the op set + DGM view + checkpoint, independent of the live
+   * incremental application order. The digest must use this so two members with
+   * the same op set always agree, even if one's live tree is a transient
+   * pending state. Non-mutating (rebuildTree returns a fresh tree).
+   */
+  private canonicalTreeHashBytes(): Uint8Array {
+    const savedEpoch = this.lastEpochCandidate;
+    const tree = this.rebuildTree([...this.ops.values()], this.dgm, this.checkpoint);
+    this.lastEpochCandidate = savedEpoch;
+    return sha256(tree.publicStateBytes());
   }
 
   // ── internals ─────────────────────────────────────────────────────────────

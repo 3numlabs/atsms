@@ -18,6 +18,7 @@ import {
   CLS_CONTROL,
   CLS_REPAIR,
   CLS_WELCOME,
+  EXT_DIGEST,
   EXT_NEXT_SIGNING_KEY,
   encodeFrameBody,
   generateSigningKeypair,
@@ -57,7 +58,14 @@ interface SenderState {
 
 export interface SessionEvents {
   onAppMessage?: (plaintext: Uint8Array, sender: Membership) => void;
+  /** Sound security events only (bad-signature, root-commit-mismatch). */
   onSecurityEvent?: (kind: string, detail: string) => void;
+  /**
+   * Soft consistency-digest disagreement (dgm §8) — informational, NOT proof of
+   * equivocation (can be transient mid-reconciliation). A confirmed detector is
+   * deferred; sound defenses are rootCommit + signatures.
+   */
+  onDigestMismatch?: (frameId: string) => void;
   onDropped?: (reason: string, id: Uint8Array) => void;
 }
 
@@ -346,6 +354,21 @@ export class Session {
     return this.bufferedTotal;
   }
 
+  /** The session's current causal frontier (head op ids as hex) — dgm §8. */
+  headSet(): Set<string> {
+    return new Set(this.engine.headsList().map(bytesToHex));
+  }
+
+  /**
+   * Advertise the current frontier so peers can reconcile (head reconciliation,
+   * dgm §8). A coverage frame's deps ARE the frontier, so a peer missing any of
+   * our ops buffers it and repairs; the carried digest catches divergence. This
+   * is just `coverage()` named for intent.
+   */
+  advertiseHeads(): Uint8Array {
+    return this.coverage();
+  }
+
   // ── internals ─────────────────────────────────────────────────────────────
 
   /**
@@ -401,6 +424,31 @@ export class Session {
     try {
       if (frame.body.cls === CLS_CONTROL) {
         const payload = payloadFromCbor(frame.body.payload, frame.body.sender.device.fingerprint);
+        // §8 equivocation check: if the sender advertises exactly our current
+        // frontier, we have the same op set and our digests MUST agree.
+        // (Computed pre-ingest, against our current heads.)
+        // Consistency-digest handling (dgm.md §8). The advertised [digest, heads]
+        // is carried for equivocation detection, but a raw same-frontier digest
+        // comparison is only sound at mutual quiescence — mid-async, two peers
+        // can transiently present the same head-set while one is still
+        // reconciling, and the trees converge moments later (verified: such
+        // mismatches always resolve). So a single mismatch is a *soft* signal,
+        // surfaced but not treated as proof. Sound equivocation defenses remain
+        // active: rootCommit (key-material, beekem-core §4.3) and frame
+        // signatures. A confirmed detector (persistent disagreement at a stable
+        // covered-by-all frontier) is deferred — see notes.
+        const digestExt = frame.body.ext.get(EXT_DIGEST);
+        if (Array.isArray(digestExt)) {
+          const [advDigest, advHeads] = digestExt as [Uint8Array, Uint8Array[]];
+          const mine = new Set(this.engine.headsList().map(bytesToHex));
+          const adv = new Set(advHeads.map(bytesToHex));
+          if (mine.size === adv.size && [...adv].every((h) => mine.has(h))) {
+            this.engine.settle();
+            if (!bytesEqual(advDigest, this.engine.validDigest())) {
+              this.events.onDigestMismatch?.(bytesToHex(frame.id));
+            }
+          }
+        }
         const op: Op = { id: frame.id, author: frame.body.sender, deps: frame.body.deps, payload };
         this.engine.ingest(op);
         this.learnFromControl(frame, payload);
@@ -561,6 +609,14 @@ export class Session {
     if (rotate) {
       next = generateSigningKeypair(this.rng);
       ext.set(EXT_NEXT_SIGNING_KEY, next.pk);
+    }
+    // Coverage frames carry the consistency digest + the sender's frontier
+    // (dgm.md §8). The deps of a coverage frame ARE that frontier, so a receiver
+    // missing any advertised head buffers this frame and repairs it — that is
+    // the head-reconciliation path. The digest lets a same-frontier receiver
+    // detect divergence (§8 equivocation check).
+    if (payload.type === 'coverage') {
+      ext.set(EXT_DIGEST, [this.engine.validDigest(), this.engine.headsList()]);
     }
     const body = encodeFrameBody({
       version: 1,

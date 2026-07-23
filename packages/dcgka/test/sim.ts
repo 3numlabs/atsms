@@ -367,48 +367,80 @@ function seedSks(pd: PoolDevice): ShareKeyMap {
 }
 
 /**
- * Reach a converged state by modeling the protocol's liveness guarantee: every
- * member eventually receives every message (via repeated delivery + end-to-end
- * repair, ordering-auth §8; head reconciliation is dgm.md §8's job, not yet in
- * the Session layer, so the harness supplies it here). Concretely: flood the
- * union of every retained frame to every live client until op sets and heads
- * converge. This tests convergence-under-complete-delivery; the fuzz phase's
- * loss/reorder/dup/partition already exercised the buffering/repair machinery.
+ * Reach a converged state using the protocol's OWN head-reconciliation
+ * mechanism (dgm §8), not a harness cheat: every live member reliably delivers
+ * what it has and then **advertises its frontier** (a coverage frame whose deps
+ * are its heads). A peer missing any advertised op buffers the advertisement
+ * and recovers the gap via end-to-end repair (ordering-auth §8). Iterating this
+ * drives all live members to one op set → one head-set → one tree.
+ *
+ * The lossy/reorder/dup/partition faults belong to the fuzz phase; settle runs
+ * reliably so it exercises reconciliation, not the transport.
  */
 function settle(clients: Client[], wire: Wire[], _deliverAll: () => boolean, seed: number): void {
-  wire.length = 0; // drop in-flight duplicates; the union below is authoritative
-  const CAP = 50;
-  for (let round = 0; round < CAP; round++) {
-    // Union of all frames anyone retains (every op is retained by its author).
-    const union = new Map<string, Uint8Array>();
-    for (const c of clients) {
-      for (const [idHex, meta] of retainedOf(c.session)) union.set(idHex, meta.raw);
+  const live = () => clients.filter((c) => !c.removed);
+  const deliverToLive = (raw: Uint8Array): void => {
+    if (parseFrame(raw).body.cls === CLS_WELCOME) return;
+    for (const c of live()) c.session.ingestFrame(raw);
+  };
+  // Broadcast every client's pending outbox to all live members until stable.
+  const drainOutboxes = (): void => {
+    for (let guard = 0; guard < 10000; guard++) {
+      let any = false;
+      for (const c of clients) {
+        for (const raw of c.session.takeOutbox()) {
+          any = true;
+          deliverToLive(raw);
+        }
+      }
+      if (!any) return;
     }
-    for (const c of clients) {
-      if (c.removed) continue;
-      for (const raw of union.values()) c.session.ingestFrame(raw);
+    throw new Error(`drainOutboxes runaway (seed ${seed})`);
+  };
+  // End-to-end repair: each buffering client asks every peer (removed peers
+  // still retain and serve) until its buffer drains.
+  const repairDrain = (): void => {
+    for (let round = 0; round < 200; round++) {
+      const stuck = live().filter((c) => c.session.bufferedCount() > 0);
+      if (stuck.length === 0) return;
+      let progressed = false;
+      for (const c of stuck) {
+        const before = c.session.bufferedCount();
+        const req = c.session.buildRepairRequest();
+        if (req === null) continue;
+        for (const server of clients) {
+          if (server.idx === c.idx) continue;
+          for (const resp of server.session.serveRepair(req)) c.session.ingestFrame(resp);
+        }
+        if (c.session.bufferedCount() < before) progressed = true;
+      }
+      if (!progressed) return;
     }
-    // Converged iff every live client shares one head-set.
-    const headSets = clients
-      .filter((c) => !c.removed)
-      .map((c) => [...headsOf(c.session.engine)].sort().join(','));
-    if (new Set(headSets).size === 1 && clients.every((c) => c.removed || c.session.bufferedCount() === 0)) {
-      return;
-    }
+  };
+
+  // Deliver whatever is still on the wire reliably, then drain + repair.
+  for (const w of wire) if (!clients[w.to]!.removed) clients[w.to]!.session.ingestFrame(w.raw);
+  wire.length = 0;
+  drainOutboxes();
+  repairDrain();
+
+  const converged = (): boolean => {
+    const sets = live().map((c) => [...c.session.headSet()].sort().join(','));
+    return new Set(sets).size <= 1 && live().every((c) => c.session.bufferedCount() === 0);
+  };
+
+  const CAP = 40;
+  for (let round = 0; round < CAP && !converged(); round++) {
+    for (const c of live()) c.session.advertiseHeads(); // coverage frame = frontier advert
+    drainOutboxes(); // deliver adverts; missing-dep receivers buffer
+    repairDrain(); // recover the gaps the adverts exposed
+    drainOutboxes(); // propagate anything repair unblocked
   }
-  const stuck = clients.filter((c) => !c.removed && c.session.bufferedCount() > 0);
-  const headSets = new Set(
-    clients.filter((c) => !c.removed).map((c) => [...headsOf(c.session.engine)].sort().join(',')),
-  );
-  throw new Error(
-    `settle did not converge (seed ${seed}): ${stuck.length} buffering, ${headSets.size} distinct head-sets`,
-  );
-}
-
-function retainedOf(session: Session): Map<string, { raw: Uint8Array }> {
-  return (session as unknown as { retained: Map<string, { raw: Uint8Array }> }).retained;
-}
-
-function headsOf(engine: unknown): Set<string> {
-  return (engine as { heads: Set<string> }).heads;
+  if (!converged()) {
+    const stuck = live().filter((c) => c.session.bufferedCount() > 0).length;
+    const sets = new Set(live().map((c) => [...c.session.headSet()].sort().join(',')));
+    throw new Error(
+      `settle did not converge (seed ${seed}): ${stuck} buffering, ${sets.size} distinct head-sets`,
+    );
+  }
 }
