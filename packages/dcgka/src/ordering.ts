@@ -75,6 +75,8 @@ export class Session {
   private bufferedTotal = 0;
   private outbox: Uint8Array[] = [];
   private pendingLocal: { raw: Uint8Array; idHex: string; meta: RetainedMeta } | null = null;
+  /** Op id that established my current protocol signing key (ordering-auth §5). */
+  private myKeyOpId: Uint8Array;
 
   private constructor(
     engine: Engine,
@@ -88,6 +90,7 @@ export class Session {
     this.groupIdHex = bytesToHex(engine.groupId);
     this.seq = counters.seq;
     this.ctrlSeq = counters.ctrlSeq;
+    this.myKeyOpId = engine.groupId; // initial key announced in the create; superseded on first rotation
   }
 
   // ── construction ──────────────────────────────────────────────────────────
@@ -228,8 +231,12 @@ export class Session {
   sendApp(plaintext: Uint8Array): Uint8Array {
     const msg = this.engine.sendApp(plaintext);
     const payload: CborValue = [msg.generation, msg.ct];
-    const raw = this.buildFrame(CLS_APP, null, [msg.epochId], payload, new Map());
-    return raw;
+    // Depend on the epoch anchor AND the op that established my signing key, so
+    // a receiver never verifies this frame before it knows my current key
+    // (ordering-auth §5 — app frames are FIFO-exempt but key-continuity is not).
+    const deps = [msg.epochId];
+    if (!bytesEqual(this.myKeyOpId, msg.epochId)) deps.push(this.myKeyOpId);
+    return this.buildFrame(CLS_APP, null, deps, payload, new Map());
   }
 
   takeOutbox(): Uint8Array[] {
@@ -242,6 +249,12 @@ export class Session {
 
   ingestFrame(raw: Uint8Array): void {
     const frame = parseFrame(raw);
+    // Repair requests are unauthenticated, idempotent service requests (§8, D5
+    // anonymous-ingress spirit): serve from retained frames, never buffer/track.
+    if (frame.body.cls === CLS_REPAIR) {
+      for (const resend of this.serveRepair(raw)) this.outbox.push(resend);
+      return;
+    }
     const idHex = bytesToHex(frame.id);
     if (this.processed.has(idHex)) return; // A5 dedup
     if (frame.body.cls !== CLS_CONTROL || !isCreatePayload(frame.body.payload)) {
@@ -279,18 +292,52 @@ export class Session {
     }
     if (missingIds.length === 0 && ranges.length === 0) return null;
     const payload: CborValue = [missingIds.length > 0 ? 2 : 1, ranges, missingIds];
-    return this.buildFrame(CLS_REPAIR, null, [], payload, new Map());
+    // Repair requests do not consume a seq or enter our processed/outbox state —
+    // they are transient, unauthenticated queries (served via ingestFrame above).
+    const body = encodeFrameBody({
+      version: 1,
+      groupId: this.engine.groupId,
+      sender: this.engine.me,
+      seq: this.seq,
+      ctrlSeq: null,
+      deps: [],
+      cls: CLS_REPAIR,
+      payload,
+      ext: new Map(),
+    });
+    return signFrame(body, this.signing.sk);
   }
 
   /** §8: serve a repair request from retained frames (responses are re-deliveries). */
   serveRepair(requestRaw: Uint8Array): Uint8Array[] {
     const req = parseFrame(requestRaw);
     if (req.body.cls !== CLS_REPAIR) throw new Error('not a repair frame');
-    const [, , ids] = req.body.payload as [number, CborValue[], Uint8Array[]];
+    const [, ranges, ids] = req.body.payload as [number, CborValue[], Uint8Array[]];
     const out: Uint8Array[] = [];
+    const seen = new Set<string>();
+    const emit = (idHex: string, raw: Uint8Array) => {
+      if (!seen.has(idHex)) {
+        seen.add(idHex);
+        out.push(raw);
+      }
+    };
     for (const id of ids) {
-      const meta = this.retained.get(bytesToHex(id));
-      if (meta !== undefined) out.push(meta.raw);
+      const idHex = bytesToHex(id);
+      const meta = this.retained.get(idHex);
+      if (meta !== undefined) emit(idHex, meta.raw);
+    }
+    // ctrlSeq-gap ranges: the missing frame is not a dep of the buffered frame,
+    // so it can only be recovered by (sender, ctrlSeq) match — the ID is unknown
+    // to the requester precisely because the frame is missing.
+    for (const r of ranges) {
+      const [senderCbor, from, to] = r as [CborValue, number, number];
+      const [[did, fp], admittedBy] = senderCbor as [[string, Uint8Array], Uint8Array];
+      const key = membershipKey({ device: { did, fingerprint: fp }, admittedBy });
+      for (const [idHex, meta] of this.retained) {
+        if (meta.senderKey === key && meta.ctrlSeq !== null && meta.ctrlSeq >= from && meta.ctrlSeq <= to) {
+          emit(idHex, meta.raw);
+        }
+      }
     }
     return out;
   }
@@ -345,10 +392,10 @@ export class Session {
       this.events.onDropped?.('bad-signature', frame.id);
       return; // dropped, never buffered (ordering-auth §5)
     }
-    if (frame.body.seq <= st.lastSeq) {
-      this.events.onDropped?.('seq-replay', frame.id);
-      return;
-    }
+    // Replay is caught by the MessageID processed-set (A5, checked at ingest);
+    // `seq` is NOT a contiguity gate for app/repair frames (they share the
+    // per-sender counter but are order-exempt — ordering-auth §4.1), so a lower
+    // seq here is legitimate out-of-order delivery, not a replay.
 
     const idHex = bytesToHex(frame.id);
     try {
@@ -365,12 +412,19 @@ export class Session {
           generation,
           ct,
         };
-        const pt = this.engine.receiveApp(msg);
-        this.events.onAppMessage?.(pt, frame.body.sender);
-      } else if (frame.body.cls === CLS_REPAIR) {
-        for (const resend of this.serveRepair(frame.raw)) this.outbox.push(resend);
+        try {
+          const pt = this.engine.receiveApp(msg);
+          this.events.onAppMessage?.(pt, frame.body.sender);
+        } catch {
+          // Undecryptable for us: an epoch we never derived / were not entitled
+          // to / have evicted, or a message beyond the skipped-key window
+          // (ordering-auth §4.2, beekem-core §8). Silent drop — but we still fall
+          // through to retain the bytes so we can serve them to repair.
+          this.events.onDropped?.('app-undecryptable', frame.id);
+        }
       }
       // CLS_WELCOME received by an existing member: not addressed to us — record only.
+      // CLS_REPAIR is intercepted in ingestFrame and never reaches here.
     } catch (e) {
       if (e instanceof Error && e.message.startsWith('RootCommitMismatch')) {
         this.events.onSecurityEvent?.('root-commit-mismatch', bytesToHex(frame.id));
@@ -380,7 +434,7 @@ export class Session {
       throw e;
     }
 
-    st.lastSeq = frame.body.seq;
+    st.lastSeq = Math.max(st.lastSeq, frame.body.seq);
     if (frame.body.ctrlSeq !== null) st.lastCtrlSeq = frame.body.ctrlSeq;
     this.applyRotation(frame, st);
     this.processed.add(idHex);
@@ -454,8 +508,14 @@ export class Session {
     ) {
       const next = frame.body.ext.get(EXT_NEXT_SIGNING_KEY);
       if (next instanceof Uint8Array && next.length === 32) {
-        st.keys.push({ fromSeq: frame.body.seq + 1, pk: next });
-        if (st.keys.length > 4) st.keys.splice(0, st.keys.length - 4); // prune superseded
+        // Keep the full rotation history: verifying a repaired old frame
+        // (ordering-auth §8) requires the key that was effective at its seq.
+        // Bounded by the sender's lifetime rotation count; pruning is only safe
+        // behind a checkpoint that also drops the frames those keys verify.
+        if (!st.keys.some((k) => k.fromSeq === frame.body.seq + 1)) {
+          st.keys.push({ fromSeq: frame.body.seq + 1, pk: next });
+          st.keys.sort((a, b) => a.fromSeq - b.fromSeq);
+        }
       }
     }
   }
@@ -522,7 +582,10 @@ export class Session {
     };
     this.seq += 1;
     this.ctrlSeq += 1;
-    if (next !== null) this.signing = next;
+    if (next !== null) {
+      this.signing = next;
+      this.myKeyOpId = parsed.id; // this op announced the key I now sign under
+    }
     return parsed.id;
   }
 
