@@ -94,6 +94,8 @@ Unknown keys MUST be preserved for signature verification and ignored semantical
 |---|---|---|
 | 1 | *retired* (was piggybacked acks — D11) | MUST NOT be emitted; preserved if received (signature rule above) |
 | 2 | `[ digest: bstr32, heads: [ * bstr32 ] ]` | consistency digest + the sender's valid-op heads it was computed at (dgm.md §8 — digest now covers op-set + tree public state) |
+| 3 | `nextSigningPubKey: bstr32` | protocol signing-key rotation — the key effective for this sender's frames with higher `seq` (ordering-auth §5). Carried on `create`/`update`/`remove` control frames; covered by the current signature |
+| 4 | `appHW: [ * [ epochId: bstr32, hiGen: uint ] ]` | per-epoch application high-water — highest generation the sender has emitted, so peers discover trailing app-message gaps (ordering-auth §8.1, DESIGNED). Carried on `coverage` frames; MAY piggyback on any frame |
 
 ## 4. Class payloads
 
@@ -170,10 +172,16 @@ the 3-tuple.
 ### 4.5 `repair` (requests only)
 
 ```
-RepairPayload = [ reason: uint,
-                  ranges: [ * [ sender: Membership, fromSeq: uint, toSeq: uint ] ],
-                  ids:    [ * bstr32 ] ]
+RepairPayload = [ reason:   uint,
+                  ranges:   [ * [ sender: Membership, fromSeq: uint, toSeq: uint ] ],  ; ctrlSeq ranges
+                  ids:      [ * bstr32 ],
+                  appRanges: [ * [ sender: Membership, epoch: bstr32, fromGen: uint, toGen: uint ] ] ]
+                                                ; reason 5 only (§8.1); {} for other reasons
 ```
+
+*(v0.3 2026-07-23: `appRanges` appended for app-message gap recovery, ordering-auth §8.1 — a trailing
+positional field, so `reason 1–4` payloads that omit it stay wire-compatible; the field is DESIGNED, not
+yet emitted.)*
 
 | `reason` | Meaning |
 |---|---|
@@ -181,6 +189,7 @@ RepairPayload = [ reason: uint,
 | 2 | unresolved dep |
 | 3 | buffer overflow drop (ordering-auth §4.4) |
 | 4 | *unassigned* (was reserved for `retry-signed-only`; retired with the OPK design, D11 — identity-devices §8) |
+| 5 | *app-gap* — missing application messages by `(sender, epoch, generation)`, carried in `appRanges` (ordering-auth §8.1, DESIGNED) |
 
 **Repair responses are not a class**: the responder re-delivers the requested retained `SignedFrame`s in
 fresh sealed envelopes — frames are self-authenticating (author's signature, not the resealer's), and A5

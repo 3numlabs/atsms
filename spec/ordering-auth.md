@@ -1,9 +1,10 @@
 # spec/ordering-auth.md — Ordering & Authentication Layer (the ACB substitute)
 
-> **Status: DRAFT v0.2 (2026-07-22) — for review.** *(v0.2: D11 — `ack` frame class retired
+> **Status: DRAFT v0.3 (2026-07-23) — for review.** *(v0.2: D11 — `ack` frame class retired
 > (coverage replaces it, beekem-core §5); epoch anchor is now the establishing `update` op;
-> retention re-based on covered-by-all. The layer's job is otherwise unchanged: BeeKEM assumes
-> exactly the causal delivery this layer provides.)* [Protocol] · Phase 0 deliverable.
+> retention re-based on covered-by-all. v0.3: §8.1 app-message gap recovery added (DESIGNED — the
+> control-plane repair in §8 is BUILT; app-message loss recovery is not yet in the reference impl).)*
+> [Protocol] · Phase 0 deliverable.
 > Closes gaps **G4** (authenticated-causal-broadcast substitute) and **G12** (mailbox liveness/repair) from
 > [`../gap-analysis.md`](../gap-analysis.md).
 > Inputs: BeeKEM causal-delivery assumption (`beekem/src/cgka.rs` — "We assume that all operations are
@@ -150,10 +151,10 @@ ready message. A message unresolvable for `T_REPAIR_GIVEUP = 30 d` MAY be droppe
 
 ## 8. Gap detection & repair (G12)
 
-- **Detection**: a control-plane `ctrlSeq` gap, an app-ratchet index gap, or an unresolved dep older than
+- **Detection**: a control-plane `ctrlSeq` gap or an unresolved dep older than
   `T_REPAIR = 60 s` (online) / on next connect (offline) triggers repair. (Control gaps are the urgent
-  case — they stall that sender's group-state progress; app gaps only leave a "message pending" hole while
-  later traffic flows.)
+  case — they stall that sender's group-state progress.) **Application-message gaps are a distinct
+  problem with a distinct mechanism — §8.1.**
 - **`repair` request**: sealed direct message to the original sender listing missing `(sender, seq)` ranges
   and/or MessageIDs; if unanswered for `T_REPAIR_FALLBACK = 24 h`, sent to any other member (all members
   store the signed messages they have processed until covered-by-all — the same retention the core's GC
@@ -169,6 +170,60 @@ ready message. A message unresolvable for `T_REPAIR_GIVEUP = 30 d` MAY be droppe
   (spec v1.1 §9) has re-fetch inherently. Retention length is an operator policy trade-off (longer = more
   provider-side correlation surface); protocol correctness never depends on it — member-served repair
   remains the only normative mechanism.
+
+## 8.1 Application-message gap recovery (DESIGNED — reference impl pending)
+
+> **Status: DESIGNED 2026-07-23, not yet in `@atsms/dcgka`.** The control-plane repair above (§8) is
+> BUILT; this subsection specifies the app-message analogue, surfaced by the Phase-2 fuzz work. It is a
+> **reliability/UX** property, deliberately lower priority than control-op convergence (§8 + head
+> reconciliation, dgm §8): a lost app message is a delivery hole, **not** a security-relevant divergence —
+> the group's key state converges regardless. Build it late-Phase-2 or fold into the Phase-3 delivery path.
+
+Application messages do **not** ride the causal DAG. Each rides its sender's per-epoch FS-AEAD chain
+(beekem-core §7), addressed by `(sender, epoch, generation)` — `epoch` = the establishing `update` op,
+`generation` = the ratchet index. Two consistency requirements follow, and only the first is met today:
+
+**(a) Reordering within an epoch — MET (passive).** The receive chain's skipped-key store
+(`OUT_OF_ORDER_TOLERANCE`, `MAX_FORWARD_DISTANCE`, `MAX_SKIPPED_TOTAL` — parameters.md) lets a receiver
+that saw generation *g+k* still decrypt a late *g*, single-use, delete-on-use. No action needed; the
+message decrypts whenever the transport delivers it.
+
+**(b) Loss recovery — NOT YET MET.** A message that is never re-delivered is silently lost: the receiver
+issues no request for it. Two gap kinds, one undiscoverable without new signalling:
+
+- **Interior gap** (received *g+1* but never *g*): *detectable* locally — the skipped-key store records the
+  hole. The receiver knows *g* is missing.
+- **Trailing gap** (received through *g*, sender sent through *g+2*, then fell quiet): **undiscoverable**
+  today. Nothing tells the receiver higher generations exist — the coverage advert / consistency digest
+  (dgm §8) cover control ops and tree state, never app-message counters.
+
+### Mechanism (normative when built)
+
+1. **Per-epoch high-water advertisement.** A sender SHOULD advertise, per live epoch it has sent in, the
+   highest generation it has emitted: `appHW = [ * [ epochId: bstr32, hiGen: uint ] ]`, carried as a new
+   **`ext` key (§3.2 registry — a forward-compatible addition, not a version break; unknown-key tolerance
+   applies)** on `coverage` frames (the existing idle carrier) and MAY piggyback on any outgoing frame.
+   This makes trailing gaps discoverable: a receiver compares `hiGen` to its own `nextGen` for that
+   `(sender, epoch)` chain.
+2. **Request.** For any missing generation (interior via the skipped-key hole, trailing via `appHW`), the
+   receiver issues a `repair` request naming **`(sender, epochId, fromGen, toGen)`** app ranges (a new
+   `repair` range shape alongside the ctrlSeq ranges; `reason = 5` *app-gap*, reserving a `RepairPayload`
+   field — wire-format §4.5). Requests are the same unauthenticated, member-served queries as §8.
+3. **Serve.** Any member that retains the sealed app frames (receivers retain processed frames until
+   covered-by-all, §8 — app frames included) re-delivers those matching `(sender, epoch, generation ∈
+   [fromGen,toGen])`. Serving is by **retained-frame index**, so `serveRepair` gains an
+   `(senderKey, epoch, generation)` match beside the current `(senderKey, ctrlSeq)` one.
+
+### Forward-secrecy bound (inherent, MUST surface in UX)
+
+Recovery is possible **only while the key still exists**: within the skipped-key window, and **before the
+epoch closes and is evicted** (covered-by-all or `T_EPOCH_GRACE`, beekem-core §8). Past that the chain
+key for `g` is deleted by the FS discipline — the ciphertext can be re-served but is **undecryptable by
+design**. This matches the ratchet-messaging posture (cf. Signal): app repair is best-effort with a hard
+time bound, and the client MUST render a permanently-unrecoverable message honestly (a "message could not
+be delivered" placeholder), never a silent omission. A sender MAY, at the app layer, resend important
+content in the *current* epoch when a peer reports an unrecoverable trailing gap — an application policy,
+not a protocol guarantee.
 
 ## 9. Stale-member surfacing
 
@@ -186,7 +241,10 @@ from "X not covering" (different failure modes, same lever).
 2. **Rotation vectors**: signing-key handoff across seq boundaries, rotation concurrent with remove,
    rotation message lost-then-repaired.
 3. **Removed-member race vectors**: race in both directions per §7.
-4. **Repair protocol**: gap under every transport profile; fallback path; give-up surfacing.
+4. **Repair protocol**: control-plane gap under every transport profile; fallback path; give-up surfacing.
+   *(§8.1 app-message repair, when built:* interior gap recovered from the skipped-key hole; trailing gap
+   discovered via a peer's `appHW` advert then recovered; a gap past epoch eviction surfaces as
+   permanently-unrecoverable, not silently dropped.*)*
 5. **Differential**: causal-readiness decisions cross-checked against the `beekem` oracle's
    `merge_concurrent_operation` acceptance behavior (`OutOfOrderOperation` on missing predecessors —
    `cgka.rs`); divergences (welcome-first, add-ready, repair — all above the oracle's layer) are listed
