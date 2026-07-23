@@ -145,7 +145,13 @@ standalone. This is the bulk of the *design* work — treat these as the real de
 Exit criteria: every G1–G13 gap has a normative answer; specs cross-reviewed against paper sections cited in the
 gap analysis (keep local copies of the eprint PDF + prototype sources for reference).
 
-## 4. Phase 1 — Primitives & tree  *(first code; re-scoped 2026-07-22 by D11)*
+## 4. Phase 1 — Primitives & tree  *(first code; re-scoped 2026-07-22 by D11) — ✅ BUILT*
+
+Landed in `packages/dcgka`: keyhive-compatible crypto (BLAKE3 below the seam,
+byte-identical to the Rust oracle — passes the upstream `separable.rs` doctest),
+treemath, the full BeeKEM tree, the deterministic-CBOR codec, and the frozen
+test-vector suite (`test-vectors/{beekem-oracle,kdf,frames}.json` +
+`test/vectors.test.ts`, wire-format §9). CI at `.github/workflows/ci.yml`.
 
 - `packages` skeleton, CI, deterministic-CBOR codec + canonical test vectors.
 - Primitive wrappers over `@noble/*` (X25519, Ed25519, **BLAKE3 + HKDF-SHA256 per the beekem-core §3 KDF
@@ -157,7 +163,16 @@ gap analysis (keep local copies of the eprint PDF + prototype sources for refere
   below the `PcsKey` seam.
 - Property tests: tree invariants + seeded oracle transcript equivalence.
 
-## 5. Phase 2 — BeeKEM core, DGM, ordering  *(the engine; re-scoped 2026-07-22 by D11)*
+## 5. Phase 2 — BeeKEM core, DGM, ordering  *(the engine; re-scoped 2026-07-22 by D11) — ✅ BUILT*
+
+Landed: `engine.ts` (op graph/epochs/replay + DGM filter + PcsKey seam +
+chains/coverage/eviction/checkpoints + `rootCommit`), `dgm.ts` (strong-remove
+SR1–SR5 with SCC-based remove-concurrency), `ordering.ts`/`frames.ts` (signed
+frames, §5 rotation, readiness/buffering, welcome, repair, **head reconciliation
+via coverage adverts + dgm §8 digest**), and the **simulation fuzz gate**
+(`test/fuzz.test.ts`) which drove out 5 ordering defects + 2 convergence fixes.
+67 unit tests + 4 fuzz groups green. Deferred: confirmed digest equivocation
+detector (soft signal for now — sound defenses are rootCommit + signatures).
 
 - `beekem-core`: op graph, epochs/topsort, merge/replay with the **DGM validity filter** (PR-1..3),
   checkpoints, `rootCommit`, per-sender chains + skipped-key store, coverage tracking, eviction schedule

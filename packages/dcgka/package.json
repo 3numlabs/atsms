@@ -7,6 +7,8 @@
   "main": "./src/index.ts",
   "scripts": {
     "test": "vitest run",
+    "test:unit": "vitest run --exclude '**/fuzz.test.ts'",
+    "test:fuzz": "vitest run test/fuzz.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

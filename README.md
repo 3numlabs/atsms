@@ -1,6 +1,9 @@
 # atsms-dcgka
 
-**[Protocol] · Status: DESIGNED (no code yet)**
+**[Protocol] · Status: Phase 0b specs DECIDED · Phases 1–2 BUILT** (engine +
+ordering/auth + fuzz gate; `packages/dcgka`, 67 unit tests + a simulation fuzz
+gate, byte-faithful to the Rust BeeKEM oracle). Phases 3–5 (sealed-sender impl,
+identity/lexicon publish flows, `@atsms/sms` integration) are next.
 
 Decentralized group messaging — the planned replacement for the crypto core of `atsms-lib`
 (`@atsms/sms`), delivering forward secrecy, post-compromise security, real group key agreement,
