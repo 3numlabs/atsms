@@ -209,10 +209,33 @@ issues no request for it. Two gap kinds, one undiscoverable without new signalli
    receiver issues a `repair` request naming **`(sender, epochId, fromGen, toGen)`** app ranges (a new
    `repair` range shape alongside the ctrlSeq ranges; `reason = 5` *app-gap*, reserving a `RepairPayload`
    field — wire-format §4.5). Requests are the same unauthenticated, member-served queries as §8.
-3. **Serve.** Any member that retains the sealed app frames (receivers retain processed frames until
-   covered-by-all, §8 — app frames included) re-delivers those matching `(sender, epoch, generation ∈
-   [fromGen,toGen])`. Serving is by **retained-frame index**, so `serveRepair` gains an
-   `(senderKey, epoch, generation)` match beside the current `(senderKey, ctrlSeq)` one.
+3. **Serve — two sources, a distinction sealed-sender forces.** The **inner** app frame (the signed
+   `AppPayload`, beekem-core §7) is **group-encrypted: one ciphertext, identical for every member**. So
+   **any member** that retains it can serve a missing `(sender, epoch, generation ∈ [fromGen,toGen])`,
+   re-sealing it into a fresh envelope for the requester — this is the "any peer that has M4 can hand you
+   M4" property, and it holds because the *content* is not per-recipient. `serveRepair` gains a
+   `(senderKey, epoch, generation)` match beside the current `(senderKey, ctrlSeq)` one; frames are
+   content-addressed by MessageID, so servers are interchangeable and A5 dedups.
+   A **relay** (dumb store) can *also* serve, but **only a device's own retained copies**: the sealed
+   envelope is per-recipient (sealed-sender §11 — fan-out re-encrypts per recipient), so the relay holds
+   Bob's mailbox sealed-to-Bob and can re-deliver *Bob's* missed copies, never Carol's. Relay-serving
+   therefore covers "re-pull my own mailbox after local-state loss" (§8's non-normative retention), not
+   "fetch a message never delivered to me" — that is member-served.
+
+### Why not just adopt Keyhive/Beelay sync
+
+Keyhive's document-sync stack (Beelay, sedimentree, `causal_encryption.md`) solves *exactly* this
+discovery problem elegantly — content-addressed blobs reconciled by DAG summary, servable by any store
+including a **blind sync server that cannot decrypt** — and we take two lessons from it: content-addressed
+any-holder serving (above), and summary-based discovery (the `appHW` advert *is* our summary). But we do
+**not** adopt its key model: Keyhive's causal encryption is explicitly **no-forward-secrecy** with
+**permanent, fully-back-decryptable history** ("any agent that has access now should automatically have
+access to all prior history"). That is the document model we deliberately diverged from for messaging
+(the ATSMS eviction/FS profile, Spike A) — so app-repair recovery stays **FS-bounded** (below), and a
+missed message past eviction is gone, by design, exactly as it is not for an Automerge doc. Sedimentree's
+strata compression is also unnecessary here: a per-sender in-epoch app stream is **linear (FIFO) and
+bounded by retention**, so its compact summary is just `hiGen` — we need Keyhive's *idea*, not its
+machinery.
 
 ### Forward-secrecy bound (inherent, MUST surface in UX)
 
