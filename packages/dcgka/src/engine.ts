@@ -21,7 +21,7 @@ import { encodeMembership, membershipKey, type DeviceID, type Membership } from 
 import { chainSeed, rootCommit } from './kdf.js';
 import { generateShareSecretKey, shareKeyOf, type Csprng } from './keyhive.js';
 import { ShareKeyMap, shareNodeKey } from './keys.js';
-import { makeOp, opKey, type Op } from './ops.js';
+import { makeOp, opKey, type Op, type OpMinter, type OpPayload } from './ops.js';
 import { SecretStore } from './secretstore.js';
 import { BeeKem, type PathChange } from './tree.js';
 
@@ -48,7 +48,9 @@ interface Checkpoint {
 
 export class Engine {
   readonly groupId: Uint8Array;
-  readonly me: Membership;
+  /** This device's own Membership — admittedBy is set from the resolved view
+   *  (createId for founding members, the add-op id for joiners). */
+  me: Membership;
   readonly sks: ShareKeyMap;
   private tree: BeeKem;
   private ops = new Map<string, Op>();
@@ -64,12 +66,16 @@ export class Engine {
   private skippedBudget = { used: 0 };
   private createOp: Op;
 
+  private minter: OpMinter | null;
+
   private constructor(
     createOp: Op,
     myDevice: DeviceID,
     sks: ShareKeyMap,
     private rng: Csprng,
+    minter: OpMinter | null = null,
   ) {
+    this.minter = minter;
     if (createOp.payload.type !== 'create') throw new Error('first op must be create');
     this.createOp = createOp;
     this.groupId = createOp.id;
@@ -88,25 +94,60 @@ export class Engine {
 
   /** Found a group: builds the create op and the creator's engine. */
   static create(
-    devices: Array<{ device: DeviceID; leafPk: Uint8Array }>,
+    devices: Array<{ device: DeviceID; leafPk: Uint8Array; signingPk?: Uint8Array }>,
     initialAdmins: string[],
     creatorSks: ShareKeyMap,
     rng: Csprng,
+    minter: OpMinter | null = null,
   ): Engine {
     const creator = devices[0];
     if (creator === undefined) throw new Error('create needs at least one device');
     const author: Membership = { device: creator.device, admittedBy: new Uint8Array(32) };
-    const op = makeOp(author, [], { type: 'create', initialDevices: devices, initialAdmins });
-    return new Engine(op, creator.device, creatorSks, rng);
+    const payload: OpPayload = { type: 'create', initialDevices: devices, initialAdmins };
+    const op =
+      minter !== null
+        ? { id: minter(author, [], payload), author, deps: [], payload }
+        : makeOp(author, [], payload);
+    return new Engine(op, creator.device, creatorSks, rng, minter);
   }
 
-  /** Reconstruct from an op log (test/join-by-full-history path; welcome flow lands with ordering-auth). */
-  static fromOpLog(log: Op[], myDevice: DeviceID, sks: ShareKeyMap, rng: Csprng): Engine {
+  /** Reconstruct from an op log (test/join-by-full-history path; the welcome flow wraps this). */
+  static fromOpLog(
+    log: Op[],
+    myDevice: DeviceID,
+    sks: ShareKeyMap,
+    rng: Csprng,
+    minter: OpMinter | null = null,
+  ): Engine {
     const [createOp, ...rest] = log;
     if (createOp === undefined) throw new Error('empty op log');
-    const e = new Engine(createOp, myDevice, sks, rng);
+    const e = new Engine(createOp, myDevice, sks, rng, minter);
     for (const op of rest) e.ingest(op);
+    e.refreshMe();
     return e;
+  }
+
+  /**
+   * Re-derive `me.admittedBy` from the current membership view: a joiner's
+   * Membership is keyed by the add op that admitted it, not the create op the
+   * engine bootstrapped from. Call after ingesting a joiner's admitting add.
+   */
+  refreshMe(): void {
+    const fp = this.me.device.fingerprint;
+    for (const m of this.dgm.members.values()) {
+      if (bytesEqual(m.device.fingerprint, fp)) {
+        this.me = m;
+        return;
+      }
+    }
+  }
+
+  private mint(payload: OpPayload): Op {
+    const deps = this.headsArr();
+    if (this.minter !== null) {
+      return { id: this.minter(this.me, deps, payload), author: this.me, deps, payload };
+    }
+    return makeOp(this.me, deps, payload);
   }
 
   // ── op ingestion (cgka.rs::merge_concurrent_operation) ───────────────────
@@ -139,6 +180,10 @@ export class Engine {
       this.dgm = this.evaluateDgm();
       this.applyOp(op);
     }
+    // A joiner's own admitting add resolves its Membership (admittedBy = add id).
+    if (op.payload.type === 'add' && bytesEqual(op.payload.device.fingerprint, this.me.device.fingerprint)) {
+      this.refreshMe();
+    }
     return true;
   }
 
@@ -153,14 +198,14 @@ export class Engine {
 
   // ── local op builders (broadcast the returned op) ─────────────────────────
 
-  buildAdd(device: DeviceID, leafPk: Uint8Array): Op {
+  buildAdd(device: DeviceID, leafPk: Uint8Array, signingPk?: Uint8Array): Op {
     this.settle();
     if (device.did !== this.me.device.did && !this.dgm.admins.has(this.me.device.did)) {
       throw new Error('Unauthorized: cross-DID add requires admin (dgm.md §4)');
     }
     if (this.tree.containsId(device.fingerprint)) throw new Error('already a member');
     const leafIndex = this.tree.pushLeaf(device.fingerprint, shareNodeKey(leafPk));
-    const op = makeOp(this.me, this.headsArr(), { type: 'add', device, leafPk, leafIndex });
+    const op = this.mint({ type: 'add', device, leafPk, leafIndex, signingPk });
     this.recordOp(op);
     this.dgm = this.evaluateDgm();
     this.currentEpochId = null; // path blanked
@@ -176,7 +221,7 @@ export class Engine {
       throw new Error('Unauthorized: cross-DID remove requires admin (dgm.md §4)');
     }
     const [, removedKeys] = this.tree.removeId(membership.device.fingerprint);
-    const op = makeOp(this.me, this.headsArr(), { type: 'remove', membership, removedKeys });
+    const op = this.mint({ type: 'remove', membership, removedKeys });
     this.recordOp(op);
     this.dgm = this.evaluateDgm();
     this.currentEpochId = null;
@@ -195,11 +240,7 @@ export class Engine {
       this.sks,
       this.rng,
     );
-    const op = makeOp(this.me, this.headsArr(), {
-      type: 'update',
-      path,
-      rootCommit: rootCommit(root),
-    });
+    const op = this.mint({ type: 'update', path, rootCommit: rootCommit(root) });
     this.recordOp(op);
     this.dgm = this.evaluateDgm();
     this.registerEpoch(op.id, root);
@@ -207,7 +248,7 @@ export class Engine {
   }
 
   buildCoverage(): Op {
-    const op = makeOp(this.me, this.headsArr(), { type: 'coverage' });
+    const op = this.mint({ type: 'coverage' });
     this.recordOp(op);
     return op;
   }
@@ -216,7 +257,7 @@ export class Engine {
     if (!this.dgm.admins.has(this.me.device.did)) {
       throw new Error('Unauthorized: grantAdmin requires admin (dgm.md §4)');
     }
-    const op = makeOp(this.me, this.headsArr(), { type: 'grantAdmin', did });
+    const op = this.mint({ type: 'grantAdmin', did });
     this.recordOp(op);
     this.dgm = this.evaluateDgm();
     return op;

@@ -12,6 +12,8 @@ export * from './chains.js';
 export * from './dgm.js';
 export * from './encrypted.js';
 export * from './engine.js';
+export * from './frames.js';
+export * from './ordering.js';
 export * from './ids.js';
 export * from './kdf.js';
 export * from './keyhive.js';

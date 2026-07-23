@@ -16,8 +16,13 @@ import type { EncryptedSecret } from './encrypted.js';
 import { nodeKeyKeys, shareNodeKey } from './keys.js';
 
 export type OpPayload =
-  | { type: 'create'; initialDevices: Array<{ device: DeviceID; leafPk: Uint8Array }>; initialAdmins: string[] }
-  | { type: 'add'; device: DeviceID; leafPk: Uint8Array; leafIndex: number }
+  | {
+      type: 'create';
+      /** signingPk: the device's initial protocol signing key (ordering-auth §5); ZERO32 when the frame layer is absent (tests). */
+      initialDevices: Array<{ device: DeviceID; leafPk: Uint8Array; signingPk?: Uint8Array }>;
+      initialAdmins: string[];
+    }
+  | { type: 'add'; device: DeviceID; leafPk: Uint8Array; leafIndex: number; signingPk?: Uint8Array }
   | { type: 'remove'; membership: Membership; removedKeys: Uint8Array[] }
   | { type: 'update'; path: PathChange; rootCommit: Uint8Array }
   | { type: 'grantAdmin'; did: string }
@@ -87,12 +92,20 @@ export function decodePathChange(leafId: Uint8Array, v: CborValue): PathChange {
   };
 }
 
-function payloadToCbor(p: OpPayload): CborValue {
+const Z32 = new Uint8Array(32);
+
+export function payloadToCbor(p: OpPayload): CborValue {
   switch (p.type) {
     case 'create':
-      return [OP_TYPE_NUM[p.type], [p.initialDevices.map((d) => [[d.device.did, d.device.fingerprint], d.leafPk]), p.initialAdmins]];
+      return [
+        OP_TYPE_NUM[p.type],
+        [
+          p.initialDevices.map((d) => [[d.device.did, d.device.fingerprint], d.leafPk, d.signingPk ?? Z32]),
+          p.initialAdmins,
+        ],
+      ];
     case 'add':
-      return [OP_TYPE_NUM[p.type], [[p.device.did, p.device.fingerprint], p.leafPk, p.leafIndex]];
+      return [OP_TYPE_NUM[p.type], [[p.device.did, p.device.fingerprint], p.leafPk, p.leafIndex, p.signingPk ?? Z32]];
     case 'remove':
       return [OP_TYPE_NUM[p.type], [[[p.membership.device.did, p.membership.device.fingerprint], p.membership.admittedBy], p.removedKeys]];
     case 'update':
@@ -122,3 +135,53 @@ export function makeOp(author: Membership, deps: Uint8Array[], payload: OpPayloa
 }
 
 export const opKey = (id: Uint8Array): string => bytesToHex(id);
+
+/**
+ * Host-supplied ID minting (ordering-auth §2: the op ID is the SignedFrame
+ * MessageID). The minter sees (author, deps, payload) and returns the 32-byte
+ * ID; the frame layer signs the encoded body inside its minter.
+ */
+export type OpMinter = (author: Membership, deps: Uint8Array[], payload: OpPayload) => Uint8Array;
+
+/** Decode a control payload ([opType, args]) back to an OpPayload. */
+export function payloadFromCbor(v: CborValue, authorFingerprint: Uint8Array): OpPayload {
+  const [t, args] = v as [number, CborValue];
+  const a = args as CborValue[];
+  switch (t) {
+    case 1: {
+      const [devices, admins] = a as [CborValue[], string[]];
+      return {
+        type: 'create',
+        initialDevices: devices.map((d) => {
+          const [[did, fp], leafPk, signingPk] = d as [[string, Uint8Array], Uint8Array, Uint8Array];
+          return { device: { did, fingerprint: fp }, leafPk, signingPk };
+        }),
+        initialAdmins: admins,
+      };
+    }
+    case 2: {
+      const [[did, fp], leafPk, leafIndex, signingPk] = a as [[string, Uint8Array], Uint8Array, number, Uint8Array];
+      return { type: 'add', device: { did, fingerprint: fp }, leafPk, leafIndex, signingPk };
+    }
+    case 3: {
+      const [[[did, fp], admittedBy], removedKeys] = a as [[[string, Uint8Array], Uint8Array], Uint8Array[]];
+      return {
+        type: 'remove',
+        membership: { device: { did, fingerprint: fp }, admittedBy },
+        removedKeys,
+      };
+    }
+    case 4: {
+      const [pathCbor, rc] = a as [CborValue, Uint8Array];
+      return { type: 'update', path: decodePathChange(authorFingerprint, pathCbor), rootCommit: rc };
+    }
+    case 5:
+      return { type: 'grantAdmin', did: (a as [string])[0] };
+    case 6:
+      return { type: 'revokeAdmin', did: (a as [string])[0] };
+    case 7:
+      return { type: 'coverage' };
+    default:
+      throw new Error(`unknown opType ${t}`);
+  }
+}
