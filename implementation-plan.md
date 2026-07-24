@@ -78,6 +78,24 @@ DID certs are untrusted by MUAs regardless — the S/MIME bet's payoff was libra
 X509 identity artifact, which stays), and sealed-sender §10 had already moved sealed encryption to HPKE.
 Spec: sealed-sender §10, identity-devices §4.1.
 
+**D12 — Base-wire framing = strict deterministic CBOR (DRISL profile, map-free). ✅ DECIDED 2026-07-24.**
+The cryptographically load-bearing base layer (signed frames, content-addressed IDs) is CBOR restricted to
+the **DRISL** deterministic profile (dasl.ing/drisl.html), further constrained to be **map-free**: every
+signed structure is a fixed positional array, and `FrameBody.ext` becomes an **opaque byte string** with a
+positional `ExtBody = [version, digest?, rotation?, appHW?]` interior. This deletes the subtlest CBOR
+canonicalization surface — map key ordering / dedup — from the signed base *by construction*, not by a
+runtime check. **Alternatives evaluated and rejected**: **Postcard** (bijective-by-construction but
+non-self-describing, Rust-serde-centric — raises the third-party/multi-language bar for an open protocol,
+no CID story, bundles a pull toward a Rust base reversing D3); **protobuf** (serialization not
+deterministic — a signature footgun). Chose CBOR for self-describing multi-language openness, IETF/reviewer
+familiarity, native content-addressing, and ATProto alignment (repos use dag-cbor), narrowing its one
+weakness (determinism *enforced* not *constructed*) by anchoring strictness to the published DRISL profile
+rather than bespoke rules, and by dropping maps. Size was not a factor — the ~5–8% framing delta vs
+Postcard is neutralized by padding buckets. DRISL's newness (published 2026-07-17) is acceptable: we depend
+on it as the *spec we align to*, with our frozen vectors as the KAT. The app-payload layer stays
+unconstrained (opaque bytes to the base). Prototyped: `cbor.ts` map path removed, `ext.ts` added; 88 unit +
+4 fuzz green. Spec: wire-format §1/§1.1/§3.2.
+
 **D11 — CGKA core = BeeKEM. ✅ DECIDED 2026-07-22 (gates passed same day).** Replace the Weidner-DCGKA
 core with BeeKEM (Ink & Switch concurrent TreeKEM — Apache-2.0, `inkandswitch/keyhive` `beekem` crate as
 differential oracle) under an ATSMS messaging profile. Gated on two spikes, both PASS:
@@ -237,7 +255,7 @@ detector (soft signal for now — sound defenses are rootCommit + signatures).
 ## 11. Sequencing summary
 
 ```
-Phase 0 specs (G1–G13 answered; D1–D11 signed off; Phase 0b re-based the set on BeeKEM 2026-07-22)
+Phase 0 specs (G1–G13 answered; D1–D12 signed off; Phase 0b re-based the set on BeeKEM 2026-07-22)
   → Phase 1 primitives+2SM → Phase 2 engine+DGM+ordering (simulation gate)
   → Phase 3 sealed sender+relay ingress ─┐
   → Phase 4 identity+lexicon+devices ────┴→ Phase 5 @atsms/sms integration + demo groups

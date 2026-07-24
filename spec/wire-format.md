@@ -1,8 +1,10 @@
 # spec/wire-format.md — Wire Formats, Versioning & Test Vectors
 
-> **Status: DRAFT v0.2 (2026-07-22) — for review.** *(v0.2: D11 — `ack` class and 2SM/X3DH structures
+> **Status: DRAFT v0.3 (2026-07-24) — for review.** *(v0.2: D11 — `ack` class and 2SM/X3DH structures
 > retired; CGKA op payloads re-drafted around BeeKEM `PathChange`; classes renumbered while renumbering
-> is still free.)* [Protocol] · Phase 0 deliverable.
+> is still free. v0.3: **D12** — base wire pinned to the strict deterministic **DRISL** CBOR profile and
+> made **map-free**; `ext` is now opaque bytes with a positional `ExtBody` (§1/§1.1/§3.2). Postcard and
+> protobuf evaluated and rejected — §1.1.)* [Protocol] · Phase 0 deliverable.
 > Closes gap **G13** (wire formats, versioning, test vectors) from [`../gap-analysis.md`](../gap-analysis.md).
 > Inputs: [`ordering-auth.md`](./ordering-auth.md) §2 (canonical bytes / MessageID contract),
 > [`beekem-core.md`](./beekem-core.md) §3 (key-schedule labels) + the `beekem` crate's op/tree shapes
@@ -10,19 +12,61 @@
 > §2/§6. MUST/MAY per RFC 2119.
 > This document **freezes the byte layer**: if a structure is not defined here, it is not on the wire.
 
-## 1. Encoding profile: deterministic CBOR
+## 1. Encoding profile: strict deterministic CBOR (DRISL profile, map-free)
 
-All protocol structures are **RFC 8949 CBOR under the Core Deterministic Encoding Requirements (§4.2.1)**:
+*(v0.3 2026-07-24 — profile pinned to DRISL and the base wire made map-free; rationale + alternatives in
+§1.1.)*
+
+The base wire is **CBOR restricted to the [DRISL] deterministic profile**, which is itself a subset of
+CBOR Core (RFC 8949 §4.2.1), **further constrained here to be map-free**:
 
 - Integers and lengths in shortest form; **definite lengths only** (no indefinite-length items).
-- **No floats, no tags, no `undefined`** anywhere in protocol structures. Absent optional values are `null`.
-- Map keys (used only in the `ext` slot, §3) are unsigned integers, sorted by their encoded bytes,
-  no duplicates.
-- **Frozen structures are fixed-length positional arrays** (compact, order-unambiguous); optionality and
-  forward extension live in dedicated `ext` maps, never in variable array length.
+- **No floats, no tags** (DRISL permits Tag 42 for CIDs; we do not use it yet and reject all tags), no
+  `undefined`. Absent optional values are `null`.
+- **No maps anywhere on the signed wire.** DRISL already forbids non-string map keys; we take that to its
+  clean conclusion and forbid maps outright. Every structure is a **fixed positional array**, so there is
+  no key-ordering or duplicate-key surface to police — the subtlest class of CBOR canonicalization bug is
+  removed *by construction*, not by a runtime check. The one former map — `FrameBody.ext` — is now an
+  **opaque byte string** with a positional interior (§3.2). Codecs MUST reject a map (major type 5) on the
+  base wire.
+- **Optionality and forward extension** live in positional slots (`null` when absent) or in the opaque
+  `ext` bytes — never in variable array length or dynamic keys.
 - **Never re-encode**: signatures and MessageIDs are computed over, and verified against, the received
   bytes. Implementations MUST store received canonical bytes alongside decoded views (the retained-message
-  store, beekem-core §2, holds bytes). Readers MUST reject non-canonically-encoded signed structures.
+  store, beekem-core §2, holds bytes). Readers MUST reject non-canonically-encoded or out-of-profile
+  signed structures.
+
+The application-payload layer is **not** bound by this profile (atsms-integration.md §5): an
+`ATSMSMessagePayload` is opaque `bytes` to the base — covered by the frame signature as a unit, never
+canonicalization-sensitive — so it MAY use self-describing, extensible CBOR (maps and all) freely. Strict
+where a hash or signature depends on it; flexible everywhere else.
+
+### 1.1 Framing-format rationale (evaluated 2026-07-24)
+
+The base layer is cryptographically load-bearing: signatures and content-addressed IDs are taken over its
+exact bytes, so a format that is **deterministic by construction** matters more than raw compactness.
+Three options were weighed:
+
+- **Postcard** (the iroh/serde binary format) — bijective by construction (malformations are
+  ungrammatical, not merely rejected), the smallest canonicalization surface. **Rejected** because it is
+  non-self-describing and Rust-serde-centric: it raises the bar for third-party/multi-language
+  implementers of an open, multi-polar protocol, has no CID/content-addressing story, and still needs a
+  language-neutral byte spec anyway. It also bundles a de-facto pull toward a Rust base (reversing D3).
+- **Protobuf** — **rejected** outright for the signed base: protobuf serialization is explicitly *not*
+  guaranteed deterministic (field ordering, default omission, unknown fields), a well-known footgun under
+  signatures.
+- **CBOR, strictly profiled (chosen)** — self-describing, multi-language, an IETF standard reviewers know,
+  natively content-addressable, and aligned with our ATProto stack (whose repos use dag-cbor). Its one
+  weakness — that determinism is *enforced*, not *constructed* — is narrowed two ways: (1) **anchoring the
+  strictness to [DRISL]** (a published deterministic-CBOR profile, edited within the ATProto ecosystem)
+  rather than a bespoke rule set — a more defensible, conformance-checkable narrative than "our own strict
+  CBOR"; and (2) **removing maps from the base wire**, which deletes the largest remaining enforcement
+  surface. Size was not a factor: measured framing differences vs Postcard are ~5–8% and are neutralized
+  by the padding buckets (sealed-sender §5), which round every envelope to a fixed size regardless.
+
+On DRISL's newness (published 2026-07-17, no conformance suite yet): we depend on it as the **specification
+we align our strictness to**, not on any runtime maturity — our frozen test vectors (§9) are the
+known-answer tests, and contributing/adopting DRISL's own vectors when they land closes the gap.
 
 Primitive conventions:
 
@@ -63,7 +107,7 @@ FrameBody   = [ version: 1,
                 deps:     [ * bstr32 ],    ; per ordering-auth §3
                 class:    uint,            ; §3.1
                 payload:  <class-specific, §4>,
-                ext:      { * uint => any } ]   ; §3.2; {} when empty
+                ext:      bstr ]                ; §3.2; opaque ExtBody bytes, zero-length when empty
 
 SignedFrame = [ body: bstr(FrameBody), sig: bstr64 ]   ; body embedded as a byte string
 MessageID   = SHA-256( body ‖ sig )
@@ -86,16 +130,28 @@ freeze, §11.)*
 | 3 | `app` | null | §4.4 |
 | 4 | `repair` | null | §4.5 |
 
-### 3.2 `ext` key registry
+### 3.2 `ext` — opaque bytes, positional `ExtBody` interior
 
-Unknown keys MUST be preserved for signature verification and ignored semantically (forward compatibility).
+*(v0.3 2026-07-24 — was an int-keyed CBOR map; now opaque bytes so the base wire stays map-free, §1.)*
 
-| Key | Contents | Semantics |
-|---|---|---|
-| 1 | *retired* (was piggybacked acks — D11) | MUST NOT be emitted; preserved if received (signature rule above) |
-| 2 | `[ digest: bstr32, heads: [ * bstr32 ] ]` | consistency digest + the sender's valid-op heads it was computed at (dgm.md §8 — digest now covers op-set + tree public state) |
-| 3 | `nextSigningPubKey: bstr32` | protocol signing-key rotation — the key effective for this sender's frames with higher `seq` (ordering-auth §5). Carried on `create`/`update`/`remove` control frames; covered by the current signature |
-| 4 | `appHW: [ * [ epochId: bstr32, hiGen: uint ] ]` | per-epoch application high-water — highest generation the sender has emitted, so peers discover trailing app-message gaps (ordering-auth §8.1, DESIGNED). Carried on `coverage` frames; MAY piggyback on any frame |
+`FrameBody.ext` is an **opaque byte string** to the base codec — bijective (minimal length header +
+payload), covered by the frame signature, and preserved verbatim by any reader. Empty extensions encode
+to a **zero-length** `ext`. Only parties that understand extensions decode the interior:
+
+```
+ExtBody = [ version:  uint,                                   ; 1
+            digest:   [ bstr32, [ * bstr32 ] ] / null,        ; consistency digest + heads (dgm §8)
+            rotation: bstr32 / null,                          ; nextSigningPubKey (ordering-auth §5)
+            appHW:    [ * [ epochId: bstr32, hiGen: uint ] ] / null ]  ; app high-water (§8.1, DESIGNED)
+```
+
+- **Fixed positional array** — exactly one encoding per set of extensions, by construction (absent fields
+  are `null`; no dynamic keys to sort). `digest` rides on `coverage` frames; `rotation` on
+  `create`/`update`/`remove` control frames; both covered by the frame signature.
+- **Forward-compat by opacity**: a reader that does not recognize a future `version` leaves the interior
+  unparsed while the raw bytes stay signed — the "unknown extensions preserved" property, without a map.
+  New extension fields are appended as further positional slots under a bumped `version`.
+- *(The retired ack attachment (D11) simply does not exist in `ExtBody`.)*
 
 ## 4. Class payloads
 
@@ -268,7 +324,7 @@ prose `description`.
 | `kdf/` | every §7 label incl. the oracle's tree-internal BLAKE3 contexts: (ikm, context/info) → output | `beekem` crate + reference implementation, hand-checked |
 | `beekem/` | seeded scenario transcripts (create/add/remove/update, concurrent-update merge with conflict keys, membership-change replay, `PathChange` bytes, `PcsKey`s) | seeded `beekem` Rust crate, byte-compared below the seam; profile features on the explicit allowlist (beekem-core §11) |
 | `profile/` | chain/eviction/coverage/checkpoint/`rootCommit` vectors (the ATSMS messaging profile above the seam) | reference implementation; **our frozen vectors pin the bytes** |
-| `frames/` | FrameBody → MessageID vectors, incl. bootstrap zeroing (§2) and ext-key preservation | hand-written + reference implementation |
+| `frames/` | FrameBody → MessageID vectors, incl. bootstrap zeroing (§2) and the opaque `ext` bytes (§3.2) | hand-written + reference implementation |
 | `envelopes/` | seal/unseal per bucket and contentType; EnvelopeID | reference implementation |
 
 *(Retired 2026-07-22 with D11: `x3dh/`, `2sm/`, and the p2panda/Java-prototype oracle roles — the
@@ -308,3 +364,6 @@ prose `description`.
   KEM `suite` id reserved for the PQ hybrid) and sym (in-conversation, per-recipient PRF tag lookup); the
   X3DH KDF gains a reserved `KEM_ss` slot (§5). A mod-P truncated-tag variant was considered and rejected
   (sealed-sender §13).
+
+<!-- External Links -->
+[DRISL]: https://dasl.ing/drisl.html
