@@ -40,13 +40,18 @@ import { encodeFrameBody, messageIdOf, parseFrame, signFrame, generateSigningKey
 import { encodeMembership, ZERO32, type Membership } from '../src/ids.js';
 import {
   CONTENT_FRAME,
+  SEAL_ASYM_INFO,
   envKeySym,
   envelopeId,
   hintTag,
+  openAsym,
   openSym,
   padToBucket,
+  sealAsymTo,
   sealSymTo,
 } from '../src/envelope.js';
+import { sealBase } from '../src/hpke.js';
+import { x25519 } from '@noble/curves/ed25519';
 
 const H = bytesToHex;
 const fill = (n: number, b: number) => new Uint8Array(n).fill(b);
@@ -222,6 +227,29 @@ function buildEnvelopeVectors(): unknown {
       opensTo: H(opened.body),
       envelopeLen: env.length,
     },
+    sealAsym: (() => {
+      // Deterministic HPKE ephemeral for a frozen KAT (real sends use a CSPRNG).
+      // NB: pins OUR implementation; cross-check vs RFC 9180 A.2 is Phase-6.
+      const skR = fill(32, 0x40);
+      const pkR = x25519.getPublicKey(skR);
+      const detEph = fill(32, 0x41);
+      const abody = new TextEncoder().encode('frozen sealed-asym body');
+      const aenv = sealAsymTo(pkR, CONTENT_FRAME, abody, () => detEph);
+      const aopened = openAsym(skR, aenv);
+      // A raw HPKE seal too (enc + ct) for a primitive-level KAT.
+      const raw = sealBase(pkR, SEAL_ASYM_INFO, new Uint8Array(0), fill(16, 0x42), () => detEph);
+      return {
+        recipientSk: H(skR),
+        recipientPk: H(pkR),
+        ephemeralSk: H(detEph),
+        body: H(abody),
+        envelope: H(aenv),
+        envelopeId: H(envelopeId(aenv)),
+        opensTo: H(aopened.body),
+        envelopeLen: aenv.length,
+        hpkeRaw: { enc: H(raw.enc), ct: H(raw.ct), plaintext: H(fill(16, 0x42)) },
+      };
+    })(),
   };
 }
 

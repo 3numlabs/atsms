@@ -17,6 +17,7 @@ import { sha256 } from '@noble/hashes/sha2';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha';
 import { bytesToHex, concatBytes } from './bytes.js';
 import { cborDecode, cborEncode, type CborValue } from './cbor.js';
+import { sealBase, openBase } from './hpke.js';
 import { expand } from './kdf.js';
 import type { Csprng } from './keyhive.js';
 
@@ -39,6 +40,9 @@ const MAX_BUCKET = BUCKETS[BUCKETS.length - 1]!;
 const ascii = (s: string) => new TextEncoder().encode(s);
 export const LABEL_SEAL_SYM = ascii('atsms-seal:v1:sym');
 export const LABEL_SEAL_HINT = ascii('atsms-seal:v1:hint');
+/** HPKE `info` for the asym mode (sealed-sender §4). */
+export const SEAL_ASYM_INFO = ascii('atsms-seal:v1');
+export const SUITE_X25519 = 1; // asym `suite` id: DHKEM(X25519) (wire-format §6)
 
 /** Signals oversize content that MUST move to blob offload (§5 oversize rule). */
 export class OversizeError extends Error {
@@ -181,6 +185,56 @@ export function parseSymEnvelope(envelope: Uint8Array): ParsedSymEnvelope {
 export function openSym(envKey: Uint8Array, envelope: Uint8Array): SealedPlaintext {
   const { tag, nonce, ct } = parseSymEnvelope(envelope);
   const plaintext = xchacha20poly1305(envKey, nonce, symAad(tag)).decrypt(ct);
+  return decodeSealedPlaintext(plaintext);
+}
+
+// ── sealed-asym envelope (§4, HPKE) ──────────────────────────────────────────
+
+/** AAD for the asym AEAD: binds the cleartext header `enc([version, mode, suite])`. */
+function asymAad(suite: number): Uint8Array {
+  return cborEncode([ENV_VERSION, MODE_ASYM, suite]);
+}
+
+/**
+ * Seal to a recipient's X25519 **signed prekey** (bootstrap-class traffic —
+ * welcomes, first contact, X509-floor one-shots; sealed-sender §1/§2, D10).
+ * HPKE Base to `signedPrekeyPub`, padded plaintext, header bound as AAD.
+ */
+export function sealAsymTo(
+  signedPrekeyPub: Uint8Array,
+  contentType: number,
+  body: Uint8Array,
+  rng: Csprng,
+): Uint8Array {
+  const plaintext = padToBucket(contentType, body);
+  const { enc, ct } = sealBase(signedPrekeyPub, SEAL_ASYM_INFO, asymAad(SUITE_X25519), plaintext, rng);
+  return cborEncode([ENV_VERSION, MODE_ASYM, SUITE_X25519, enc, ct]);
+}
+
+export interface ParsedAsymEnvelope {
+  suite: number;
+  enc: Uint8Array;
+  ct: Uint8Array;
+}
+
+export function parseAsymEnvelope(envelope: Uint8Array): ParsedAsymEnvelope {
+  const arr = cborDecode(envelope) as CborValue[];
+  const [version, mode, suite, enc, ct] = arr as [number, number, number, Uint8Array, Uint8Array];
+  if (version !== ENV_VERSION || mode !== MODE_ASYM) throw new Error('not a sealed-asym envelope');
+  if (suite !== SUITE_X25519) throw new Error(`unsupported asym suite ${suite}`);
+  if (!(enc instanceof Uint8Array) || enc.length !== 32) throw new Error('bad enc');
+  if (!(ct instanceof Uint8Array)) throw new Error('bad ct');
+  return { suite, enc, ct };
+}
+
+/**
+ * Open with a recipient signed-prekey secret. The receiver trial-decrypts
+ * across its ≤ 2 live signed-prekey secrets (current + grace, D10) — call once
+ * per candidate; a wrong secret throws (AEAD auth failure).
+ */
+export function openAsym(signedPrekeySecret: Uint8Array, envelope: Uint8Array): SealedPlaintext {
+  const { suite, enc, ct } = parseAsymEnvelope(envelope);
+  const plaintext = openBase(enc, signedPrekeySecret, SEAL_ASYM_INFO, asymAad(suite), ct);
   return decodeSealedPlaintext(plaintext);
 }
 

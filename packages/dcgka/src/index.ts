@@ -14,6 +14,7 @@ export * from './encrypted.js';
 export * from './engine.js';
 export * from './envelope.js';
 export * from './frames.js';
+export * from './hpke.js';
 export * from './ordering.js';
 export * from './ids.js';
 export * from './kdf.js';
