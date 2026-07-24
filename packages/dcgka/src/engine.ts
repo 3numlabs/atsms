@@ -20,6 +20,7 @@ import { evaluate, normalizeCreateAuthor, type DgmSeed, type DgmView } from './d
 import { encodeMembership, membershipKey, type DeviceID, type Membership } from './ids.js';
 import { chainSeed, rootCommit } from './kdf.js';
 import { generateShareSecretKey, shareKeyOf, type Csprng } from './keyhive.js';
+import { envKeySym } from './envelope.js';
 import { ShareKeyMap, shareNodeKey } from './keys.js';
 import { makeOp, opKey, type Op, type OpMinter, type OpPayload } from './ops.js';
 import { SecretStore } from './secretstore.js';
@@ -326,6 +327,50 @@ export class Engine {
     e.recv.clear();
     e.send = null;
     e.closed = true;
+  }
+
+  /** Live (non-evicted) epoch ids — the seal layer derives envKeys for these (sealed-sender §11.4). */
+  liveEpochs(): string[] {
+    return [...this.epochs].filter(([, e]) => !e.closed).map(([id]) => id);
+  }
+
+  /**
+   * The epoch a frame with these `deps` MUST be sealed under (sealed-sender
+   * §11.4): the latest **established** epoch among the frame's causal ancestors.
+   * For an `app` frame this is the current epoch; for an epoch-*advancing*
+   * control op (`update`) the op is not its own ancestor, so this resolves to the
+   * **parent** epoch — receivers hold it, and derive the new one by processing
+   * this frame. Null when no epoch precedes the frame (the first update after
+   * `create`, which rides `sealed-asym`). Deterministic on concurrent frontiers.
+   */
+  sealEpochFor(deps: Uint8Array[]): string | null {
+    const reach = new Set<string>();
+    for (const dep of deps) {
+      const dk = bytesToHex(dep);
+      reach.add(dk);
+      for (const x of this.anc.get(dk) ?? []) reach.add(x);
+    }
+    const epochOps = [...reach].filter((k) => {
+      const e = this.epochs.get(k);
+      return e !== undefined && !e.closed;
+    });
+    // Keep the maximal epoch-op(s): not an ancestor of any other reachable epoch.
+    const maximal = epochOps.filter(
+      (k) => !epochOps.some((o) => o !== k && (this.anc.get(o)?.has(k) ?? false)),
+    );
+    maximal.sort();
+    return maximal[0] ?? null;
+  }
+
+  /**
+   * `envKey(epoch, S) = Expand(PcsKey_epoch, "atsms-seal:v1:sym" ‖ enc(S))` — the
+   * sealed-sym key for sender `S` in `epoch` (sealed-sender §11.2). Null if the
+   * epoch is unknown or evicted. Every member can derive every member's envKey.
+   */
+  epochEnvKey(epochId: string, encSender: Uint8Array): Uint8Array | null {
+    const e = this.epochs.get(epochId);
+    if (e === undefined || e.closed) return null;
+    return envKeySym(e.pcsKey, encSender);
   }
 
   /** Close every epoch that is covered-by-all and superseded (beekem-core §8). */

@@ -129,6 +129,11 @@ export function envelopeId(envelope: Uint8Array): Uint8Array {
   return sha256(envelope);
 }
 
+/** The envelope's `mode` (1 = asym, 2 = sym) without decrypting — for routing. */
+export function envelopeMode(envelope: Uint8Array): number {
+  return (cborDecode(envelope) as CborValue[])[1] as number;
+}
+
 /**
  * Seal one group message to a single recipient (§11.3). Fresh 24-byte nonce ⇒
  * distinct ciphertext, even though `envKey` and `body` are shared across the

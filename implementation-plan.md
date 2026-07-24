@@ -204,6 +204,13 @@ detector (soft signal for now — sound defenses are rootCommit + signatures).
 
 ## 6. Phase 3 — Sealed sender & delivery
 
+**Status:** tranches 1–3 BUILT. (1) `envelope.ts` — sym seal + tag table + padding buckets + dedup;
+(2) `hpke.ts` + asym seal; (3) `seal-layer.ts` — `SealLayer` binds `Session` to the wire: `drainSealed()`
+emits per-recipient `{to, envelope}` (the "engine emits sealed message + recipient list" boundary), `deliver()`
+unseals + feeds frames back in, mode chosen by `engine.sealEpochFor(deps)` (parent-epoch sym per §11.4, asym
+only pre-first-epoch), bounded unknown-tag buffering. End-to-end sealed-transport test green (create/update/app/
+add/heal all over envelopes). Remaining: anonymous relay ingress (cross-repo `atsms-worker POST /envelope`).
+
 - `sealed-sender` module: both modes per D7 — asym seal/unseal + sym envelope (envKey derivation, tag
   table with grace epochs, per-recipient fresh-nonce fan-out), padding buckets, envelope dedup.
 - `delivery` module binding to the existing `ATSMSTransportLayer` (WS + HTTP) with the new envelope type.

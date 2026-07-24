@@ -1,0 +1,187 @@
+/**
+ * Sealed-sender delivery integration: the whole protocol running over
+ * SealedEnvelopes end-to-end (create/first-update = asym, in-conversation = sym,
+ * welcome = asym), never raw frames on the wire.
+ */
+
+import { blake3 } from '@noble/hashes/blake3';
+import { x25519 } from '@noble/curves/ed25519';
+import { describe, expect, it } from 'vitest';
+import { Session } from '../src/ordering.js';
+import { SealLayer, type Outbound } from '../src/seal-layer.js';
+import { CLS_WELCOME, generateSigningKeypair, parseFrame } from '../src/frames.js';
+import { type Csprng } from '../src/keyhive.js';
+import { ShareKeyMap } from '../src/keys.js';
+import { MODE_ASYM, MODE_SYM, envelopeMode } from '../src/envelope.js';
+import type { DeviceID } from '../src/ids.js';
+
+function rngOf(label: string): Csprng {
+  let c = 0;
+  return (n) => blake3(new TextEncoder().encode(`${label}:${c++}`), { dkLen: n });
+}
+
+interface Party {
+  device: DeviceID;
+  leafSk: Uint8Array; // = signed prekey secret (D10: leaf key IS the signed prekey)
+  leafPk: Uint8Array;
+  signingSk: Uint8Array;
+  signingPk: Uint8Array;
+  rng: Csprng;
+  sks: ShareKeyMap;
+}
+
+function party(u: string): Party {
+  const rng = rngOf(u);
+  const leafSk = rng(32);
+  const leafPk = x25519.getPublicKey(leafSk); // prekey = X25519(leafSk); also the BeeKEM leaf pk
+  const kp = generateSigningKeypair(rng);
+  const sks = new ShareKeyMap();
+  sks.insert(leafPk, leafSk);
+  return {
+    device: { did: `did:${u}`, fingerprint: blake3(new TextEncoder().encode(`fp:${u}`), { dkLen: 32 }) },
+    leafSk,
+    leafPk,
+    signingSk: kp.sk,
+    signingPk: kp.pk,
+    rng,
+    sks,
+  };
+}
+
+const text = (s: string) => new TextEncoder().encode(s);
+
+/** A trivial in-memory transport: fingerprint hex → its inbox of envelopes. */
+class Wire {
+  inbox = new Map<string, Uint8Array[]>();
+  send(out: Outbound[]): void {
+    for (const o of out) {
+      if (!this.inbox.has(o.to)) this.inbox.set(o.to, []);
+      this.inbox.get(o.to)!.push(o.envelope);
+    }
+  }
+  take(fp: string): Uint8Array[] {
+    const q = this.inbox.get(fp) ?? [];
+    this.inbox.set(fp, []);
+    return q;
+  }
+}
+
+describe('SealLayer end-to-end (sealed transport)', () => {
+  it('founds, first-updates, converses, and adds a member — all over sealed envelopes', () => {
+    const wire = new Wire();
+    const pa = party('alice');
+    const pb = party('bob');
+    const pc = party('carol');
+    const fpOf = (p: Party) => blakeHex(p.device.fingerprint);
+
+    // Alice founds a 3-party group.
+    const aliceSession = Session.createGroup(
+      [pa, pb, pc].map((p) => ({ device: p.device, leafPk: p.leafPk, signingPk: p.signingPk })),
+      [pa.device.did],
+      pa.signingSk,
+      pa.sks,
+      pa.rng,
+    );
+    const alice = new SealLayer(aliceSession, [pa.leafSk], pa.rng);
+    // The create frame is sealed ASYM to bob & carol's prekeys.
+    const createOut = alice.drainSealed();
+    expect(createOut.length).toBe(2);
+    for (const o of createOut) expect(envelopeMode(o.envelope)).toBe(MODE_ASYM);
+    wire.send(createOut);
+
+    // Bob & Carol bootstrap by unsealing the asym create, then wrap in a SealLayer.
+    const bootstrap = (p: Party): SealLayer => {
+      const env = wire.take(fpOf(p))[0]!;
+      const createFrame = SealLayer.openBootstrap(env, [p.leafSk]);
+      const s = Session.fromFrames([createFrame], p.device, p.signingSk, p.sks, p.rng);
+      return new SealLayer(s, [p.leafSk], p.rng);
+    };
+    const bob = bootstrap(pb);
+    const carol = bootstrap(pc);
+
+    const rec: Record<string, string[]> = { alice: [], bob: [], carol: [], dave: [] };
+    const sink = (who: string) => (p: Uint8Array) => (rec[who] ??= []).push(new TextDecoder().decode(p));
+    (aliceSession as unknown as { events: { onAppMessage?: (p: Uint8Array) => void } }).events.onAppMessage =
+      sink('alice');
+    (bob.session as unknown as { events: { onAppMessage?: (p: Uint8Array) => void } }).events.onAppMessage =
+      sink('bob');
+    (carol.session as unknown as { events: { onAppMessage?: (p: Uint8Array) => void } }).events.onAppMessage =
+      sink('carol');
+
+    const layers: Record<string, SealLayer> = { [fpOf(pa)]: alice, [fpOf(pb)]: bob, [fpOf(pc)]: carol };
+    const pump = (l: SealLayer): void => wire.send(l.drainSealed());
+    const deliverAll = (): void => {
+      for (let i = 0; i < 8; i++) {
+        for (const [fp, l] of Object.entries(layers)) {
+          for (const env of wire.take(fp)) l.deliver(env);
+          pump(l);
+        }
+      }
+    };
+
+    // Control frames (the update) ride ASYM to prekeys — an epoch-advancing op
+    // can't be sealed under the epoch it creates.
+    aliceSession.update();
+    const upOut = alice.drainSealed();
+    for (const o of upOut) expect(envelopeMode(o.envelope), 'control update is asym').toBe(MODE_ASYM);
+    wire.send(upOut);
+    deliverAll();
+
+    // Everyone converged on the same tree.
+    expect(bob.session.engine.treeHash()).toBe(aliceSession.engine.treeHash());
+    expect(carol.session.engine.treeHash()).toBe(aliceSession.engine.treeHash());
+
+    // Now in-conversation app traffic rides SYM.
+    const appEnv = aliceSession.sendApp(text('hello over the seal'));
+    void appEnv;
+    const appOut = alice.drainSealed();
+    for (const o of appOut) expect(envelopeMode(o.envelope), 'app frame is sym').toBe(MODE_SYM);
+    wire.send(appOut);
+    deliverAll();
+    expect(rec.bob).toContain('hello over the seal');
+    expect(rec.carol).toContain('hello over the seal');
+
+    // Add Dave: add frame rides SYM to members under the parent epoch; welcome
+    // rides ASYM to Dave's prekey.
+    const pd = party('dave');
+    const { addOpId } = aliceSession.add(pd.device, pd.leafPk, pd.signingPk);
+    aliceSession.buildWelcome(addOpId);
+    const addOut = alice.drainSealed();
+    const daveFp = blakeHex(pd.device.fingerprint);
+    // Dave gets a sym add-copy (he can't open it — no parent epoch) plus the asym
+    // welcome; the welcome is the asym one that unseals to a CLS_WELCOME frame.
+    const welcomeEnv = addOut
+      .filter((o) => o.to === daveFp && envelopeMode(o.envelope) === MODE_ASYM)
+      .find((o) => parseFrame(SealLayer.openBootstrap(o.envelope, [pd.leafSk])).body.cls === CLS_WELCOME);
+    expect(welcomeEnv, 'welcome addressed to dave').toBeDefined();
+    expect(envelopeMode(welcomeEnv!.envelope), 'welcome is asym').toBe(MODE_ASYM);
+    wire.send(addOut);
+    deliverAll();
+
+    // Dave bootstraps from the asym welcome, heals, and joins the conversation.
+    const daveFrame = SealLayer.openBootstrap(welcomeEnv!.envelope, [pd.leafSk]);
+    const daveSession = Session.fromWelcome(daveFrame, pd.device, pd.signingSk, pd.sks, pd.rng);
+    const dave = new SealLayer(daveSession, [pd.leafSk], pd.rng);
+    layers[blakeHex(pd.device.fingerprint)] = dave;
+    (daveSession as unknown as { events: { onAppMessage?: (p: Uint8Array) => void } }).events.onAppMessage =
+      sink('dave');
+    daveSession.update(); // mandatory healing update
+    pump(dave);
+    deliverAll();
+
+    expect(dave.session.engine.treeHash()).toBe(aliceSession.engine.treeHash());
+
+    // Bob speaks; Dave (now a member) hears it — sym, post-join.
+    bob.session.sendApp(text('welcome dave'));
+    pump(bob);
+    deliverAll();
+    expect(rec.dave).toContain('welcome dave');
+  });
+});
+
+function blakeHex(b: Uint8Array): string {
+  let s = '';
+  for (const x of b) s += x.toString(16).padStart(2, '0');
+  return s;
+}
+
