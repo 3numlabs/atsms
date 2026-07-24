@@ -12,6 +12,7 @@ export * from './chains.js';
 export * from './dgm.js';
 export * from './encrypted.js';
 export * from './engine.js';
+export * from './envelope.js';
 export * from './frames.js';
 export * from './ordering.js';
 export * from './ids.js';

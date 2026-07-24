@@ -38,6 +38,15 @@ import { concatBytes } from '../src/bytes.js';
 import type { CborMap, CborValue } from '../src/cbor.js';
 import { encodeFrameBody, messageIdOf, parseFrame, signFrame, generateSigningKeypair } from '../src/frames.js';
 import { encodeMembership, ZERO32, type Membership } from '../src/ids.js';
+import {
+  CONTENT_FRAME,
+  envKeySym,
+  envelopeId,
+  hintTag,
+  openSym,
+  padToBucket,
+  sealSymTo,
+} from '../src/envelope.js';
 
 const H = bytesToHex;
 const fill = (n: number, b: number) => new Uint8Array(n).fill(b);
@@ -181,6 +190,50 @@ function buildFramesVectors(): unknown {
   };
 }
 
+// ── envelope vectors (sealed-sym; wire-format §6, §9 `envelopes/`) ────────────
+
+function buildEnvelopeVectors(): unknown {
+  const pcs = fill(32, 0x11);
+  const sender: Membership = { device: { did: 'did:web:s', fingerprint: fill(32, 0x22) }, admittedBy: fill(32, 0x23) };
+  const recipient: Membership = { device: { did: 'did:web:r', fingerprint: fill(32, 0x24) }, admittedBy: fill(32, 0x25) };
+  const encS = encodeMembership(sender);
+  const encR = encodeMembership(recipient);
+  const envKey = envKeySym(pcs, encS);
+  const tag = hintTag(envKey, encR);
+  // Deterministic nonce for a frozen vector (real sends use a CSPRNG).
+  const detNonce = fill(24, 0x30);
+  const body = new TextEncoder().encode('frozen sealed-sym body');
+  const env = sealSymTo(envKey, encR, CONTENT_FRAME, body, () => detNonce);
+  const opened = openSym(envKey, env);
+
+  return {
+    description:
+      'Sealed-sym envelope vectors (sealed-sender §11, wire-format §6). envKey = Expand(PcsKey, ' +
+      '"atsms-seal:v1:sym"‖enc(sender)); tag = Expand(envKey, "atsms-seal:v1:hint"‖enc(recipient))[0..8]; ' +
+      'XChaCha20-Poly1305, AAD = enc([1,2,tag]); plaintext padded to a bucket. Byte-frozen; delete to regen.',
+    envKeySym: { pcsKey: H(pcs), encSender: H(encS), output: H(envKey) },
+    hintTag: { envKey: H(envKey), encRecipient: H(encR), tag: H(tag) },
+    padding: BUCKETS_probe(),
+    sealSym: {
+      nonce: H(detNonce),
+      body: H(body),
+      envelope: H(env),
+      envelopeId: H(envelopeId(env)),
+      opensTo: H(opened.body),
+      envelopeLen: env.length,
+    },
+  };
+}
+
+function BUCKETS_probe(): Record<string, number> {
+  // Freeze the padded length for a few body sizes (bucket discipline).
+  const out: Record<string, number> = {};
+  for (const len of [0, 300, 1024, 5000, 65000]) {
+    out[`body${len}`] = padToBucket(CONTENT_FRAME, fill(len, 0xcd)).length;
+  }
+  return out;
+}
+
 // ── the freeze-or-verify harness ─────────────────────────────────────────────
 
 function freezeOrVerify(name: string, fresh: unknown): void {
@@ -201,6 +254,10 @@ describe('frozen test vectors (wire-format §9)', () => {
 
   it('frame vectors reproduce the frozen bytes', () => {
     freezeOrVerify('frames', buildFramesVectors());
+  });
+
+  it('envelope vectors reproduce the frozen bytes', () => {
+    freezeOrVerify('envelopes', buildEnvelopeVectors());
   });
 
   it('all frame vectors round-trip (parse ∘ encode = identity)', () => {
