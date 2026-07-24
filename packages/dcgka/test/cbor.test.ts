@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { cborDecode, cborEncode, type CborMap } from '../src/cbor.js';
+import { cborDecode, cborEncode } from '../src/cbor.js';
 import { bytesToHex, hexToBytes } from '../src/bytes.js';
 
-describe('deterministic CBOR (wire-format §1)', () => {
+describe('deterministic CBOR — DRISL-profile subset, map-free (wire-format §1)', () => {
   it('encodes shortest-form integers', () => {
     expect(bytesToHex(cborEncode(0))).toBe('00');
     expect(bytesToHex(cborEncode(23))).toBe('17');
@@ -13,9 +13,8 @@ describe('deterministic CBOR (wire-format §1)', () => {
     expect(bytesToHex(cborEncode(2n ** 40n))).toBe('1b0000010000000000');
   });
 
-  it('round-trips frames-shaped structures', () => {
-    const ext: CborMap = new Map();
-    ext.set(2, [new Uint8Array(32).fill(3), [new Uint8Array(32).fill(4)]]);
+  it('round-trips frames-shaped structures (ext is opaque bytes, not a map)', () => {
+    const ext = new Uint8Array([0x84, 0x01, 0xf6, 0xf6, 0xf6]); // an opaque ExtBody blob
     const frame = [1, new Uint8Array(32), ['did:web:x', new Uint8Array(32).fill(1)], 7, null, [], 1, ext];
     const bytes = cborEncode(frame);
     const back = cborDecode(bytes);
@@ -34,11 +33,12 @@ describe('deterministic CBOR (wire-format §1)', () => {
     expect(() => cborDecode(hexToBytes('20'))).toThrow(/negative/);
   });
 
-  it('rejects unsorted or duplicate map keys', () => {
-    // {2: 0, 1: 0} — unsorted
-    expect(() => cborDecode(hexToBytes('a202000100'))).toThrow(/sorted/);
-    // {1: 0, 1: 0} — duplicate
-    expect(() => cborDecode(hexToBytes('a201000100'))).toThrow(/sorted/);
+  it('rejects maps entirely (DRISL-profile base wire is map-free)', () => {
+    // Any map (major type 5) is out of profile — no key-ordering surface exists.
+    expect(() => cborDecode(hexToBytes('a0'))).toThrow(/maps rejected/); // {}
+    expect(() => cborDecode(hexToBytes('a101020304'))).toThrow(/maps rejected/); // {1:2, 3:4}
+    // Encoding a JS Map is likewise refused.
+    expect(() => cborEncode(new Map() as never)).toThrow(/maps are not/);
   });
 
   it('rejects trailing bytes and truncation', () => {

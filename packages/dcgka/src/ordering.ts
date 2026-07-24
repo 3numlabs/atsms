@@ -11,15 +11,14 @@
  */
 
 import { bytesEqual, bytesToHex } from './bytes.js';
-import { cborDecode, cborEncode, type CborMap, type CborValue } from './cbor.js';
+import { cborDecode, cborEncode, type CborValue } from './cbor.js';
+import { decodeExt, encodeExt, type FrameExt } from './ext.js';
 import { Engine, type AppMessage } from './engine.js';
 import {
   CLS_APP,
   CLS_CONTROL,
   CLS_REPAIR,
   CLS_WELCOME,
-  EXT_DIGEST,
-  EXT_NEXT_SIGNING_KEY,
   encodeFrameBody,
   generateSigningKeypair,
   messageIdOf,
@@ -211,7 +210,7 @@ export class Session {
   buildWelcome(addOpId: Uint8Array): Uint8Array {
     const frames = this.retainedOrder.map((k) => this.retained.get(k)!.raw);
     const welcomeBody = cborEncode([null, frames, [], 1]); // [checkpoint, ops, deliveryMap, profile]
-    return this.buildFrame(CLS_WELCOME, this.nextCtrlSeq(), [addOpId], [addOpId, welcomeBody], new Map());
+    return this.buildFrame(CLS_WELCOME, this.nextCtrlSeq(), [addOpId], [addOpId, welcomeBody], new Uint8Array(0));
   }
 
   // ── local operations (returned bytes are also queued on the outbox) ───────
@@ -244,7 +243,7 @@ export class Session {
     // (ordering-auth §5 — app frames are FIFO-exempt but key-continuity is not).
     const deps = [msg.epochId];
     if (!bytesEqual(this.myKeyOpId, msg.epochId)) deps.push(this.myKeyOpId);
-    return this.buildFrame(CLS_APP, null, deps, payload, new Map());
+    return this.buildFrame(CLS_APP, null, deps, payload, new Uint8Array(0));
   }
 
   takeOutbox(): Uint8Array[] {
@@ -311,7 +310,7 @@ export class Session {
       deps: [],
       cls: CLS_REPAIR,
       payload,
-      ext: new Map(),
+      ext: new Uint8Array(0),
     });
     return signFrame(body, this.signing.sk);
   }
@@ -437,9 +436,9 @@ export class Session {
         // active: rootCommit (key-material, beekem-core §4.3) and frame
         // signatures. A confirmed detector (persistent disagreement at a stable
         // covered-by-all frontier) is deferred — see notes.
-        const digestExt = frame.body.ext.get(EXT_DIGEST);
-        if (Array.isArray(digestExt)) {
-          const [advDigest, advHeads] = digestExt as [Uint8Array, Uint8Array[]];
+        const digestExt = decodeExt(frame.body.ext).digest;
+        if (digestExt !== undefined) {
+          const { digest: advDigest, heads: advHeads } = digestExt;
           const mine = new Set(this.engine.headsList().map(bytesToHex));
           const adv = new Set(advHeads.map(bytesToHex));
           if (mine.size === adv.size && [...adv].every((h) => mine.has(h))) {
@@ -554,7 +553,7 @@ export class Session {
       opType === OP_TYPE_NUM.update ||
       opType === OP_TYPE_NUM.remove
     ) {
-      const next = frame.body.ext.get(EXT_NEXT_SIGNING_KEY);
+      const next = decodeExt(frame.body.ext).rotation;
       if (next instanceof Uint8Array && next.length === 32) {
         // Keep the full rotation history: verifying a repaired old frame
         // (ordering-auth §8) requires the key that was effective at its seq.
@@ -604,11 +603,11 @@ export class Session {
   private mintControl(author: Membership, deps: Uint8Array[], payload: OpPayload): Uint8Array {
     const rotate =
       payload.type === 'create' || payload.type === 'update' || payload.type === 'remove';
-    const ext: CborMap = new Map();
+    const extObj: FrameExt = {};
     let next: { sk: Uint8Array; pk: Uint8Array } | null = null;
     if (rotate) {
       next = generateSigningKeypair(this.rng);
-      ext.set(EXT_NEXT_SIGNING_KEY, next.pk);
+      extObj.rotation = next.pk;
     }
     // Coverage frames carry the consistency digest + the sender's frontier
     // (dgm.md §8). The deps of a coverage frame ARE that frontier, so a receiver
@@ -616,8 +615,9 @@ export class Session {
     // the head-reconciliation path. The digest lets a same-frontier receiver
     // detect divergence (§8 equivocation check).
     if (payload.type === 'coverage') {
-      ext.set(EXT_DIGEST, [this.engine.validDigest(), this.engine.headsList()]);
+      extObj.digest = { digest: this.engine.validDigest(), heads: this.engine.headsList() };
     }
+    const ext = encodeExt(extObj);
     const body = encodeFrameBody({
       version: 1,
       groupId: payload.type === 'create' ? ZERO32 : this.engine.groupId,
@@ -679,7 +679,7 @@ export class Session {
     ctrlSeq: number | null,
     deps: Uint8Array[],
     payload: CborValue,
-    ext: CborMap,
+    ext: Uint8Array,
   ): Uint8Array {
     const body = encodeFrameBody({
       version: 1,
@@ -736,9 +736,8 @@ function mintControlRaw(
   rng: Csprng,
   sink: Array<{ raw: Uint8Array; idHex: string; meta: RetainedMeta }>,
 ): Uint8Array {
-  const ext: CborMap = new Map();
   const next = generateSigningKeypair(rng);
-  ext.set(EXT_NEXT_SIGNING_KEY, next.pk);
+  const ext = encodeExt({ rotation: next.pk });
   const body = encodeFrameBody({
     version: 1,
     groupId,

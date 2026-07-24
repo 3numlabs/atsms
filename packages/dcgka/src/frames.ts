@@ -6,7 +6,7 @@
 
 import { ed25519 } from '@noble/curves/ed25519';
 import { sha256 } from '@noble/hashes/sha2';
-import { cborDecode, cborEncode, type CborMap, type CborValue } from './cbor.js';
+import { cborDecode, cborEncode, type CborValue } from './cbor.js';
 import { concatBytes } from './bytes.js';
 import type { Membership } from './ids.js';
 
@@ -14,10 +14,6 @@ export const CLS_CONTROL = 1;
 export const CLS_WELCOME = 2;
 export const CLS_APP = 3;
 export const CLS_REPAIR = 4;
-
-/** ext registry (wire-format §3.2 + the §5 rotation slot). */
-export const EXT_DIGEST = 2;
-export const EXT_NEXT_SIGNING_KEY = 3;
 
 export interface FrameBody {
   version: 1;
@@ -28,7 +24,8 @@ export interface FrameBody {
   deps: Uint8Array[];
   cls: number;
   payload: CborValue;
-  ext: CborMap;
+  /** Opaque signed extension bytes — the base wire never parses it (ext.ts). */
+  ext: Uint8Array;
 }
 
 export interface ParsedFrame {
@@ -86,7 +83,7 @@ export function parseFrame(raw: Uint8Array): ParsedFrame {
     Uint8Array[],
     number,
     CborValue,
-    CborMap,
+    Uint8Array,
   ];
   if (version !== 1) throw new Error('frame: unsupported version');
   const [[did, fingerprint], admittedBy] = senderArr as [[string, Uint8Array], Uint8Array];

@@ -1,11 +1,20 @@
 /**
- * Deterministic CBOR (RFC 8949 §4.2.1 core requirements) per wire-format.md §1:
- * definite lengths only; shortest-form integers; no floats, no tags, no undefined;
- * maps have unsigned-integer keys, sorted by encoded bytes, no duplicates.
- * Strict reader: any non-canonical input throws.
+ * Deterministic CBOR — a **DRISL-profile subset** (dasl.ing/drisl.html), which
+ * is itself a subset of CBOR Core (RFC 8949 §4.2.1): definite lengths only,
+ * shortest-form unsigned integers, no floats, no tags. Per wire-format.md §1.
+ *
+ * **The base wire is map-free** (the DRISL "no non-string map keys" rule taken
+ * to its clean conclusion): every signed/content-addressed structure is a
+ * positional array, and the one former map — `FrameBody.ext` — is now an opaque
+ * byte string with a positional interior (ext.ts). So this codec has **no map
+ * path at all**, which deletes the subtlest class of canonicalization bug (key
+ * ordering / dedup) from the signed base by construction rather than by
+ * enforcement. A map encountered on decode is rejected.
+ *
+ * Strict reader: any non-canonical or out-of-profile input throws.
  */
 
-import { compareBytes, concatBytes } from './bytes.js';
+import { concatBytes } from './bytes.js';
 
 export type CborValue =
   | number // unsigned integer (≤ Number.MAX_SAFE_INTEGER)
@@ -14,11 +23,7 @@ export type CborValue =
   | string // text string
   | boolean
   | null
-  | CborValue[]
-  | CborMap;
-
-/** Map with unsigned-integer keys (the `ext` slot). */
-export type CborMap = Map<number, CborValue>;
+  | CborValue[];
 
 const MAX_U64 = (1n << 64n) - 1n;
 
@@ -56,16 +61,8 @@ export function cborEncode(v: CborValue): Uint8Array {
   if (Array.isArray(v)) {
     return concatBytes(encodeHead(4, BigInt(v.length)), ...v.map(cborEncode));
   }
-  if (v instanceof Map) {
-    const entries = [...v.entries()].map(([k, val]) => {
-      if (!Number.isSafeInteger(k) || k < 0) throw new Error('cbor: map keys must be unsigned integers');
-      return [cborEncode(k), cborEncode(val)] as const;
-    });
-    entries.sort((a, b) => compareBytes(a[0], b[0]));
-    for (let i = 1; i < entries.length; i++) {
-      if (compareBytes(entries[i - 1]![0], entries[i]![0]) === 0) throw new Error('cbor: duplicate map key');
-    }
-    return concatBytes(encodeHead(5, BigInt(entries.length)), ...entries.flatMap((e) => [e[0], e[1]]));
+  if ((v as unknown) instanceof Map) {
+    throw new Error('cbor: maps are not in the DRISL-profile base wire (use ext.ts)');
   }
   throw new Error('cbor: unsupported value');
 }
@@ -132,7 +129,6 @@ function toLength(v: bigint): number {
 
 function decodeItem(r: Reader, depth: number): CborValue {
   if (depth > 64) throw new Error('cbor: nesting too deep');
-  const start = r.pos;
   const { major, value } = readHead(r);
   switch (major) {
     case 0:
@@ -151,31 +147,15 @@ function decodeItem(r: Reader, depth: number): CborValue {
       for (let i = 0; i < n; i++) out.push(decodeItem(r, depth + 1));
       return out;
     }
-    case 5: {
-      const n = toLength(value);
-      const out: CborMap = new Map();
-      let prevKey: Uint8Array | null = null;
-      for (let i = 0; i < n; i++) {
-        const keyStart = r.pos;
-        const key = decodeItem(r, depth + 1);
-        if (typeof key !== 'number' && typeof key !== 'bigint') {
-          throw new Error('cbor: map keys must be unsigned integers');
-        }
-        const keyBytes = new Uint8Array(rBuf(r).subarray(keyStart, r.pos));
-        if (prevKey !== null && compareBytes(prevKey, keyBytes) >= 0) {
-          throw new Error('cbor: map keys must be sorted and unique');
-        }
-        prevKey = keyBytes;
-        const val = decodeItem(r, depth + 1);
-        out.set(Number(key), val);
-      }
-      return out;
-    }
+    case 5:
+      // DRISL-profile base wire is map-free (see module header). A map on the
+      // signed wire is out of profile and rejected — extensions live in the
+      // opaque `ext` byte string with a positional interior (ext.ts).
+      throw new Error('cbor: maps rejected (DRISL-profile base wire is map-free)');
     case 6:
       throw new Error('cbor: tags rejected');
     case 7: {
       const simple = value;
-      void start;
       if (simple === 20n) return false;
       if (simple === 21n) return true;
       if (simple === 22n) return null;
@@ -184,11 +164,6 @@ function decodeItem(r: Reader, depth: number): CborValue {
     default:
       throw new Error('cbor: unreachable');
   }
-}
-
-// Access the underlying buffer of a Reader (for canonical key comparison).
-function rBuf(r: Reader): Uint8Array {
-  return (r as unknown as { buf: Uint8Array }).buf;
 }
 
 /** Strict decode: one item, no trailing bytes, canonical form enforced. */

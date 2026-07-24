@@ -35,7 +35,7 @@ import {
   rootCommit,
 } from '../src/kdf.js';
 import { concatBytes } from '../src/bytes.js';
-import type { CborMap, CborValue } from '../src/cbor.js';
+import { decodeExt, encodeExt } from '../src/ext.js';
 import { encodeFrameBody, messageIdOf, parseFrame, signFrame, generateSigningKeypair } from '../src/frames.js';
 import { encodeMembership, ZERO32, type Membership } from '../src/ids.js';
 import {
@@ -146,17 +146,20 @@ function frameVector(name: string, body: Parameters<typeof encodeFrameBody>[0]):
 function buildFramesVectors(): unknown {
   const sk = membership('did:web:001.fid.is', 0x0a, fill(32, 0x0b));
   const kp = generateSigningKeypair(() => fill(32, 0x02));
-  const ext: CborMap = new Map();
-  const extUnknown: CborMap = new Map();
-  const preserved: CborValue = [new Uint8Array([1, 2, 3]), 'preserve-me'];
-  extUnknown.set(99, preserved); // unknown key must round-trip
+  const emptyExt = new Uint8Array(0); // no extensions ⇒ zero-length ext
+  // A coverage frame's ext = ExtBody(digest, rotation) as opaque bytes.
+  const covExt = encodeExt({
+    digest: { digest: fill(32, 0xd1), heads: [fill(32, 0xa1)] },
+    rotation: fill(32, 0x9c),
+  });
 
   return {
     description:
-      'Frame vectors (wire-format §3/§9): FrameBody → deterministic CBOR → Ed25519 SignedFrame ' +
-      '→ MessageID = SHA-256(body‖sig). Signing seed = 0x01³². Covers bootstrap zeroing (§2) and ' +
-      'ext-key preservation (§3.2). Byte-frozen; delete to regenerate.',
+      'Frame vectors (wire-format §3/§9): FrameBody → DRISL-profile CBOR (map-free) → Ed25519 ' +
+      'SignedFrame → MessageID = SHA-256(body‖sig). Signing seed = 0x01³². Covers bootstrap zeroing ' +
+      '(§2) and the opaque `ext` bytes (ext.ts). Byte-frozen; delete to regenerate.',
     signingSeed: H(SIGN_SEED),
+    extBody: { digestRotation: H(covExt), decodedRoundTrips: extRoundTrips(covExt) },
     vectors: [
       frameVector('control-create-bootstrap-zeroing', {
         version: 1,
@@ -167,7 +170,7 @@ function buildFramesVectors(): unknown {
         deps: [],
         cls: 1,
         payload: [1, [[[['did:web:001.fid.is', fill(32, 0x0a)], fill(32, 0x0c), kp.pk]], ['did:web:001.fid.is']]],
-        ext,
+        ext: emptyExt,
       }),
       frameVector('app-frame', {
         version: 1,
@@ -178,9 +181,9 @@ function buildFramesVectors(): unknown {
         deps: [fill(32, 0x0e)],
         cls: 3,
         payload: [3, fill(48, 0x0f)],
-        ext,
+        ext: emptyExt,
       }),
-      frameVector('ext-key-preservation', {
+      frameVector('coverage-with-opaque-ext', {
         version: 1,
         groupId: fill(32, 0x0d),
         sender: sk,
@@ -189,10 +192,15 @@ function buildFramesVectors(): unknown {
         deps: [fill(32, 0x0e)],
         cls: 1,
         payload: [7, []], // coverage
-        ext: extUnknown,
+        ext: covExt, // opaque bytes to the base codec
       }),
     ],
   };
+}
+
+function extRoundTrips(bytes: Uint8Array): boolean {
+  const d = decodeExt(bytes);
+  return d.digest !== undefined && d.rotation !== undefined && bytesToHex(d.rotation) === bytesToHex(fill(32, 0x9c));
 }
 
 // ── envelope vectors (sealed-sym; wire-format §6, §9 `envelopes/`) ────────────
@@ -303,7 +311,7 @@ describe('frozen test vectors (wire-format §9)', () => {
       deps: [],
       cls: 1,
       payload: [7, []],
-      ext: new Map(),
+      ext: new Uint8Array(0),
     }), SIGN_SEED);
     const p1 = parseFrame(raw);
     const p2 = parseFrame(raw);
