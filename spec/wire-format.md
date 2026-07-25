@@ -142,15 +142,21 @@ to a **zero-length** `ext`. Only parties that understand extensions decode the i
 ExtBody = [ version:  uint,                                   ; 1
             digest:   [ bstr32, [ * bstr32 ] ] / null,        ; consistency digest + heads (dgm §8)
             rotation: bstr32 / null,                          ; nextSigningPubKey (ordering-auth §5)
-            appHW:    [ * [ epochId: bstr32, hiGen: uint ] ] / null ]  ; app high-water (§8.1, DESIGNED)
+            appHW:    [ * [ epochId: bstr32, hiGen: uint ] ] / null,  ; app high-water (§8.1, DESIGNED)
+            endpoint: tstr / null ]                           ; in-band non-welcome delivery URL (sealed-sender §12)
 ```
 
 - **Fixed positional array** — exactly one encoding per set of extensions, by construction (absent fields
   are `null`; no dynamic keys to sort). `digest` rides on `coverage` frames; `rotation` on
-  `create`/`update`/`remove` control frames; both covered by the frame signature.
-- **Forward-compat by opacity**: a reader that does not recognize a future `version` leaves the interior
-  unparsed while the raw bytes stay signed — the "unknown extensions preserved" property, without a map.
-  New extension fields are appended as further positional slots under a bumped `version`.
+  `create`/`update`/`remove` control frames; `endpoint` on any control frame the device authors when its
+  address changed, plus opportunistically on `coverage` (sealed-sender §12); all covered by the frame
+  signature.
+- **Forward-compat by length tolerance**: new fields are **appended as trailing positional slots** under
+  the same `version` — an older reader destructures only the slots it knows and ignores the rest; a newer
+  reader treats a shorter (older-encoded) array's missing trailing slots as absent. `endpoint` was added
+  this way (no version bump). A `version` bump is reserved for a change that *reinterprets* existing slots;
+  an unrecognized `version` leaves the interior unparsed while the raw bytes stay signed (the "unknown
+  extensions preserved" property, without a map).
 - *(The retired ack attachment (D11) simply does not exist in `ExtBody`.)*
 
 ## 4. Class payloads
@@ -363,7 +369,7 @@ prose `description`.
 - ~~Envelope modes~~ **decided 2026-07-20**: two-mode `SealedEnvelope` (§6) — asym (bootstrap-class, with
   KEM `suite` id reserved for the PQ hybrid) and sym (in-conversation, per-recipient PRF tag lookup); the
   X3DH KDF gains a reserved `KEM_ss` slot (§5). A mod-P truncated-tag variant was considered and rejected
-  (sealed-sender §13).
+  (sealed-sender §14).
 
 <!-- External Links -->
 [DRISL]: https://dasl.ing/drisl.html

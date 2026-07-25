@@ -179,6 +179,67 @@ describe('SealLayer end-to-end (sealed transport)', () => {
   });
 });
 
+describe('SealLayer in-band delivery-endpoint advertisement (§12)', () => {
+  it('learns peers’ endpoints from signed ext and routes non-welcome envelopes to them', () => {
+    const wire = new Wire();
+    const pa = party('ep-alice');
+    const pb = party('ep-bob');
+    const fpA = blakeHex(pa.device.fingerprint);
+    const fpB = blakeHex(pb.device.fingerprint);
+    const urlA = 'https://relay.example/alice-inbox';
+    const urlB = 'https://relay.example/bob-inbox';
+
+    const aliceSession = Session.createGroup(
+      [pa, pb].map((p) => ({ device: p.device, leafPk: p.leafPk, signingPk: p.signingPk })),
+      [pa.device.did],
+      pa.signingSk,
+      pa.sks,
+      pa.rng,
+    );
+    const alice = new SealLayer(aliceSession, [pa.leafSk], pa.rng);
+    wire.send(alice.drainSealed()); // create (asym) to bob
+
+    const createFrame = SealLayer.openBootstrap(wire.take(fpB)[0]!, [pb.leafSk]);
+    const bobSession = Session.fromFrames([createFrame], pb.device, pb.signingSk, pb.sks, pb.rng);
+    const bob = new SealLayer(bobSession, [pb.leafSk], pb.rng);
+
+    // Each device advertises where it wants its non-welcome envelopes delivered.
+    aliceSession.setEndpoint(urlA);
+    bobSession.setEndpoint(urlB);
+
+    const layers: Record<string, SealLayer> = { [fpA]: alice, [fpB]: bob };
+    const deliverAll = (): void => {
+      for (let i = 0; i < 6; i++) {
+        for (const [fp, l] of Object.entries(layers)) {
+          for (const env of wire.take(fp)) l.deliver(env);
+          wire.send(l.drainSealed());
+        }
+      }
+    };
+
+    // The adverts ride each device's next authored control frame. Sequential (not
+    // concurrent) updates keep the epoch's root derivable: alice establishes
+    // epoch 1, bob converges then establishes epoch 2 on top.
+    aliceSession.update();
+    wire.send(alice.drainSealed());
+    deliverAll();
+    bobSession.update();
+    wire.send(bob.drainSealed());
+    deliverAll();
+
+    // Each side learned the other's endpoint in-band.
+    expect(bobSession.endpointOf(pa.device.fingerprint)).toBe(urlA);
+    expect(aliceSession.endpointOf(pb.device.fingerprint)).toBe(urlB);
+
+    // A non-welcome (app) envelope is routed to the recipient's advertised URL.
+    aliceSession.sendApp(text('routed by endpoint'));
+    const appOut = alice.drainSealed();
+    const toBob = appOut.find((o) => o.to === fpB);
+    expect(toBob, 'app envelope addressed to bob').toBeDefined();
+    expect(toBob!.url).toBe(urlB);
+  });
+});
+
 function blakeHex(b: Uint8Array): string {
   let s = '';
   for (const x of b) s += x.toString(16).padStart(2, '0');

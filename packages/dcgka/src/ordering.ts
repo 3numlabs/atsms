@@ -84,6 +84,11 @@ export class Session {
   private pendingLocal: { raw: Uint8Array; idHex: string; meta: RetainedMeta } | null = null;
   /** Op id that established my current protocol signing key (ordering-auth §5). */
   private myKeyOpId: Uint8Array;
+  /** In-band non-welcome delivery endpoint advert (sealed-sender §12). */
+  private myEndpoint: string | null = null;
+  private endpointDirty = false;
+  /** device fingerprint hex → last-writer-wins {url, seq} learned from peers' ext. */
+  private peerEndpoints = new Map<string, { url: string; seq: number }>();
 
   private constructor(
     engine: Engine,
@@ -484,6 +489,7 @@ export class Session {
     st.lastSeq = Math.max(st.lastSeq, frame.body.seq);
     if (frame.body.ctrlSeq !== null) st.lastCtrlSeq = frame.body.ctrlSeq;
     this.applyRotation(frame, st);
+    this.applyEndpoint(frame);
     this.processed.add(idHex);
     this.retain(idHex, {
       raw: frame.raw,
@@ -567,6 +573,36 @@ export class Session {
     }
   }
 
+  /** Learn a peer's non-welcome delivery endpoint from a processed frame's ext
+   *  (sealed-sender §12), last-writer-wins by the author's own seq. */
+  private applyEndpoint(frame: ParsedFrame): void {
+    const url = decodeExt(frame.body.ext).endpoint;
+    if (typeof url !== 'string') return;
+    const fp = bytesToHex(frame.body.sender.device.fingerprint);
+    const cur = this.peerEndpoints.get(fp);
+    if (cur === undefined || frame.body.seq > cur.seq) {
+      this.peerEndpoints.set(fp, { url, seq: frame.body.seq });
+    }
+  }
+
+  /**
+   * Advertise where this device wants its non-welcome envelopes delivered
+   * (sealed-sender §12). Rides the next authored control frame's signed `ext`
+   * (the joiner's healing update is the natural first carrier) and re-adverts on
+   * coverage. v1 is a single https URL per device; a per-group token is a later
+   * device-side policy with no wire change.
+   */
+  setEndpoint(url: string): void {
+    if (this.myEndpoint === url) return;
+    this.myEndpoint = url;
+    this.endpointDirty = true;
+  }
+
+  /** The delivery endpoint learned in-band for a device, or null if not yet seen. */
+  endpointOf(fingerprint: Uint8Array): string | null {
+    return this.peerEndpoints.get(bytesToHex(fingerprint))?.url ?? null;
+  }
+
   private ensureSender(m: Membership): SenderState {
     const k = membershipKey(m);
     let st = this.senders.get(k);
@@ -583,6 +619,7 @@ export class Session {
     st.lastSeq = Math.max(st.lastSeq, frame.body.seq);
     if (frame.body.ctrlSeq !== null) st.lastCtrlSeq = Math.max(st.lastCtrlSeq, frame.body.ctrlSeq);
     this.applyRotation(frame, st);
+    this.applyEndpoint(frame);
     this.processed.add(bytesToHex(frame.id));
     this.retain(bytesToHex(frame.id), {
       raw: frame.raw,
@@ -616,6 +653,13 @@ export class Session {
     // detect divergence (§8 equivocation check).
     if (payload.type === 'coverage') {
       extObj.digest = { digest: this.engine.validDigest(), heads: this.engine.headsList() };
+    }
+    // In-band delivery-endpoint advert (sealed-sender §12): stamp on change, and
+    // opportunistically re-advert on coverage so a late/offline joiner reconverges
+    // on everyone's address the same way coverage reconciles heads.
+    if (this.myEndpoint !== null && (this.endpointDirty || payload.type === 'coverage')) {
+      extObj.endpoint = this.myEndpoint;
+      this.endpointDirty = false;
     }
     const ext = encodeExt(extObj);
     const body = encodeFrameBody({

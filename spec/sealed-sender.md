@@ -152,7 +152,7 @@ crypto sealed. The relay contract for DCGKA traffic ([Node] — changes to `atsm
   ordering-layer repair recovers stragglers).
 - **Hardening (post-v1, designed-not-specified)**: unlinkable sender tokens (Privacy-Pass-style, or
   Signal-sealed-sender-style certificates) so operators can rate-limit *senders* without identifying them.
-  Tracked as an open item (§13); the v1 position is that per-mailbox caps + the 150-device group envelope
+  Tracked as an open item (§14); the v1 position is that per-mailbox caps + the 150-device group envelope
   keep flood damage bounded and local.
 - **North star check**: the relay stays dumb — after this change it learns *less* than today (mailbox +
   timing + size bucket; no sender identity on any push).
@@ -284,7 +284,52 @@ profile 2) remain deferred; when scheduled, that profile will reuse this section
 with a deliberately *shared* ciphertext — accepting exactly the cross-puller correlation this section's
 per-recipient rules exist to avoid. Documented trade, not an accident.
 
-## 12. Test obligations
+## 12. In-band non-welcome delivery addressing — decided 2026-07-25 (user sign-off)
+
+**The asymmetry that drives this (normative rationale).** A **welcome** is sent by a party that shares
+*no* secret with the recipient yet (they are adding the recipient to a group the recipient is not in), so
+its delivery address MUST be **publicly discoverable** from the recipient's DID — an ATProto record
+`at.atsms.welcome.<mode>` (e.g. `at.atsms.welcome.smtp` → `{ email }`; `smtp` is the required interop
+floor, other modes like `https` MAY be advertised). Code receiving at that address MAY be helpful — deliver
+to the `at.atsms.x509` certs it manages and forward to the SANs it does not — but that helpfulness is an
+implementation detail, **not a protocol actor** ("provider" is deliberately *not* a protocol concept).
+
+A **non-welcome** frame, by contrast, is only ever sent by a party that **already shares group state** with
+the recipient. Its delivery address therefore need **not** be public: it is advertised **in-band**, inside
+the authenticated group channel, so the high-volume/linkable address never appears in a public record. The
+public footprint stays exactly one thing — the welcome record.
+
+**Mechanism (normative).** A device advertises its non-welcome delivery endpoint in the **signed frame
+`ext`** (wire-format §3.2; `FrameExt.endpoint`) — the same self-authored, last-writer-wins, in-band advert
+shape as signing-key rotation (ordering-auth §5). It is authored by the device itself (so the device
+controls its own address; the natural first carrier is the joiner's mandatory post-join healing update),
+stamped on change and **re-adverted opportunistically on `coverage`** frames so a late/offline joiner
+reconverges on every member's address the same way coverage reconciles heads. Receivers keep a
+`device → endpoint` table, LWW by the author's own `seq` (a device is a single author, so its seq totally
+orders its adverts). The seal/delivery layer resolves each recipient's fingerprint → endpoint locally (no
+network lookup — learned in-band exactly as prekeys are, §11.4) and emits `(recipient, url, sealed
+envelope)`; the literal `POST url` is the transport's job. Welcome frames carry no in-band url — they are
+routed via the recipient's public `at.atsms.welcome.*` record.
+
+**Granularity is a device policy, not a protocol fork.** Because the advert rides a group-scoped,
+self-authored op, the mechanism is inherently **per-(device, group)**. What a device *puts* there is
+policy:
+
+- **v1 (reuse policy):** one `https://…` URL per device, reused across all its groups. Simplest; links a
+  device's traffic across groups at whoever operates the endpoint. Appropriate when the device trusts its
+  endpoint operator.
+- **post-v1 (per-group tokens):** a distinct opaque token per (device, group), so the endpoint operator
+  cannot correlate a device's group memberships and cross-group members cannot discover each other's
+  mailboxes. **No wire change** — purely what the device writes into the same `endpoint` slot.
+
+**Accepted tradeoffs.** (1) The endpoint lives in *signed group state*, so changing it is a group-visible
+(authenticated) event — normally desirable (the people who message you learn your address changed).
+(2) **Recovery** relies on re-`welcome` (a member that loses group state re-bootstraps via the public
+welcome record), so **no public non-welcome record is required**. (3) `url` may be `null` transiently
+(recipient's advert not yet processed); the transport holds/retries — envelopes are never mis-delivered,
+only delayed.
+
+## 13. Test obligations
 
 1. **Seal/unseal vectors** (wire-format.md §8): known-key envelopes for both contentTypes, all buckets;
    trial-decrypt across rotation (current key, grace key, neither → silent drop, no state change).
@@ -304,13 +349,20 @@ per-recipient rules exist to avoid. Documented trade, not an accident.
    resolution after `update` processing; grace-epoch recognition after simulated offline gap; mode-misuse
    rejection (asym where sym established, and vice versa).
 
-## 13. Open questions (tracked for review)
+## 14. Open questions (tracked for review)
 
 - **Padding buckets** (§5): 1–64 KiB powers-of-two are PROPOSED — sign-off needed (registered in
   [`parameters.md`](./parameters.md)).
 - **Ingress quotas** (§7): 600 envelopes / 20 MB per mailbox-hour are PROPOSED operator defaults.
 - **Unlinkable sender tokens** (§7): post-v1 hardening — design not started; revisit after v1 alpha
   traffic data exists.
+- **Per-group delivery tokens** (§12): the endpoint slot is per-(device, group) already; v1 ships the
+  reuse policy (one https URL per device). Per-group opaque tokens (no wire change) are the post-v1
+  tightening for devices that don't trust their endpoint operator — revisit alongside unlinkable sender
+  tokens.
+- ~~Non-welcome delivery addressing~~ **decided 2026-07-25 (user sign-off)**: advertised **in-band** in
+  the signed frame `ext` (§12), not a public record; welcome stays the only public address
+  (`at.atsms.welcome.<mode>`, `smtp` floor). "Provider" dropped as a protocol concept.
 - **Group drop-point sealing** (spec v1.1 §9 profile 2, optional post-v1 mode): deferred; will build on
   §11's derivation machinery (see §11.6).
 - ~~Symmetric envelope mode~~ **decided 2026-07-20 (user sign-off)**: `sealed-sym` for all

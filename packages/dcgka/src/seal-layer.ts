@@ -45,6 +45,13 @@ import type { Session } from './ordering.js';
 /** A sealed envelope addressed to one recipient device (by fingerprint hex). */
 export interface Outbound {
   to: string; // recipient device fingerprint (hex)
+  /**
+   * Non-welcome delivery endpoint learned in-band (sealed-sender §12), or null
+   * when not yet known (welcome frames — routed via the joiner's public
+   * `at.atsms.welcome.*` record — or a recipient whose advert hasn't landed; the
+   * transport resolves/retries those). The literal `POST url` is the transport's job.
+   */
+  url: string | null;
   envelope: Uint8Array;
 }
 
@@ -94,7 +101,8 @@ export class SealLayer {
         const joinerFp = this.addToJoiner.get(bytesToHex(addOpId));
         const pk = joinerFp === undefined ? undefined : this.prekeys.get(joinerFp);
         if (joinerFp !== undefined && pk !== undefined) {
-          out.push({ to: joinerFp, envelope: sealAsymTo(pk, CONTENT_FRAME, raw, this.rng) });
+          // url null: a welcome is routed via the joiner's public welcome record.
+          out.push({ to: joinerFp, url: null, envelope: sealAsymTo(pk, CONTENT_FRAME, raw, this.rng) });
         }
         continue;
       }
@@ -108,11 +116,13 @@ export class SealLayer {
       const envKey = epochId === null ? null : this.session.engine.epochEnvKey(epochId, this.encMe);
       for (const r of recipients) {
         const fp = bytesToHex(r.device.fingerprint);
+        // Non-welcome routing: the endpoint the recipient advertised in-band (§12).
+        const url = this.session.endpointOf(r.device.fingerprint);
         if (envKey !== null) {
-          out.push({ to: fp, envelope: sealSymTo(envKey, encodeMembership(r), CONTENT_FRAME, raw, this.rng) });
+          out.push({ to: fp, url, envelope: sealSymTo(envKey, encodeMembership(r), CONTENT_FRAME, raw, this.rng) });
         } else {
           const pk = this.prekeys.get(fp);
-          if (pk !== undefined) out.push({ to: fp, envelope: sealAsymTo(pk, CONTENT_FRAME, raw, this.rng) });
+          if (pk !== undefined) out.push({ to: fp, url, envelope: sealAsymTo(pk, CONTENT_FRAME, raw, this.rng) });
         }
       }
     }

@@ -13,7 +13,7 @@
  * does not parse the interior (returns {}) while the bytes stay signed —
  * recovering the "unknown extensions preserved" property without a map.
  *
- *   ExtBody = [ version, digest|null, rotation|null, appHW|null ]
+ *   ExtBody = [ version, digest|null, rotation|null, appHW|null, endpoint|null ]
  */
 
 import { cborDecode, cborEncode, type CborValue } from './cbor.js';
@@ -27,10 +27,23 @@ export interface FrameExt {
   rotation?: Uint8Array;
   /** Per-epoch application high-water — highest generation emitted (ordering-auth §8.1). */
   appHW?: Array<{ epochId: Uint8Array; hiGen: number }>;
+  /**
+   * In-band non-welcome delivery endpoint (sealed-sender §12): where this device
+   * wants its non-welcome envelopes dropped. A self-authored, signed, last-writer-
+   * wins advert — the exact shape as `rotation`, a URL instead of a pubkey. v1 is
+   * a single `https://…` URL per device (reuse policy); a per-group token is a
+   * later device-side policy with no wire change.
+   */
+  endpoint?: string;
 }
 
 function isEmpty(e: FrameExt): boolean {
-  return e.digest === undefined && e.rotation === undefined && e.appHW === undefined;
+  return (
+    e.digest === undefined &&
+    e.rotation === undefined &&
+    e.appHW === undefined &&
+    e.endpoint === undefined
+  );
 }
 
 /** Encode to the opaque `ext` bytes (zero-length when there are no extensions). */
@@ -41,6 +54,7 @@ export function encodeExt(ext: FrameExt): Uint8Array {
     ext.digest === undefined ? null : [ext.digest.digest, ext.digest.heads],
     ext.rotation ?? null,
     ext.appHW === undefined ? null : ext.appHW.map((h) => [h.epochId, h.hiGen]),
+    ext.endpoint ?? null,
   ];
   return cborEncode(body);
 }
@@ -49,7 +63,15 @@ export function encodeExt(ext: FrameExt): Uint8Array {
 export function decodeExt(bytes: Uint8Array): FrameExt {
   if (bytes.length === 0) return {};
   const arr = cborDecode(bytes) as CborValue[];
-  const [version, digest, rotation, appHW] = arr as [number, CborValue, CborValue, CborValue];
+  // Length-tolerant destructure: a shorter (older) array leaves later fields
+  // undefined; a longer (newer) one is ignored past what this version reads.
+  const [version, digest, rotation, appHW, endpoint] = arr as [
+    number,
+    CborValue,
+    CborValue,
+    CborValue,
+    CborValue?,
+  ];
   if (version !== EXT_VERSION) return {}; // forward-compat: leave a newer layout unparsed
   const out: FrameExt = {};
   if (digest !== null) {
@@ -63,5 +85,6 @@ export function decodeExt(bytes: Uint8Array): FrameExt {
       return { epochId, hiGen };
     });
   }
+  if (endpoint !== null && endpoint !== undefined) out.endpoint = endpoint as string;
   return out;
 }

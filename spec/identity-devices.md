@@ -263,7 +263,7 @@ X3DH mode relied on, now permanent and sufficient. (Design record: 2sm.md §5.0.
    coverage); expired record; record signed by a *different* valid device of the same DID rejected
    (cross-device mix-and-match); sealed-asym seal/unseal against current vs grace `signedPrekey`, and a
    seal attempt against an expired or revoked record rejected sender-side (envelope vectors proper in
-   sealed-sender §12); an `add` op pinning a prekey that fails record verification rejected
+   sealed-sender §13); an `add` op pinning a prekey that fails record verification rejected
    (beekem-core §4.2).
 3. **Rotation flows**: routine self-rotation end-to-end (records + per-group remove/add + old-record
    revocation); loss flow driven from a second device; verify old-instance state is unreachable afterward

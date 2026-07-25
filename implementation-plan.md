@@ -96,6 +96,21 @@ on it as the *spec we align to*, with our frozen vectors as the KAT. The app-pay
 unconstrained (opaque bytes to the base). Prototyped: `cbor.ts` map path removed, `ext.ts` added; 88 unit +
 4 fuzz green. Spec: wire-format §1/§1.1/§3.2.
 
+**D13 — Non-welcome delivery addressing = advertised in-band, not via a public record. ✅ DECIDED 2026-07-25.**
+"Provider" is dropped as a protocol concept. A DID's **welcome** address MUST be a public ATProto record
+`at.atsms.welcome.<mode>` (`smtp` = interop floor; `https` etc. optional) — a party adding you shares no
+secret with you yet, so it can only find you publicly. A **non-welcome** frame is only ever sent by a party
+that already shares group state, so its (high-volume, linkable) address is advertised **in-band** in the
+signed frame `ext` (`FrameExt.endpoint`) — the same self-authored, LWW, in-band advert shape as signing-key
+rotation, stamped on change + re-adverted on `coverage`, learned into a per-device table, resolved locally
+by the seal layer (no network lookup, exactly as prekeys are). Public footprint shrinks to the one welcome
+record. **Granularity is device policy, not a protocol fork**: the slot is per-(device, group) already; v1
+ships the **reuse policy** (one https URL per device); per-group opaque tokens (unlinkability against an
+untrusted endpoint) are post-v1 with **no wire change**. Recovery is via re-`welcome`, so no public
+non-welcome record is needed. Built: `ext.ts` `endpoint` slot (length-tolerant, no version bump),
+`Session.setEndpoint/endpointOf` + `applyEndpoint`, `SealLayer` emits `{to, url, envelope}`; `frames.json`
+regenerated (frame wrapper only — no oracle-compat impact). Spec: sealed-sender §12, wire-format §3.2.
+
 **D11 — CGKA core = BeeKEM. ✅ DECIDED 2026-07-22 (gates passed same day).** Replace the Weidner-DCGKA
 core with BeeKEM (Ink & Switch concurrent TreeKEM — Apache-2.0, `inkandswitch/keyhive` `beekem` crate as
 differential oracle) under an ATSMS messaging profile. Gated on two spikes, both PASS:
@@ -209,7 +224,11 @@ detector (soft signal for now — sound defenses are rootCommit + signatures).
 emits per-recipient `{to, envelope}` (the "engine emits sealed message + recipient list" boundary), `deliver()`
 unseals + feeds frames back in, mode chosen by `engine.sealEpochFor(deps)` (parent-epoch sym per §11.4, asym
 only pre-first-epoch), bounded unknown-tag buffering. End-to-end sealed-transport test green (create/update/app/
-add/heal all over envelopes). Remaining: anonymous relay ingress (cross-repo `atsms-worker POST /envelope`).
+add/heal all over envelopes). (4) **In-band delivery addressing (D13):** `FrameExt.endpoint` + `Session.setEndpoint/
+endpointOf`; `SealLayer` emits `{to, url, envelope}` resolving the recipient's in-band-advertised URL — welcome
+routes via the public `at.atsms.welcome.*` record, non-welcome via the in-band endpoint. Remaining: the receive-
+side reference binding (per-DID intake → per-device fanout) lives in `atsms-worker`, and the provider-neutral
+inbound contract is a common-ATSMS spec item (serves the stateless one-shot email semantics too, not just DCGKA).
 
 - `sealed-sender` module: both modes per D7 — asym seal/unseal + sym envelope (envKey derivation, tag
   table with grace epochs, per-recipient fresh-nonce fan-out), padding buckets, envelope dedup.
