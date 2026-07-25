@@ -227,8 +227,13 @@ only pre-first-epoch), bounded unknown-tag buffering. End-to-end sealed-transpor
 add/heal all over envelopes). (4) **In-band delivery addressing (D13):** `FrameExt.endpoint` + `Session.setEndpoint/
 endpointOf`; `SealLayer` emits `{to, url, envelope}` resolving the recipient's in-band-advertised URL — welcome
 routes via the public `at.atsms.welcome.*` record, non-welcome via the in-band endpoint. Remaining: the receive-
-side reference binding (per-DID intake → per-device fanout) lives in `atsms-worker`, and the provider-neutral
-inbound contract is a common-ATSMS spec item (serves the stateless one-shot email semantics too, not just DCGKA).
+side reference binding (per-DID intake → per-device fanout) lives in `atsms-worker`. (5) **Inbound-delivery
+contract DRAFTED** (`spec/inbound-delivery.md` v0.1, common ATSMS — payload-agnostic, serves the stateless
+one-shot email semantics too): welcome discovery via per-DID `at.atsms.welcome.<mode>` (`smtp` floor / `https`
+upgrade), SMTP⇄HTTPS byte-convergence, sender group-by-destination fan-out, receiver intake→per-device fanout +
+forward-unmanaged. **One sign-off pending**: reconcile the new per-DID welcome record against the existing
+per-device `inviteAddress` (identity-devices §4.1, decided 2026-07-16) — proposed = relocate + retire
+`inviteAddress`. Remaining after that: the `atsms-worker` reference binding (cross-repo).
 
 - `sealed-sender` module: both modes per D7 — asym seal/unseal + sym envelope (envKey derivation, tag
   table with grace epochs, per-recipient fresh-nonce fan-out), padding buckets, envelope dedup.

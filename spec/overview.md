@@ -74,6 +74,8 @@ Properties delivered (each with its owning sub-spec):
 ├ Sealed sender: two modes — HPKE bootstrap envelope + symmetric
 │    in-conversation envelope (pseudonymous tags); padding, anon ingress    — sealed-sender.md
 └ Delivery: baseline HTTPS mailbox (MANDATORY), WebSocket, P2P, SMTP, Tor   — spec v1.1 §7 + atsms-integration.md
+     └ Inbound contract (common ATSMS): welcome discovery + bindings +
+          per-DID intake → per-device fan-out (payload-agnostic)             — inbound-delivery.md
 
 Identity (vertical): DID → endpoint cert → {prekey record,
      protocol signing keys}; PDS records                                    — identity-devices.md

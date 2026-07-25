@@ -125,6 +125,10 @@ retired with it.)*
   `inviteAddress` is deliberately **not** device-signed: its integrity is liveness-only (a
   tampered address can only misroute sealed envelopes, never break confidentiality), so the DID-signed
   commit suffices. Updates are ordinary record updates.
+  - **Under review (D13, 2026-07-25):** [`inbound-delivery.md`](./inbound-delivery.md) §3 proposes
+    relocating the Welcome/invite destination to a **per-DID** `at.atsms.welcome.<mode>` record and
+    **retiring this per-device `inviteAddress`** (same liveness-only integrity). Sign-off pending; this
+    field stays as written until then.
 
 - **SKI = SHA-256 of the public key (RFC 7093 method 1 profile)**, so the cert's SKI *equals* its
   record's rkey = the device fingerprint.
