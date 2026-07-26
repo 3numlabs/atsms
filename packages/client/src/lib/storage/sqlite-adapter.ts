@@ -88,6 +88,12 @@ export class SQLiteAdapter implements StorageAdapter {
         lastUsedAt INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS engine_state (
+        convoId TEXT PRIMARY KEY, -- lowercase-hex GroupID
+        state BLOB NOT NULL,      -- Session.serialize() (encrypt at rest)
+        updatedAt INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_messages_convo ON messages(convoId);
       CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(createdAt);
       CREATE INDEX IF NOT EXISTS idx_conversations_last ON conversations(lastMessageAt);
@@ -313,6 +319,7 @@ export class SQLiteAdapter implements StorageAdapter {
       this.db.exec("DELETE FROM messages");
       this.db.exec("DELETE FROM conversations");
       this.db.exec("DELETE FROM sync_metadata");
+      this.db.exec("DELETE FROM engine_state");
     });
 
     // Notify all observers
@@ -333,6 +340,29 @@ export class SQLiteAdapter implements StorageAdapter {
       "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES (?, ?)",
     );
     stmt.run("lastSyncRev", rev);
+  }
+
+  // DCGKA engine state
+  async saveEngineState(convoId: string, state: Uint8Array): Promise<void> {
+    const stmt = this.db.prepare(
+      "INSERT OR REPLACE INTO engine_state (convoId, state, updatedAt) VALUES (?, ?, ?)",
+    );
+    stmt.run(convoId, state, Date.now());
+  }
+
+  async loadEngineState(convoId: string): Promise<Uint8Array | null> {
+    const stmt = this.db.prepare("SELECT state FROM engine_state WHERE convoId = ?");
+    const row = stmt.get(convoId);
+    return row ? new Uint8Array(row.state) : null;
+  }
+
+  async deleteEngineState(convoId: string): Promise<void> {
+    this.db.prepare("DELETE FROM engine_state WHERE convoId = ?").run(convoId);
+  }
+
+  async listEngineStateIds(): Promise<string[]> {
+    const rows = this.db.prepare("SELECT convoId FROM engine_state").all();
+    return rows.map((r: { convoId: string }) => r.convoId);
   }
 
   // LiveQuery support

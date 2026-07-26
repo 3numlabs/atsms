@@ -52,6 +52,14 @@ export interface StorageAdapter {
   getLastSyncRev(): Promise<string | null>;
   setLastSyncRev(rev: string): Promise<void>;
 
+  // DCGKA engine state (opaque, per-conversation snapshot from Session.serialize()).
+  // This is the crypto engine's durable state — held in the SAME store as messages,
+  // and MUST be encrypted at rest (it contains live group secrets; FS depends on it).
+  saveEngineState(convoId: string, state: Uint8Array): Promise<void>;
+  loadEngineState(convoId: string): Promise<Uint8Array | null>;
+  deleteEngineState(convoId: string): Promise<void>;
+  listEngineStateIds(): Promise<string[]>;
+
   // LiveQuery support (for reactive updates)
   observeConversations(
     filter?: ConversationFilter,

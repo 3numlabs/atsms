@@ -19,7 +19,7 @@ import {
 } from "./types";
 
 const DB_NAME = "atsms";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Object store names
 const STORES = {
@@ -28,6 +28,7 @@ const STORES = {
   SYNC_METADATA: "sync_metadata",
   CERTIFICATES: "certificates",
   DIDS: "dids",
+  ENGINE_STATE: "engine_state",
 };
 
 export class IndexedDBAdapter implements StorageAdapter {
@@ -102,6 +103,10 @@ export class IndexedDBAdapter implements StorageAdapter {
             keyPath: "did",
           });
           didStore.createIndex("isPrimary", "isPrimary", { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains(STORES.ENGINE_STATE)) {
+          db.createObjectStore(STORES.ENGINE_STATE, { keyPath: "convoId" });
         }
       };
     });
@@ -441,6 +446,29 @@ export class IndexedDBAdapter implements StorageAdapter {
     }
   }
 
+  // DCGKA engine state
+  async saveEngineState(convoId: string, state: Uint8Array): Promise<void> {
+    const store = await this.getStore(STORES.ENGINE_STATE, "readwrite");
+    await this.promisifyRequest(store.put({ convoId, state, updatedAt: Date.now() }));
+  }
+
+  async loadEngineState(convoId: string): Promise<Uint8Array | null> {
+    const store = await this.getStore(STORES.ENGINE_STATE);
+    const row = await this.promisifyRequest<{ state: Uint8Array } | undefined>(store.get(convoId));
+    return row ? new Uint8Array(row.state) : null;
+  }
+
+  async deleteEngineState(convoId: string): Promise<void> {
+    const store = await this.getStore(STORES.ENGINE_STATE, "readwrite");
+    await this.promisifyRequest(store.delete(convoId));
+  }
+
+  async listEngineStateIds(): Promise<string[]> {
+    const store = await this.getStore(STORES.ENGINE_STATE);
+    const keys = await this.promisifyRequest<IDBValidKey[]>(store.getAllKeys());
+    return keys.map((k) => String(k));
+  }
+
   async clearAll(): Promise<void> {
     const db = await this.ensureDB();
     const storeNames = [
@@ -449,6 +477,7 @@ export class IndexedDBAdapter implements StorageAdapter {
       STORES.SYNC_METADATA,
       STORES.CERTIFICATES,
       STORES.DIDS,
+      STORES.ENGINE_STATE,
     ];
 
     const transaction = db.transaction(storeNames, "readwrite");

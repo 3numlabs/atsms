@@ -1,7 +1,6 @@
 /**
  * Conversations module (sdk-shape.md Part A) — the stateful DCGKA surface:
- * frame-log-persisted sessions restored by replay.
+ * sessions persisted (as engine-state blobs) in the one StorageAdapter.
  */
 
-export * from "./store.js";
 export * from "./conversation-session.js";

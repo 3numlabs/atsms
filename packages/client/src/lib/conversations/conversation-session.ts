@@ -1,10 +1,9 @@
 /**
- * `ConversationSession` — a frame-log-persisted `@atsms/dcgka` `Session`
- * (sdk-shape.md Part A, the stateful surface). It ties the pure engine to
- * durable storage: every frame the session authors or ingests is appended to the
- * {@link DcgkaSessionStore}, and a conversation is restored by replaying that log
- * (`Session.fromFrames`). Transport is out of scope — methods return the frames
- * to send; who carries them is the delivery layer's job.
+ * `ConversationSession` — a persisted `@atsms/dcgka` `Session` (sdk-shape.md
+ * Part A, the stateful surface). State lives in the ONE `StorageAdapter` as a
+ * per-conversation engine-state blob (`Session.serialize()`), written after every
+ * op and restored verbatim by `Session.restore()`. Transport is out of scope:
+ * methods return the frames to send; delivery is a separate layer.
  */
 
 import {
@@ -17,11 +16,10 @@ import {
   type SessionEvents,
 } from "@atsms/dcgka";
 
-import type { ConversationBootstrap, DcgkaSessionStore } from "./store.js";
+import type { StorageAdapter } from "../storage/interface.js";
 
-/** This device's key material for a conversation. */
-export interface LocalMember {
-  device: DeviceID;
+/** This device's key material for founding/joining a conversation. */
+export interface LocalKeys {
   signingSk: Uint8Array;
   signingPk: Uint8Array;
   leafPk: Uint8Array; // = the signed prekey (D10)
@@ -36,15 +34,17 @@ export interface MemberDescriptor {
 }
 
 export interface ConversationDeps {
-  store: DcgkaSessionStore;
+  storage: StorageAdapter;
   rng: Csprng;
+  /** This device's identity — the local member across all conversations. */
+  device: DeviceID;
 }
 
 export class ConversationSession {
   private constructor(
     readonly groupId: string,
     private readonly session: Session,
-    private readonly store: DcgkaSessionStore,
+    private readonly storage: StorageAdapter,
   ) {}
 
   /** The underlying engine — read-only inspection (members, treeHash, epochs). */
@@ -54,125 +54,115 @@ export class ConversationSession {
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
-  /** Found a new conversation. `members` includes `me`. Returns the session and
-   *  the create frame(s) to deliver (also persisted). */
+  /** Found a new conversation. `members` includes this device. Returns the session
+   *  and the create frame(s) to deliver (state is persisted). */
   static async create(
     deps: ConversationDeps,
-    params: { me: LocalMember; members: MemberDescriptor[]; admins: string[]; events?: SessionEvents },
+    params: { keys: LocalKeys; members: MemberDescriptor[]; admins: string[]; events?: SessionEvents },
   ): Promise<{ conversation: ConversationSession; outbound: Uint8Array[] }> {
-    const sks = shareKeysOf(params.me);
     const session = Session.createGroup(
       params.members,
       params.admins,
-      params.me.signingSk,
-      sks,
+      params.keys.signingSk,
+      shareKeysOf(params.keys),
       deps.rng,
       params.events ?? {},
     );
-    const groupId = bytesToHex(session.engine.groupId);
-    await deps.store.createConversation(bootstrapOf(groupId, params.me));
-    const convo = new ConversationSession(groupId, session, deps.store);
-    return { conversation: convo, outbound: await convo.drainPersist() };
+    const convo = new ConversationSession(bytesToHex(session.engine.groupId), session, deps.storage);
+    const outbound = session.takeOutbox();
+    await convo.persist();
+    return { conversation: convo, outbound };
   }
 
   /** Join an existing conversation as a founding member from its `create` frame. */
   static async bootstrap(
     deps: ConversationDeps,
-    params: { me: LocalMember; createFrame: Uint8Array; events?: SessionEvents },
+    params: { keys: LocalKeys; createFrame: Uint8Array; events?: SessionEvents },
   ): Promise<ConversationSession> {
-    const sks = shareKeysOf(params.me);
     const session = Session.fromFrames(
       [params.createFrame],
-      params.me.device,
-      params.me.signingSk,
-      sks,
+      deps.device,
+      params.keys.signingSk,
+      shareKeysOf(params.keys),
       deps.rng,
       params.events ?? {},
     );
-    const groupId = bytesToHex(session.engine.groupId);
-    await deps.store.createConversation(bootstrapOf(groupId, params.me));
-    const convo = new ConversationSession(groupId, session, deps.store);
-    await deps.store.appendFrames(groupId, [params.createFrame]);
+    const convo = new ConversationSession(bytesToHex(session.engine.groupId), session, deps.storage);
+    await convo.persist();
     return convo;
   }
 
-  /**
-   * Restore a conversation from its persisted frame log (replay). Null if unknown.
-   *
-   * KNOWN LIMITATION: replay reconstructs the tree and every epoch whose secret
-   * arrived encrypted in a frame, but NOT a member's own *self-authored* epoch
-   * secret (a TreeKEM updater's path secret is encrypted to the others, not into
-   * its own frame). Sending after a restart across a self-authored epoch needs the
-   * engine's secret material (ShareKeyMap + chain positions) serialized too — a
-   * pending `@atsms/dcgka` state-serialization API (atsms-integration §2).
-   */
+  /** Restore a conversation from its persisted engine-state blob. Null if unknown. */
   static async restore(
     deps: ConversationDeps,
     groupId: string,
     events?: SessionEvents,
   ): Promise<ConversationSession | null> {
-    const stored = await deps.store.load(groupId);
-    if (stored === null) return null;
-    const b = stored.bootstrap;
-    const sks = new ShareKeyMap();
-    sks.insert(b.leafPk, b.leafSk);
-    const session = Session.fromFrames(stored.frames, b.device, b.signingSk, sks, deps.rng, events ?? {});
-    return new ConversationSession(groupId, session, deps.store);
+    const blob = await deps.storage.loadEngineState(groupId);
+    if (blob === null) return null;
+    const session = Session.restore(blob, { device: deps.device, rng: deps.rng, events });
+    return new ConversationSession(groupId, session, deps.storage);
   }
 
-  // ── operations (return frames to deliver; all persisted) ────────────────────
+  /** GroupIDs of all persisted conversations (to reopen on startup). */
+  static listIds(deps: ConversationDeps): Promise<string[]> {
+    return deps.storage.listEngineStateIds();
+  }
+
+  // ── operations (return frames to deliver; state persisted after each) ───────
 
   /** Send an application payload (the inner-ratchet plaintext of an app frame). */
   async send(plaintext: Uint8Array): Promise<Uint8Array[]> {
     this.session.sendApp(plaintext);
-    return this.drainPersist();
+    return this.drain();
   }
 
-  /** Add a device to the conversation. Returns { outbound, welcome } — the welcome
-   *  bootstraps the joiner and is delivered point-to-point. */
-  async addMember(
-    member: MemberDescriptor,
-  ): Promise<{ outbound: Uint8Array[]; welcome: Uint8Array }> {
+  /** Add a device. Returns { outbound, welcome } — the welcome bootstraps the joiner. */
+  async addMember(member: MemberDescriptor): Promise<{ outbound: Uint8Array[]; welcome: Uint8Array }> {
     const { addOpId } = this.session.add(member.device, member.leafPk, member.signingPk);
     const welcome = this.session.buildWelcome(addOpId);
-    return { outbound: await this.drainPersist(), welcome };
+    return { outbound: await this.drain(), welcome };
   }
 
-  /** Remove a member from the conversation. */
+  /** Remove a member. */
   async removeMember(membership: Membership): Promise<Uint8Array[]> {
     this.session.remove(membership);
-    return this.drainPersist();
+    return this.drain();
   }
 
   /** Rotate keys (post-compromise healing / mandatory post-join update). */
   async update(): Promise<Uint8Array[]> {
     this.session.update();
-    return this.drainPersist();
+    return this.drain();
   }
 
   /** Ingest an inbound frame; returns any frames this triggers (repair/coverage). */
   async ingest(raw: Uint8Array): Promise<Uint8Array[]> {
     this.session.ingestFrame(raw);
-    await this.store.appendFrames(this.groupId, [raw]);
-    return this.drainPersist();
+    return this.drain();
+  }
+
+  /** Forget the conversation (key deletion — FS depends on the store honoring it). */
+  async forget(): Promise<void> {
+    await this.storage.deleteEngineState(this.groupId);
   }
 
   // ── internals ───────────────────────────────────────────────────────────────
 
-  /** Drain the session outbox, persist the frames, and return them for delivery. */
-  private async drainPersist(): Promise<Uint8Array[]> {
+  private async drain(): Promise<Uint8Array[]> {
     const frames = this.session.takeOutbox();
-    if (frames.length > 0) await this.store.appendFrames(this.groupId, frames);
+    await this.persist();
     return frames;
+  }
+
+  /** Full engine-state snapshot → the one store (encrypted at rest by that layer). */
+  private async persist(): Promise<void> {
+    await this.storage.saveEngineState(this.groupId, this.session.serialize());
   }
 }
 
-function shareKeysOf(me: LocalMember): ShareKeyMap {
+function shareKeysOf(keys: LocalKeys): ShareKeyMap {
   const sks = new ShareKeyMap();
-  sks.insert(me.leafPk, me.leafSk);
+  sks.insert(keys.leafPk, keys.leafSk);
   return sks;
-}
-
-function bootstrapOf(groupId: string, me: LocalMember): ConversationBootstrap {
-  return { groupId, device: me.device, signingSk: me.signingSk, leafPk: me.leafPk, leafSk: me.leafSk };
 }
