@@ -308,7 +308,16 @@ the tree + any epoch whose secret came encrypted in a frame, but NOT a member's 
 TreeKEM updater's path secret is encrypted to the others, stored only in the engine `sks`) — so an author can't
 send after a restart. The engine must serialize its secret material (`ShareKeyMap` + sender-chain positions +
 `currentEpochId`) — the "serializable state" §2 named. Engine-level design decision (what to serialize,
-encrypt-at-rest).
+encrypt-at-rest). **RESOLVED (user: ONE storage layer, full-snapshot).**
+- **Step 1 BUILT** (dcgka `ebb324b`): `Session.serialize()/restore()` — full engine snapshot (frames rebuild
+  public state; secret+counter state carried explicitly: full ShareKeyMap, per-epoch SenderChain positions,
+  seq/ctrlSeq, and the rotating protocol signing key + myKeyOpId). Test: receiver decrypts post-restart sends.
+- **Step 2 BUILT** (atsms-lib `c2006d3`): engine state folded into the ONE `StorageAdapter` (saveEngineState/
+  loadEngineState/deleteEngineState/listEngineStateIds; SQLite `engine_state` table + IndexedDB store v2);
+  deleted the separate `DcgkaSessionStore`; `ConversationSession` reworked to persist `Session.serialize()`
+  every op. Restart-and-still-send passes. 231 tests.
+- **Step 3 NEXT**: encryption-at-rest — device master key + `EncryptedStorageAdapter` sealing the engine-state
+  blob (FS must-have); message content = fast follow.
 
 - Wire `@atsms/dcgka` into `@atsms/client`: the stateful `conversations` surface wraps `Session`
   (create/add/remove/update + membership/security streams); `atsms.send()` is the stateless X509 floor; path
