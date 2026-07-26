@@ -29,7 +29,7 @@ import {
 } from './frames.js';
 import { ZERO32, membershipKey, type DeviceID, type Membership } from './ids.js';
 import type { Csprng } from './keyhive.js';
-import type { ShareKeyMap } from './keys.js';
+import { ShareKeyMap } from './keys.js';
 import {
   OP_TYPE_NUM,
   payloadFromCbor,
@@ -216,6 +216,75 @@ export class Session {
     const frames = this.retainedOrder.map((k) => this.retained.get(k)!.raw);
     const welcomeBody = cborEncode([null, frames, [], 1]); // [checkpoint, ops, deliveryMap, profile]
     return this.buildFrame(CLS_WELCOME, this.nextCtrlSeq(), [addOpId], [addOpId, welcomeBody], new Uint8Array(0));
+  }
+
+  // ── state serialization (host persistence, atsms-integration §2) ────────────
+  //
+  // The complete durable state, so a restart restores verbatim (no lossy replay):
+  // the frame log rebuilds the public state (tree/ops/dgm/receiver chains/signing-
+  // key table), and the *secret + counter* state a replay cannot reconstruct is
+  // carried explicitly — the ShareKeyMap (self-authored path secrets), each
+  // epoch's SenderChain position (a reset one would reuse nonces), and my
+  // authoring counters. The signing key + rng + events are injected on restore.
+
+  /** Serialize the session to an opaque blob (the host persists it, encrypted). */
+  serialize(): Uint8Array {
+    const snapshot: CborValue = [
+      1, // version
+      this.retainedOrder.map((k) => this.retained.get(k)!.raw),
+      this.engine.sks.entries().map((e) => [e.pk, e.sk]),
+      this.engine.exportSenderChains().map((c) => [c.epochId, c.ck, c.generation]),
+      this.engine.currentEpoch(), // hex string | null
+      this.seq,
+      this.ctrlSeq,
+      this.myEndpoint,
+      // The PROTOCOL signing key rotates on every control op (§5) — the current
+      // secret + the op that announced it are state, not derivable from the log.
+      this.signing.sk,
+      this.signing.pk,
+      this.myKeyOpId,
+    ];
+    return cborEncode(snapshot);
+  }
+
+  /** Restore a session from `serialize()` output. `rng`/`events` are injected
+   *  (behavior, not persisted state); `device` identifies the local member. */
+  static restore(
+    bytes: Uint8Array,
+    ctx: { device: DeviceID; rng: Csprng; events?: SessionEvents },
+  ): Session {
+    const arr = cborDecode(bytes) as CborValue[];
+    const version = arr[0] as number;
+    if (version !== 1) throw new Error(`unknown session snapshot version ${version}`);
+    const frames = arr[1] as Uint8Array[];
+    const sksEntries = arr[2] as Array<[Uint8Array, Uint8Array]>;
+    const senderChains = arr[3] as Array<[string, Uint8Array, number]>;
+    const currentEpochId = arr[4] as string | null;
+    const seq = arr[5] as number;
+    const ctrlSeq = arr[6] as number;
+    const myEndpoint = arr[7] as string | null;
+    const signingSk = arr[8] as Uint8Array;
+    const signingPk = arr[9] as Uint8Array;
+    const myKeyOpId = arr[10] as Uint8Array;
+
+    const sks = new ShareKeyMap();
+    for (const [pk, sk] of sksEntries) sks.insert(pk, sk);
+
+    // Rebuild the public state from the log with the FULL secret material, so even
+    // self-authored epochs derive. (fromFrames sets the signing key to the create's
+    // initial one; override with the current, rotated key below.)
+    const session = Session.fromFrames(frames, ctx.device, signingSk, sks, ctx.rng, ctx.events ?? {});
+
+    session.signing = { sk: signingSk, pk: signingPk };
+    session.myKeyOpId = myKeyOpId;
+    session.engine.importSenderChains(
+      senderChains.map(([epochId, ck, generation]) => ({ epochId, ck, generation })),
+    );
+    session.engine.setCurrentEpoch(currentEpochId);
+    session.seq = seq;
+    session.ctrlSeq = ctrlSeq;
+    session.myEndpoint = myEndpoint;
+    return session;
   }
 
   // ── local operations (returned bytes are also queued on the outbox) ───────

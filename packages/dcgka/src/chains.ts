@@ -29,6 +29,18 @@ export class SenderChain {
     this.generation += 1;
     return { generation, msgKey, nonce };
   }
+
+  /** Snapshot the ratchet position for state serialization — this is secret state
+   *  a receiver's replay cannot reconstruct (a reset sender chain reuses nonces). */
+  snapshot(): { ck: Uint8Array; generation: number } {
+    return { ck: this.ck, generation: this.generation };
+  }
+
+  static fromSnapshot(s: { ck: Uint8Array; generation: number }): SenderChain {
+    const c = new SenderChain(s.ck);
+    c.generation = s.generation;
+    return c;
+  }
 }
 
 interface SkippedKey {

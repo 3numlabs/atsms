@@ -82,6 +82,11 @@ export class ShareKeyMap {
     return this.m.size;
   }
 
+  /** All (pk, sk) pairs — for state serialization (the engine's secret material). */
+  entries(): Array<{ pk: Uint8Array; sk: Uint8Array }> {
+    return [...this.m.values()].map(({ pk, sk }) => ({ pk, sk }));
+  }
+
   extend(other: ShareKeyMap): void {
     for (const { pk, sk } of other.m.values()) this.insert(pk, sk);
   }

@@ -334,6 +334,35 @@ export class Engine {
     return [...this.epochs].filter(([, e]) => !e.closed).map(([id]) => id);
   }
 
+  // ── state serialization (host persistence, atsms-integration §2) ────────────
+  //
+  // Public state (tree, ops, dgm, receiver chains) is deterministically rebuilt
+  // from the frame log on restore; only the *secret* state a replay cannot
+  // reconstruct is exported here: the ShareKeyMap (via `sks`, incl. self-authored
+  // path secrets) and each epoch's SenderChain ratchet position.
+
+  /** Snapshot every live sender-chain position (epoch → {ck, generation}). */
+  exportSenderChains(): Array<{ epochId: string; ck: Uint8Array; generation: number }> {
+    const out: Array<{ epochId: string; ck: Uint8Array; generation: number }> = [];
+    for (const [id, e] of this.epochs) {
+      if (e.send !== null) out.push({ epochId: id, ...e.send.snapshot() });
+    }
+    return out;
+  }
+
+  /** Restore sender-chain positions onto the (replay-rebuilt) epochs. */
+  importSenderChains(chains: Array<{ epochId: string; ck: Uint8Array; generation: number }>): void {
+    for (const c of chains) {
+      const e = this.epochs.get(c.epochId);
+      if (e !== undefined) e.send = SenderChain.fromSnapshot({ ck: c.ck, generation: c.generation });
+    }
+  }
+
+  /** Restore the current-epoch pointer (replay derives it, but pin it explicitly). */
+  setCurrentEpoch(id: string | null): void {
+    if (id === null || this.epochs.has(id)) this.currentEpochId = id;
+  }
+
   /**
    * The epoch a frame with these `deps` MUST be sealed under (sealed-sender
    * §11.4): the latest **established** epoch among the frame's causal ancestors.
