@@ -90,8 +90,11 @@ The same message reaches a DID by either binding; both MUST converge on **byte-i
 dedup works across transports (a copy that arrived by SMTP and one by HTTPS MUST collide on content identity,
 §1).
 
-- **SMTP (floor).** Deliver the opaque payload as a minimal email with the payload as the attachment, to a
-  `mailto:` endpoint's address. Universal, slow, always available.
+- **SMTP (floor).** Deliver the opaque payload as a minimal email with the payload as a single attachment of
+  media type **`application/atsms-envelope`** (base64 transfer-encoded), to a `mailto:` endpoint's address.
+  The receiver extracts the attachment bytes and stores them exactly as the HTTPS path stores its posted
+  bytes — so the two bindings byte-converge and dedup collides (content identity is hashed over the decoded
+  envelope bytes, not the transfer encoding). Universal, slow, always available.
 - **HTTPS (upgrade).** `POST` the opaque payload to an `https:` endpoint (an `at.atsms.inbox` entry for
   welcomes; the in-band `FrameExt.endpoint` for non-welcome, sealed-sender §12). "SMTP without the SMTP
   tax."
@@ -148,5 +151,7 @@ endpoint URI **scheme** (not the NSID, not a field); `inviteAddress` relocated h
   DCGKA spec set (to `atsms-lib` or a shared spec) is tracked, not yet done.
 - **Per-endpoint hints** — the `{ uri }` object leaves room for max-size / PQ-support fields; deferred until
   a consumer needs them (provider-wide capability discovery via a domain `.well-known` is the alternative).
-- **Reference binding** — realizing §4/§6 in `atsms-worker` (per-DID DCGKA intake fanning to per-device
-  inboxes; the HTTPS endpoint the in-band URL points at) is the cross-repo build that follows this spec.
+- **Reference binding** — BUILT in `atsms-worker` (branch `dcgka-inbound-delivery`): the HTTPS binding
+  (`POST /inbox/{did}`) and the SMTP `mailto:` floor (an `application/atsms-envelope` attachment → the same
+  `dcgka` per-device inboxes, byte-convergent) both realize §4/§6. Deferred there: managed-cert filtering for
+  the multi-provider case (§6), and real anonymous-ingress rate limiting (§4, sealed-sender §7).
