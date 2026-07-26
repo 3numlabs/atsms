@@ -291,6 +291,14 @@ added as a `file:` dep; `src/lib/identity/` = `ATSMSPdsClient` (implements dcgka
 started shipping `.d.ts` (its loose tsc was mis-checking dcgka source). **Build-in-place gotcha:** the `file:`
 dep is a *copy* — `bun install --force` in atsms-lib after any dcgka change.
 
+**T2 capability discovery BUILT** (commit c7faa61): `src/lib/identity/capability.ts` — `resolveDeviceCapabilities`
+(per device: cert → identity key + fingerprint → verify its prekey), `isDcgkaCapable` (≥1 device), `capableDevices`
+(the verified `signedPrekey`s = seal targets for create/add), `selectGroupPath` (all-capable → dcgka, else x509 +
+the incapable DIDs surfaced — no silent downgrade). `deviceFingerprintFromCert` = SHA-256 of the raw P-256 point
+(**flagged: canonical fingerprint definition still needs pinning in the spec + SKI/x509-rkey alignment**). 6 tests
+(14 in file). 228/0. Note: atsms-lib `strict:false` tsc can't narrow dcgka's discriminated unions — read
+`ResolveResult` through a permissive cast (reshape TODO = enable strictNullChecks).
+
 - Wire `@atsms/dcgka` into `@atsms/client`: the stateful `conversations` surface wraps `Session`
   (create/add/remove/update + membership/security streams); `atsms.send()` is the stateless X509 floor; path
   selection by capability discovery (D1); deterministic groupIds replace random convoIds; DMs = 2-member groups (D6).
