@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:unit": "vitest run --exclude '**/fuzz.test.ts'",
     "test:fuzz": "vitest run test/fuzz.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build-types": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@noble/ciphers": "^1.2.0",
@@ -20,5 +21,6 @@
     "@types/node": "^26.1.1",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }
