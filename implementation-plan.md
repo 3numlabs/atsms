@@ -234,7 +234,12 @@ one-shot email semantics too): inbox discovery via the per-DID `at.atsms.inbox` 
 `endpoints`, transport = URI scheme, `mailto:` floor / `https:` upgrade), SMTP⇄HTTPS byte-convergence, sender
 group-by-destination fan-out, receiver intake→per-device fanout + forward-unmanaged. **Sign-off DONE
 (2026-07-25)**: `at.atsms.inbox` supersedes+retires the per-device `inviteAddress` (identity-devices §4.1).
-Remaining: the `atsms-worker` reference binding (cross-repo).
+(6) **Receive-side reference binding BUILT** (cross-repo, `atsms-worker` branch `dcgka-inbound-delivery`):
+`POST /inbox/{did}` — anonymous per-DID HTTPS intake for an opaque DCGKA envelope → fans a `dcgka`-typed copy
+into each per-device cert inbox; no sender IP recorded (privacy budget §7); Inbox DO accepts `messageType:
+dcgka` on the opaque path; list `?type=dcgka` filter; 60 worker tests green. Deferred there: SMTP-floor
+recognition of a dcgka envelope (needs a MIME convention), managed-cert filtering (multi-provider), real
+anonymous-ingress rate limiting.
 
 - `sealed-sender` module: both modes per D7 — asym seal/unseal + sym envelope (envKey derivation, tag
   table with grace epochs, per-recipient fresh-nonce fan-out), padding buckets, envelope dedup.
