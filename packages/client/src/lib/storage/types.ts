@@ -48,6 +48,8 @@ export interface ConversationMetadata {
   title?: string;
   isGroup?: boolean;
   pinnedAt?: Date;
+  /** Which encryption path this conversation runs on (atsms-integration §4). */
+  protocol?: "dcgka" | "x509";
 }
 
 export interface ConversationFilter {

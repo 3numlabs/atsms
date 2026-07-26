@@ -4,3 +4,4 @@
  */
 
 export * from "./conversation-session.js";
+export * from "./conversation.js";
