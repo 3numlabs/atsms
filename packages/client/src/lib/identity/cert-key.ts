@@ -18,3 +18,23 @@ export async function identityPublicKeyFromCert(certPEM: string): Promise<Uint8A
   const raw = await cryptoProvider.subtle.exportKey("raw", key);
   return new Uint8Array(raw);
 }
+
+/**
+ * The device fingerprint (lowercase hex) — the `at.atsms.x509` / `at.atsms.prekey`
+ * record rkey that pairs a device's cert with its prekey (identity-devices §4).
+ * Computed as SHA-256 of the raw public key point, so publish-side and
+ * resolve-side agree.
+ *
+ * NOTE (flagged): the canonical fingerprint definition still needs pinning in the
+ * spec (SHA-256 of the raw point vs the full SPKI) and alignment with the cert's
+ * SKI extension + the today-serial-keyed x509 rkey. This is the single source of
+ * truth for atsms-lib until then.
+ */
+export async function deviceFingerprintFromCert(certPEM: string): Promise<string> {
+  const raw = await identityPublicKeyFromCert(certPEM);
+  // Cast: lib.dom's BufferSource rejects Uint8Array<ArrayBufferLike> (SharedArrayBuffer union).
+  const digest = new Uint8Array(await cryptoProvider.subtle.digest("SHA-256", raw as BufferSource));
+  let hex = "";
+  for (const b of digest) hex += b.toString(16).padStart(2, "0");
+  return hex;
+}

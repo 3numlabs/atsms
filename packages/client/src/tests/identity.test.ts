@@ -8,7 +8,13 @@ import { buildPrekeyRecord, resolvePrekey, verifyPrekeyRecord } from "@atsms/dcg
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { ATSMSPdsClient, resolveDidToPds } from "../lib/identity/pds-client.js";
-import { identityPublicKeyFromCert } from "../lib/identity/cert-key.js";
+import { deviceFingerprintFromCert, identityPublicKeyFromCert } from "../lib/identity/cert-key.js";
+import {
+  capableDevices,
+  isDcgkaCapable,
+  resolveDeviceCapabilities,
+  selectGroupPath,
+} from "../lib/identity/capability.js";
 import { cryptoProvider } from "../lib/crypto-provider.js";
 import { generateTestEndpointCertificate } from "./test-certificates.js";
 
@@ -165,3 +171,103 @@ function pemToDer(pem: string): Uint8Array {
   for (let i = 0; i < bin.length; i++) der[i] = bin.charCodeAt(i);
   return der;
 }
+
+function b64urlToBytes(s: string): Uint8Array {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** Extract the raw 32-byte P-256 scalar from a PKCS#8 private-key PEM (the identity signing key). */
+async function p256Scalar(privateKeyPEM: string): Promise<Uint8Array> {
+  const key = await cryptoProvider.subtle.importKey(
+    "pkcs8",
+    pemToDer(privateKeyPEM),
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign"],
+  );
+  const jwk = await cryptoProvider.subtle.exportKey("jwk", key);
+  return b64urlToBytes(jwk.d!);
+}
+
+const T0 = Date.parse("2026-07-26T00:00:00.000Z");
+const WEEK = 7 * 24 * 60 * 60 * 1000;
+const iso = (ms: number) => new Date(ms).toISOString();
+
+/** Seed one device (cert + optionally a prekey) into a mock repo; returns its fingerprint. */
+async function seedDevice(
+  pds: ATSMSPdsClient,
+  rkey: string,
+  opts: { prekey?: "valid" | "expired" | "tampered" } = { prekey: "valid" },
+): Promise<string> {
+  const { cert, privateKey } = await generateTestEndpointCertificate(DID, `${rkey}.example`, "atsms.email");
+  await pds.putRecord("at.atsms.x509", rkey, { certificate: cert, $type: "at.atsms.x509" });
+  const fp = await deviceFingerprintFromCert(cert);
+  if (opts.prekey) {
+    const scalar = await p256Scalar(privateKey);
+    const signedPrekey = await sha256(enc(`sp-${rkey}`));
+    const expiresAt = opts.prekey === "expired" ? iso(T0 - WEEK) : iso(T0 + WEEK);
+    const record = buildPrekeyRecord({ signedPrekey, createdAt: iso(T0 - WEEK), expiresAt }, scalar);
+    if (opts.prekey === "tampered") record.signedPrekey = new Uint8Array(32); // breaks bundleSig
+    await pds.putRecord("at.atsms.prekey", fp, record);
+  }
+  return fp;
+}
+
+describe("capability discovery (§3)", () => {
+  test("a device with a valid prekey is capable; the DID is capable; capableDevices returns its bundle", async () => {
+    const pds = new ATSMSPdsClient(mockAgent(DID) as any, DID);
+    const fp = await seedDevice(pds, "dev1", { prekey: "valid" });
+
+    const caps = await resolveDeviceCapabilities(pds, DID, T0);
+    expect(caps).toHaveLength(1);
+    expect(caps[0]).toMatchObject({ fingerprint: fp, capable: true });
+    expect(caps[0].prekey).toBeDefined();
+
+    expect(await isDcgkaCapable(pds, DID, T0)).toBe(true);
+    const devs = await capableDevices(pds, DID, T0);
+    expect(devs.map((d) => d.fingerprint)).toEqual([fp]);
+  });
+
+  test("no prekey → not capable (not-found)", async () => {
+    const pds = new ATSMSPdsClient(mockAgent(DID) as any, DID);
+    await seedDevice(pds, "dev1", { prekey: undefined });
+    const caps = await resolveDeviceCapabilities(pds, DID, T0);
+    expect(caps[0]).toMatchObject({ capable: false, reason: "not-found" });
+    expect(await isDcgkaCapable(pds, DID, T0)).toBe(false);
+  });
+
+  test("expired prekey → not capable (expired)", async () => {
+    const pds = new ATSMSPdsClient(mockAgent(DID) as any, DID);
+    await seedDevice(pds, "dev1", { prekey: "expired" });
+    expect((await resolveDeviceCapabilities(pds, DID, T0))[0].reason).toBe("expired");
+  });
+
+  test("tampered prekey → not capable (bad-signature)", async () => {
+    const pds = new ATSMSPdsClient(mockAgent(DID) as any, DID);
+    await seedDevice(pds, "dev1", { prekey: "tampered" });
+    expect((await resolveDeviceCapabilities(pds, DID, T0))[0].reason).toBe("bad-signature");
+  });
+
+  test("DID is capable if ≥1 of several devices is", async () => {
+    const pds = new ATSMSPdsClient(mockAgent(DID) as any, DID);
+    await seedDevice(pds, "dev1", { prekey: undefined }); // incapable
+    await seedDevice(pds, "dev2", { prekey: "valid" }); // capable
+    const caps = await resolveDeviceCapabilities(pds, DID, T0);
+    expect(caps.filter((d) => d.capable)).toHaveLength(1);
+    expect(await isDcgkaCapable(pds, DID, T0)).toBe(true);
+  });
+
+  test("selectGroupPath: dcgka when all capable, x509 (with incapable list) otherwise", async () => {
+    const capablePds = new ATSMSPdsClient(mockAgent(DID) as any, DID);
+    await seedDevice(capablePds, "dev1", { prekey: "valid" });
+    expect(await selectGroupPath(capablePds, [DID], T0)).toEqual({ protocol: "dcgka", incapable: [] });
+
+    const floorPds = new ATSMSPdsClient(mockAgent(DID) as any, DID);
+    await seedDevice(floorPds, "dev1", { prekey: undefined });
+    expect(await selectGroupPath(floorPds, [DID], T0)).toEqual({ protocol: "x509", incapable: [DID] });
+  });
+});

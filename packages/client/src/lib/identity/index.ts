@@ -5,3 +5,4 @@
 
 export * from "./pds-client.js";
 export * from "./cert-key.js";
+export * from "./capability.js";
