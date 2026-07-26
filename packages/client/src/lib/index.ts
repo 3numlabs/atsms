@@ -28,6 +28,9 @@ export {
 // Export identity module (dcgka records/PDS/prekey bridge — sdk-shape.md Part A)
 export * from "./identity/index";
 
+// Export conversations module (stateful DCGKA sessions + persistence — sdk-shape.md Part A)
+export * from "./conversations/index";
+
 // Export crypto operations
 export {
   decryptAndVerifyMessageSignature,
