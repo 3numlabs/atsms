@@ -117,18 +117,14 @@ retired with it.)*
   `at://{did}/at.atsms.x509/{fingerprint}`.
 - JWT-auth and S/MIME verifiers MUST require `certificateType == "endpoint"` semantics, enforceable from
   the EKU set alone — the EKUs remain the domain-separation guard should a second cert type ever return.
-- The endpoint **record** additionally carries **`inviteAddress`** — the Welcome/invite destination
-  (spec v1.1 §7) — as a mutable, MST-bound record field (moved here from the prekey bundle 2026-07-16).
-  Layering criterion: *who consumes a field*, not its lifetime — classic S/MIME senders and JWT verifiers
-  need identity + reachability and nothing else from this layer, so reachability lives in this collection
-  (sealed senders additionally fetch the prekey bundle for the envelope key — §4.2, D10).
-  `inviteAddress` is deliberately **not** device-signed: its integrity is liveness-only (a
-  tampered address can only misroute sealed envelopes, never break confidentiality), so the DID-signed
-  commit suffices. Updates are ordinary record updates.
-  - **Under review (D13, 2026-07-25):** [`inbound-delivery.md`](./inbound-delivery.md) §3 proposes
-    relocating the Welcome/invite destination to a **per-DID** `at.atsms.welcome.<mode>` record and
-    **retiring this per-device `inviteAddress`** (same liveness-only integrity). Sign-off pending; this
-    field stays as written until then.
+- **Reachability is no longer on this record (D13, 2026-07-25).** The Welcome/invite destination used to be
+  a per-device **`inviteAddress`** field here; it is **retired and relocated** to the per-DID
+  **`at.atsms.inbox`** singleton (rkey `self`; ordered `endpoints`, transport = URI scheme, `mailto:` floor
+  — [`inbound-delivery.md`](./inbound-delivery.md) §3), which serves classic S/MIME, one-shot sealed, and
+  DCGKA welcomes alike. Its integrity model carries over unchanged: an ordinary DID-signed commit,
+  liveness-only (a tampered address can only misroute a sealed envelope, never break confidentiality), not
+  device-signed. *(Consumers that read `inviteAddress` now read `at.atsms.inbox`; a per-device override MAY
+  return later if a device wants a distinct address — not needed for v1.)*
 
 - **SKI = SHA-256 of the public key (RFC 7093 method 1 profile)**, so the cert's SKI *equals* its
   record's rkey = the device fingerprint.
@@ -282,7 +278,9 @@ X3DH mode relied on, now permanent and sufficient. (Design record: 2sm.md §5.0.
 - **Revocation grace + cache staleness values** (§7) — 30 d / 24 h are PROPOSED defaults awaiting sign-off.
 - ~~OPK design~~ **RETIRED 2026-07-22 (D11)** — the problem dissolved with X3DH (§8).
 - ~~`identityDh` field~~ **removed 2026-07-22 (D11)** — X3DH-only consumer, retired with 2sm.md (§4.2).
-- ~~`inviteAddress` placement~~ **resolved 2026-07-16** — on the `at.atsms.x509` endpoint record (§4.1).
+- ~~`inviteAddress` placement~~ **resolved 2026-07-16** (on the x509 endpoint record), then **retired +
+  relocated 2026-07-25 (D13)** — reachability is now the per-DID `at.atsms.inbox` singleton
+  ([`inbound-delivery.md`](./inbound-delivery.md) §3), not a per-device field (§4.1).
 - ~~Prekey record name/rkey~~ **resolved 2026-07-16** — `at.atsms.prekey` (singular); rkey originally the
   endpoint-cert serial, **re-keyed 2026-07-17 to the device fingerprint** (below).
 - ~~Serial vs fingerprint~~ **decided 2026-07-17 (user sign-off)**: the fingerprint is the sole protocol

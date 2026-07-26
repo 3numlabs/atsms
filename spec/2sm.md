@@ -152,8 +152,8 @@ consumes from it:
   fields) — verified against the endpoint cert before any X3DH.
 
 The record is fetched by **every** DCGKA bootstrap (the signed prekey is a mandatory X3DH ingredient —
-the future OPK is the optional fourth DH, never a substitute). Reachability (`inviteAddress`) lives on the
-`at.atsms.x509` endpoint record, not here (identity-devices.md §4.1).
+the future OPK is the optional fourth DH, never a substitute). Reachability lives in the per-DID
+`at.atsms.inbox` record, not here (D13 2026-07-25; was per-device `inviteAddress` — inbound-delivery.md §3).
 
 ### 5.0.1 One-time prekeys — design deferred (decided 2026-07-16)
 

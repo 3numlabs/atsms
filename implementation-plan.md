@@ -97,9 +97,10 @@ unconstrained (opaque bytes to the base). Prototyped: `cbor.ts` map path removed
 4 fuzz green. Spec: wire-format §1/§1.1/§3.2.
 
 **D13 — Non-welcome delivery addressing = advertised in-band, not via a public record. ✅ DECIDED 2026-07-25.**
-"Provider" is dropped as a protocol concept. A DID's **welcome** address MUST be a public ATProto record
-`at.atsms.welcome.<mode>` (`smtp` = interop floor; `https` etc. optional) — a party adding you shares no
-secret with you yet, so it can only find you publicly. A **non-welcome** frame is only ever sent by a party
+"Provider" is dropped as a protocol concept. A DID's **welcome** address MUST be publicly discoverable — the
+per-DID `at.atsms.inbox` singleton (rkey `self`; ordered `endpoints`, transport = URI scheme, `mailto:` floor
+/ `https:` upgrade; supersedes+retires the per-device `inviteAddress`, inbound-delivery.md §3) — a party adding
+you shares no secret with you yet, so it can only find you publicly. A **non-welcome** frame is only ever sent by a party
 that already shares group state, so its (high-volume, linkable) address is advertised **in-band** in the
 signed frame `ext` (`FrameExt.endpoint`) — the same self-authored, LWW, in-band advert shape as signing-key
 rotation, stamped on change + re-adverted on `coverage`, learned into a per-device table, resolved locally
@@ -169,7 +170,7 @@ standalone. This is the bulk of the *design* work — treat these as the real de
 | ~~`spec/dcgka-core.md`~~ — **SUPERSEDED 2026-07-22 (D11)** | State machine per paper Fig. 4 with deviations marked (MessageID op-IDs, DGM-state welcomes, process-ack OR fix); byte-exact HKDF labels (`atsms-dcgka:v1:*`); ack lifecycle normative (T_ACK, batching/piggyback, GC coupling); skipped-key app ratchet with p2panda constants; dominating-update rule (G11); storage/GC table; copy-on-success mutation discipline | G2, G3, G7, G11, G15 |
 | ~~`spec/2sm.md`~~ — **SUPERSEDED 2026-07-22 (D11)** | App. D rotation discipline over HPKE (p2panda instantiation); X3DH bootstrap against `at.atsms.prekey/<fingerprint>` (identity-DH key + weekly signed prekey, one `bundleSig`); **interim mode is signed-prekey-only — OPK design being formulated, ships before v1 release**; `inviteAddress` moved to the x509 endpoint record (identity layer); mandatory post-join update heals; key-index GC via cross-layer ack optimization; Remark 11 + post-impersonation caveats documented | G1 |
 | `spec/dgm.md` — **DRAFTED v0.1** | **The group-management model** (the flagged gap): strong-remove semantics (SR1–SR5), admin/member roles evaluated purely from history, user-vs-device op expansion, re-add nonces (= add-op MessageID), eviction policy hook, determinism test obligations, insider-divergence digest + recovery | G5, G14 |
-| `spec/identity-devices.md` — **DRAFTED v0.1** | Identity model per spec v1.1 §4/§4.1: device identity **is** the `at.atsms.x509` endpoint-cert keypair (delegation = publication in the DID repo); ~~medium-lived sealing cert as second cert type~~ (removed 2026-07-22, D10 — `signedPrekey` is the sealed-asym target, joint-use analysis §3.1); **`at.atsms.prekey`** lexicon (rkey = **device fingerprint**, re-keyed from cert serial 2026-07-17 — structural pairing; identity-DH key + weekly signed prekey + `bundleSig` only — E2EE-session material; canonical shape lives here); `inviteAddress` on the x509 endpoint record (identity/reachability layer — serves S/MIME, one-shot sealed, and DCGKA alike); **OPK layer being formulated — deferred during prototyping, ships before v1** (serve-once checkout endpoint candidate); multi-device model (`DeviceID` + `Membership(admittedBy)` split, 2026-07-17; rotation/loss/compromise = remove(+add)); revocation tombstones | G6, G8 |
+| `spec/identity-devices.md` — **DRAFTED v0.1** | Identity model per spec v1.1 §4/§4.1: device identity **is** the `at.atsms.x509` endpoint-cert keypair (delegation = publication in the DID repo); ~~medium-lived sealing cert as second cert type~~ (removed 2026-07-22, D10 — `signedPrekey` is the sealed-asym target, joint-use analysis §3.1); **`at.atsms.prekey`** lexicon (rkey = **device fingerprint**, re-keyed from cert serial 2026-07-17 — structural pairing; identity-DH key + weekly signed prekey + `bundleSig` only — E2EE-session material; canonical shape lives here); reachability = the per-DID `at.atsms.inbox` singleton (D13 2026-07-25 — supersedes+retires the per-device `inviteAddress`; serves S/MIME, one-shot sealed, and DCGKA alike; inbound-delivery.md §3); **OPK layer being formulated — deferred during prototyping, ships before v1** (serve-once checkout endpoint candidate); multi-device model (`DeviceID` + `Membership(admittedBy)` split, 2026-07-17; rotation/loss/compromise = remove(+add)); revocation tombstones | G6, G8 |
 | `spec/ordering-auth.md` — **DRAFTED v0.1** | The ACB substitute: content-addressed MessageIDs (signature covers seq/deps), dependency rules per message class, readiness predicates (FIFO, referent-before-ack, welcome-first, instance-based add-ready), bounded buffering, protocol-signing-key rotation chained to the device identity cert, replay rules, membership gating incl. removed-member race, end-to-end repair, stale-member surfacing | G4, G12 |
 | `spec/sealed-sender.md` | Envelope format (no cleartext recipient-device ID), signed-prekey sealed-asym target (D10), HPKE suite, padding buckets sized so ack storms are indistinguishable, envelope-level idempotency, anonymous ingress + abuse control per D5, Tor note | G9 |
 | `spec/wire-format.md` | Deterministic CBOR schemas for every message; version negotiation; the canonical **test-vector suite** definition (cross-checked against the Java prototype) | G13 |
@@ -226,14 +227,14 @@ unseals + feeds frames back in, mode chosen by `engine.sealEpochFor(deps)` (pare
 only pre-first-epoch), bounded unknown-tag buffering. End-to-end sealed-transport test green (create/update/app/
 add/heal all over envelopes). (4) **In-band delivery addressing (D13):** `FrameExt.endpoint` + `Session.setEndpoint/
 endpointOf`; `SealLayer` emits `{to, url, envelope}` resolving the recipient's in-band-advertised URL — welcome
-routes via the public `at.atsms.welcome.*` record, non-welcome via the in-band endpoint. Remaining: the receive-
+routes via the public `at.atsms.inbox` record, non-welcome via the in-band endpoint. Remaining: the receive-
 side reference binding (per-DID intake → per-device fanout) lives in `atsms-worker`. (5) **Inbound-delivery
 contract DRAFTED** (`spec/inbound-delivery.md` v0.1, common ATSMS — payload-agnostic, serves the stateless
-one-shot email semantics too): welcome discovery via per-DID `at.atsms.welcome.<mode>` (`smtp` floor / `https`
-upgrade), SMTP⇄HTTPS byte-convergence, sender group-by-destination fan-out, receiver intake→per-device fanout +
-forward-unmanaged. **One sign-off pending**: reconcile the new per-DID welcome record against the existing
-per-device `inviteAddress` (identity-devices §4.1, decided 2026-07-16) — proposed = relocate + retire
-`inviteAddress`. Remaining after that: the `atsms-worker` reference binding (cross-repo).
+one-shot email semantics too): inbox discovery via the per-DID `at.atsms.inbox` singleton (rkey `self`; ordered
+`endpoints`, transport = URI scheme, `mailto:` floor / `https:` upgrade), SMTP⇄HTTPS byte-convergence, sender
+group-by-destination fan-out, receiver intake→per-device fanout + forward-unmanaged. **Sign-off DONE
+(2026-07-25)**: `at.atsms.inbox` supersedes+retires the per-device `inviteAddress` (identity-devices §4.1).
+Remaining: the `atsms-worker` reference binding (cross-repo).
 
 - `sealed-sender` module: both modes per D7 — asym seal/unseal + sym envelope (envKey derivation, tag
   table with grace epochs, per-recipient fresh-nonce fan-out), padding buckets, envelope dedup.

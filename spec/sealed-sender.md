@@ -288,16 +288,17 @@ per-recipient rules exist to avoid. Documented trade, not an accident.
 
 **The asymmetry that drives this (normative rationale).** A **welcome** is sent by a party that shares
 *no* secret with the recipient yet (they are adding the recipient to a group the recipient is not in), so
-its delivery address MUST be **publicly discoverable** from the recipient's DID — an ATProto record
-`at.atsms.welcome.<mode>` (e.g. `at.atsms.welcome.smtp` → `{ email }`; `smtp` is the required interop
-floor, other modes like `https` MAY be advertised). Code receiving at that address MAY be helpful — deliver
+its delivery address MUST be **publicly discoverable** from the recipient's DID — the per-DID
+`at.atsms.inbox` record (singleton rkey `self`; an ordered `endpoints` list where each URI's scheme is its
+transport, `mailto:` = the required interop floor, `https:` an optional upgrade;
+[`inbound-delivery.md`](./inbound-delivery.md) §3). Code receiving at that address MAY be helpful — deliver
 to the `at.atsms.x509` certs it manages and forward to the SANs it does not — but that helpfulness is an
 implementation detail, **not a protocol actor** ("provider" is deliberately *not* a protocol concept).
 
 A **non-welcome** frame, by contrast, is only ever sent by a party that **already shares group state** with
 the recipient. Its delivery address therefore need **not** be public: it is advertised **in-band**, inside
 the authenticated group channel, so the high-volume/linkable address never appears in a public record. The
-public footprint stays exactly one thing — the welcome record.
+public footprint stays exactly one thing — the `at.atsms.inbox` record.
 
 **Mechanism (normative).** A device advertises its non-welcome delivery endpoint in the **signed frame
 `ext`** (wire-format §3.2; `FrameExt.endpoint`) — the same self-authored, last-writer-wins, in-band advert
@@ -309,7 +310,7 @@ reconverges on every member's address the same way coverage reconciles heads. Re
 orders its adverts). The seal/delivery layer resolves each recipient's fingerprint → endpoint locally (no
 network lookup — learned in-band exactly as prekeys are, §11.4) and emits `(recipient, url, sealed
 envelope)`; the literal `POST url` is the transport's job. Welcome frames carry no in-band url — they are
-routed via the recipient's public `at.atsms.welcome.*` record.
+routed via the recipient's public `at.atsms.inbox` record.
 
 **Granularity is a device policy, not a protocol fork.** Because the advert rides a group-scoped,
 self-authored op, the mechanism is inherently **per-(device, group)**. What a device *puts* there is
@@ -325,7 +326,7 @@ policy:
 **Accepted tradeoffs.** (1) The endpoint lives in *signed group state*, so changing it is a group-visible
 (authenticated) event — normally desirable (the people who message you learn your address changed).
 (2) **Recovery** relies on re-`welcome` (a member that loses group state re-bootstraps via the public
-welcome record), so **no public non-welcome record is required**. (3) `url` may be `null` transiently
+`at.atsms.inbox` record), so **no public non-welcome record is required**. (3) `url` may be `null` transiently
 (recipient's advert not yet processed); the transport holds/retries — envelopes are never mis-delivered,
 only delayed.
 
@@ -362,7 +363,7 @@ only delayed.
   tokens.
 - ~~Non-welcome delivery addressing~~ **decided 2026-07-25 (user sign-off)**: advertised **in-band** in
   the signed frame `ext` (§12), not a public record; welcome stays the only public address
-  (`at.atsms.welcome.<mode>`, `smtp` floor). "Provider" dropped as a protocol concept.
+  (`at.atsms.inbox`, singleton `self`, `mailto:` floor). "Provider" dropped as a protocol concept.
 - **Group drop-point sealing** (spec v1.1 §9 profile 2, optional post-v1 mode): deferred; will build on
   §11's derivation machinery (see §11.6).
 - ~~Symmetric envelope mode~~ **decided 2026-07-20 (user sign-off)**: `sealed-sym` for all
