@@ -18,6 +18,7 @@ export * from './frames.js';
 export * from './hpke.js';
 export * from './ordering.js';
 export * from './seal-layer.js';
+export * from './records.js';
 export * from './ids.js';
 export * from './kdf.js';
 export * from './keyhive.js';

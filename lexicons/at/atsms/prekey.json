@@ -1,0 +1,39 @@
+{
+  "lexicon": 1,
+  "id": "at.atsms.prekey",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "AT-SMS advanced-tier prekey bundle: the always-available X25519 bootstrap key for a device. One record per device, keyed by the device fingerprint (SHA-256 of the endpoint cert SPKI), structurally paired with at.atsms.x509/<fingerprint>. The signedPrekey is both the BeeKEM admission leaf key and the sealed-asym HPKE recipient key (identity-devices.md §4.2).",
+      "key": "string",
+      "record": {
+        "type": "object",
+        "required": ["signedPrekey", "createdAt", "expiresAt", "bundleSig"],
+        "properties": {
+          "signedPrekey": {
+            "type": "bytes",
+            "description": "X25519 public key (32 bytes). Rotated weekly (parameters.md).",
+            "minLength": 32,
+            "maxLength": 32
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When this bundle was created (ISO 8601)."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When this bundle expires (ISO 8601); ~1 week after createdAt."
+          },
+          "bundleSig": {
+            "type": "bytes",
+            "description": "ECDSA-P256 signature by the device identity key (the at.atsms.x509 endpoint cert key) over SHA-256 of the deterministic CBOR positional array [signedPrekey, createdAt, expiresAt] — binds the whole generation, preventing cross-generation mix-and-match.",
+            "minLength": 64,
+            "maxLength": 64
+          }
+        }
+      }
+    }
+  }
+}

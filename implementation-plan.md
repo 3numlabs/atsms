@@ -252,6 +252,15 @@ limiting.
 
 ## 7. Phase 4 — Identity, lexicon, multi-device
 
+**Status: tranche A BUILT** (records codec, pure/RN-safe — no network). Lexicon files
+`lexicons/at/atsms/{prekey,inbox}.json` (canonical schemas, x509.json format). `packages/dcgka/src/records.ts`:
+`at.atsms.prekey` build + `bundleSig` sign/verify (ECDSA-P256 over SHA-256 of the strict-CBOR positional array
+`[signedPrekey, createdAt, expiresAt]`, encoding pinned in identity-devices §4.2) + `expiresAt` check;
+`at.atsms.inbox` build/validate (ordered `endpoints`, `mailto:` floor enforced, `pickEndpoint` preference/scheme
+selection). 11 record tests + frozen KAT `test-vectors/records.json` (incl. the §4.3 reordered-fields rejection).
+106 tests green. **Tranche B (next): PDS I/O** — a thin `PdsClient` interface + `@atproto/api` adapter, the
+publish/rotate/revoke lifecycle (weekly prekey rotation + one-period grace, D4), and IdentityManager.
+
 - `at.atsms.prekey` lexicon in this repo's `lexicons/` (sealing-cert type dropped — D10); publish/rotate/revoke flows via `@atproto/api` (reuse
   `ATSMSClient` PDS plumbing).
 - IdentityManager: device key generation, user-signed delegation, epoch-nonced member IDs, lost-device

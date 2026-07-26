@@ -1,0 +1,38 @@
+{
+  "lexicon": 1,
+  "id": "at.atsms.inbox",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "AT-SMS per-DID inbound-delivery record: where to reach this identity. A singleton (rkey 'self'), discovered with a single getRecord. Payload-agnostic — it addresses the DCGKA sealed-envelope path and the stateless one-shot path alike. Supersedes the retired per-device inviteAddress (inbound-delivery.md §3).",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["endpoints"],
+        "properties": {
+          "endpoints": {
+            "type": "array",
+            "description": "Delivery endpoints ordered by preference (most-preferred first). A sender uses the first URI scheme it understands. At least one mailto: endpoint MUST be present (the SMTP interop floor).",
+            "minLength": 1,
+            "items": {
+              "type": "ref",
+              "ref": "#endpoint"
+            }
+          }
+        }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "description": "One delivery endpoint. The URI scheme is the transport: mailto: = SMTP floor (deliver as an application/atsms-envelope attachment), https: = POST the payload. Unknown schemes are ignored by senders that don't understand them.",
+      "required": ["uri"],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri",
+          "description": "e.g. mailto:did!plc!abc123@host, or https://host/path"
+        }
+      }
+    }
+  }
+}

@@ -154,10 +154,17 @@ at.atsms.prekey (rkey = device fingerprint)
   $type:         "at.atsms.prekey",
   signedPrekey:  X25519Pub,        // rotated WEEKLY (parameters.md)
   createdAt, expiresAt: datetime,
-  bundleSig:     bytes             // ECDSA-P256 by the device identity key over the deterministic CBOR
-                                   // of ALL preceding fields (prevents cross-generation mix-and-match)
+  bundleSig:     bytes             // ECDSA-P256 (64-byte compact r‖s) by the device identity key over
+                                   // SHA-256( cbor([signedPrekey, createdAt, expiresAt]) ) — the preceding
+                                   // fields as a strict-CBOR POSITIONAL array in declaration order
+                                   // (map-free DRISL profile, wire-format §1; bijective ⇒ the signature is
+                                   // unambiguous). Binds the whole generation — prevents cross-generation
+                                   // mix-and-match. Verify with RFC 6979 deterministic ECDSA.
 }
 ```
+
+*(Lexicon: [`lexicons/at/atsms/prekey.json`](../lexicons/at/atsms/prekey.json). Record codec + `bundleSig`
+sign/verify: `@atsms/dcgka` `records.ts`; frozen KAT in `test-vectors/records.json`.)*
 
 Two consumer classes: **admission** — an `add` op pins the verified `signedPrekey` as the joiner's
 BeeKEM leaf key (beekem-core §4.2) — and **every `sealed-asym` sender** (welcomes, first contact,

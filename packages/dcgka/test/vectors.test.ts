@@ -38,6 +38,9 @@ import { concatBytes } from '../src/bytes.js';
 import { decodeExt, encodeExt } from '../src/ext.js';
 import { encodeFrameBody, messageIdOf, parseFrame, signFrame, generateSigningKeypair } from '../src/frames.js';
 import { encodeMembership, ZERO32, type Membership } from '../src/ids.js';
+import { buildInboxRecord, buildPrekeyRecord, prekeyBundleSigInput } from '../src/records.js';
+import { p256 } from '@noble/curves/p256';
+import { blake3 } from '@noble/hashes/blake3';
 import {
   CONTENT_FRAME,
   SEAL_ASYM_INFO,
@@ -272,6 +275,32 @@ function BUCKETS_probe(): Record<string, number> {
 
 // ── the freeze-or-verify harness ─────────────────────────────────────────────
 
+function buildRecordVectors(): unknown {
+  const utf8 = (s: string) => new TextEncoder().encode(s);
+  const identitySk = blake3(utf8('records:identity-sk'), { dkLen: 32 });
+  const identityPub = p256.getPublicKey(identitySk);
+  const signedPrekey = x25519.getPublicKey(blake3(utf8('records:prekey-sk'), { dkLen: 32 }));
+  const createdAt = '2026-07-26T00:00:00.000Z';
+  const expiresAt = '2026-08-02T00:00:00.000Z';
+  const prekey = buildPrekeyRecord({ signedPrekey, createdAt, expiresAt }, identitySk);
+  const inbox = buildInboxRecord([
+    { uri: 'https://relay.haiven.mobile/atsms/in/9d2e' },
+    { uri: 'mailto:did!plc!abc123@haiven.mobile' },
+  ]);
+  return {
+    note: 'at.atsms.prekey bundleSig = ECDSA-P256 (RFC 6979 deterministic) over SHA-256 of cbor([signedPrekey, createdAt, expiresAt]); at.atsms.inbox = ordered endpoints, mailto floor (identity-devices §4.2 / inbound-delivery §3).',
+    prekey: {
+      identityPubHex: bytesToHex(identityPub),
+      signedPrekeyHex: bytesToHex(signedPrekey),
+      createdAt,
+      expiresAt,
+      bundleSigInputHex: bytesToHex(prekeyBundleSigInput({ signedPrekey, createdAt, expiresAt })),
+      bundleSigHex: bytesToHex(prekey.bundleSig),
+    },
+    inbox: { endpoints: inbox.endpoints.map((e) => e.uri) },
+  };
+}
+
 function freezeOrVerify(name: string, fresh: unknown): void {
   const path = fileURLToPath(new URL(`../../../test-vectors/${name}.json`, import.meta.url));
   if (!existsSync(path)) {
@@ -294,6 +323,10 @@ describe('frozen test vectors (wire-format §9)', () => {
 
   it('envelope vectors reproduce the frozen bytes', () => {
     freezeOrVerify('envelopes', buildEnvelopeVectors());
+  });
+
+  it('record vectors reproduce the frozen bytes', () => {
+    freezeOrVerify('records', buildRecordVectors());
   });
 
   it('all frame vectors round-trip (parse ∘ encode = identity)', () => {
