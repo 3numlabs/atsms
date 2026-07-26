@@ -258,8 +258,16 @@ limiting.
 `[signedPrekey, createdAt, expiresAt]`, encoding pinned in identity-devices §4.2) + `expiresAt` check;
 `at.atsms.inbox` build/validate (ordered `endpoints`, `mailto:` floor enforced, `pickEndpoint` preference/scheme
 selection). 11 record tests + frozen KAT `test-vectors/records.json` (incl. the §4.3 reordered-fields rejection).
-106 tests green. **Tranche B (next): PDS I/O** — a thin `PdsClient` interface + `@atproto/api` adapter, the
-publish/rotate/revoke lifecycle (weekly prekey rotation + one-period grace, D4), and IdentityManager.
+**Tranche B BUILT** (`src/identity.ts`, pure/RN-safe over an injected seam — no `@atproto/api` dep):
+`PdsClient` interface (put/delete on own repo, get/list on any repo; adapter must preserve `bytes`⇄Uint8Array);
+prekey lifecycle `publishPrekey`/`resolvePrekey` (fetch **and** verify `bundleSig` against the device identity
+key + injected-clock expiry)/`revokePrekey`; inbox lifecycle `publishInbox(Endpoints)`/`resolveInbox`;
+`PrekeyManager` (weekly rotation, holds two live secrets = current + grace per D4, injected rng+clock, produces
+the record to publish + the `liveSecrets()` array SealLayer consumes). 10 lifecycle tests over an in-memory
+mock PDS (round-trip, wrong-key/expired/revoked rejection, rotation grace, inbox floor). 116 tests green.
+**Remaining (→ Phase 5 integration edge):** the real `@atproto/api` adapter implementing `PdsClient` (reuse
+atsms-lib `ATSMSClient` plumbing + its X.509 cert parsing for the identity pub), and the lost-device
+revocation→group-removes flow.
 
 - `at.atsms.prekey` lexicon in this repo's `lexicons/` (sealing-cert type dropped — D10); publish/rotate/revoke flows via `@atproto/api` (reuse
   `ATSMSClient` PDS plumbing).
