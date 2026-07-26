@@ -237,9 +237,10 @@ group-by-destination fan-out, receiver intake→per-device fanout + forward-unma
 (6) **Receive-side reference binding BUILT** (cross-repo, `atsms-worker` branch `dcgka-inbound-delivery`):
 `POST /inbox/{did}` — anonymous per-DID HTTPS intake for an opaque DCGKA envelope → fans a `dcgka`-typed copy
 into each per-device cert inbox; no sender IP recorded (privacy budget §7); Inbox DO accepts `messageType:
-dcgka` on the opaque path; list `?type=dcgka` filter; 60 worker tests green. Deferred there: SMTP-floor
-recognition of a dcgka envelope (needs a MIME convention), managed-cert filtering (multi-provider), real
-anonymous-ingress rate limiting.
+dcgka` on the opaque path; list `?type=dcgka` filter. **Both bindings done**: the SMTP `mailto:` floor too —
+an `application/atsms-envelope` attachment classifies to `dcgka` and byte-converges with `POST /inbox`
+(66 worker tests green). Deferred there: managed-cert filtering (multi-provider), real anonymous-ingress rate
+limiting.
 
 - `sealed-sender` module: both modes per D7 — asym seal/unseal + sym envelope (envKey derivation, tag
   table with grace epochs, per-recipient fresh-nonce fan-out), padding buckets, envelope dedup.
