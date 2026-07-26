@@ -299,6 +299,17 @@ the incapable DIDs surfaced — no silent downgrade). `deviceFingerprintFromCert
 (14 in file). 228/0. Note: atsms-lib `strict:false` tsc can't narrow dcgka's discriminated unions — read
 `ResolveResult` through a permissive cast (reshape TODO = enable strictNullChecks).
 
+**T3 slice 1 BUILT** (atsms-lib commit e9f8d2a): `conversations/` — `DcgkaSessionStore` (focused frame-log
+persistence interface + in-memory impl) + `ConversationSession` (create/bootstrap/restore; ops persist authored +
+ingested frames). Also this turn: **TS `strict` enabled** (quality foundation, removed the narrowing kludges) and
+the **device-fingerprint definition pinned** (SHA-256 of the raw P-256 point = SKI, identity-devices §4).
+**T3 BLOCKER / next decision — `@atsms/dcgka` needs secret-state serialization.** Frame-log replay reconstructs
+the tree + any epoch whose secret came encrypted in a frame, but NOT a member's *self-authored* epoch secret (a
+TreeKEM updater's path secret is encrypted to the others, stored only in the engine `sks`) — so an author can't
+send after a restart. The engine must serialize its secret material (`ShareKeyMap` + sender-chain positions +
+`currentEpochId`) — the "serializable state" §2 named. Engine-level design decision (what to serialize,
+encrypt-at-rest).
+
 - Wire `@atsms/dcgka` into `@atsms/client`: the stateful `conversations` surface wraps `Session`
   (create/add/remove/update + membership/security streams); `atsms.send()` is the stateless X509 floor; path
   selection by capability discovery (D1); deterministic groupIds replace random convoIds; DMs = 2-member groups (D6).
