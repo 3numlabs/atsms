@@ -277,9 +277,23 @@ revocation→group-removes flow.
 
 ## 8. Phase 5 — atsms-lib integration & reference client
 
-- Wire `@atsms/dcgka` into `@atsms/sms`: `ATSMSStorageManager` grows group lifecycle APIs
-  (`createGroup/addMember/removeMember/updateKeys` + membership streams); send path selects DCGKA vs X509 floor
-  by capability discovery (D1); deterministic groupIds replace random convoIds; DMs become 2-member groups (D6).
+**Reframed 2026-07-26** (see umbrella `docs/sdk-shape.md`): `atsms-lib` is an unreleased prototype, so we
+**reshape** it into a clean `@atsms/client` — two surfaces, stateless `atsms.send()` + stateful
+`atsms.conversations` — rather than grafting onto `ATSMSStorageManager`. Build **in place** (file: links) toward
+that shape; the SDK-monorepo move is a separate later migration. Tranche order: **T1 identity** → T2 capability
+discovery → T3 conversations+persistence → T4 path selection → T5 demo.
+
+**T1 identity BUILT** (`atsms-lib` branch `phase5-identity`, commit 1f8f1fd; dcgka `0e05a9d`): `@atsms/dcgka`
+added as a `file:` dep; `src/lib/identity/` = `ATSMSPdsClient` (implements dcgka's `PdsClient` over an
+`AtpAgent`; bytes round-trip free via @atproto/api's stringifyLex/jsonToLex; `resolveDidToPds` now handles
+**did:web** too) + `identityPublicKeyFromCert` (endpoint cert → raw 65-B P-256 point for `verifyPrekeyRecord`).
+8 tests incl. end-to-end publish→resolvePrekey→verify. atsms-lib suite 210/0; build-types clean after dcgka
+started shipping `.d.ts` (its loose tsc was mis-checking dcgka source). **Build-in-place gotcha:** the `file:`
+dep is a *copy* — `bun install --force` in atsms-lib after any dcgka change.
+
+- Wire `@atsms/dcgka` into `@atsms/client`: the stateful `conversations` surface wraps `Session`
+  (create/add/remove/update + membership/security streams); `atsms.send()` is the stateless X509 floor; path
+  selection by capability discovery (D1); deterministic groupIds replace random convoIds; DMs = 2-member groups (D6).
 - Storage: new tables for engine state (tree, op graph, checkpoint, epochs, chains), pending buffers —
   encrypted at rest, key-deletion verified (FS depends on it).
 - `atsms-demo`: group chat UI as the proving ground (this unblocks demo Phase 3), including add/remove/device
