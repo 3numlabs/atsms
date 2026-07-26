@@ -235,10 +235,11 @@ one-shot email semantics too): inbox discovery via the per-DID `at.atsms.inbox` 
 group-by-destination fan-out, receiver intake→per-device fanout + forward-unmanaged. **Sign-off DONE
 (2026-07-25)**: `at.atsms.inbox` supersedes+retires the per-device `inviteAddress` (identity-devices §4.1).
 (6) **Receive-side reference binding BUILT** (cross-repo, `atsms-worker` branch `dcgka-inbound-delivery`):
-`POST /inbox/{did}` — anonymous per-DID HTTPS intake for an opaque DCGKA envelope → fans a `dcgka`-typed copy
-into each per-device cert inbox; no sender IP recorded (privacy budget §7); Inbox DO accepts `messageType:
-dcgka` on the opaque path; list `?type=dcgka` filter. **Both bindings done**: the SMTP `mailto:` floor too —
-an `application/atsms-envelope` attachment classifies to `dcgka` and byte-converges with `POST /inbox`
+`POST /inbox/{did}` — anonymous per-DID HTTPS intake for an opaque DCGKA envelope → fans an
+`atsms-envelope`-typed copy into each per-device cert inbox; no sender IP recorded (privacy budget §7); Inbox
+DO accepts `messageType: atsms-envelope` on the opaque path; list `?type=atsms-envelope` filter. **Both
+bindings done**: the SMTP `mailto:` floor too — an `application/atsms-envelope` attachment classifies to
+`atsms-envelope` and byte-converges with `POST /inbox`
 (66 worker tests green). Deferred there: managed-cert filtering (multi-provider), real anonymous-ingress rate
 limiting.
 

@@ -153,5 +153,5 @@ endpoint URI **scheme** (not the NSID, not a field); `inviteAddress` relocated h
   a consumer needs them (provider-wide capability discovery via a domain `.well-known` is the alternative).
 - **Reference binding** — BUILT in `atsms-worker` (branch `dcgka-inbound-delivery`): the HTTPS binding
   (`POST /inbox/{did}`) and the SMTP `mailto:` floor (an `application/atsms-envelope` attachment → the same
-  `dcgka` per-device inboxes, byte-convergent) both realize §4/§6. Deferred there: managed-cert filtering for
+  `atsms-envelope` per-device inboxes, byte-convergent) both realize §4/§6. Deferred there: managed-cert filtering for
   the multi-provider case (§6), and real anonymous-ingress rate limiting (§4, sealed-sender §7).
