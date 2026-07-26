@@ -319,8 +319,7 @@ export function extractP7MFromEmail(emailContent: string): {
       attachmentInfo: attachmentInfo,
     };
   } catch (error) {
-    throw new Error(
-      `Failed to extract P7M from email: ${error.message || error}`,
-    );
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to extract P7M from email: ${detail}`);
   }
 }

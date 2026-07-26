@@ -141,15 +141,15 @@ export class ATSMSWebSocketClient {
       }
     };
 
-    this.ws.onmessage = (event) => {
+    this.ws.onmessage = (event: MessageEvent) => {
       this.handleMessage(event.data);
     };
 
-    this.ws.onclose = (event) => {
+    this.ws.onclose = (event: CloseEvent) => {
       this.handleClose(event.code, event.reason);
     };
 
-    this.ws.onerror = (_event) => {
+    this.ws.onerror = (_event: Event) => {
       this.handleError(new Error("WebSocket error"));
     };
   }

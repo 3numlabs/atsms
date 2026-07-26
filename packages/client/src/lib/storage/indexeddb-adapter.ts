@@ -593,7 +593,16 @@ export class IndexedDBAdapter implements StorageAdapter {
   > {
     const store = await this.getStore(STORES.CERTIFICATES);
 
-    let request: IDBRequest;
+    let request: IDBRequest<
+      Array<{
+        did: string;
+        type: string;
+        serialNumber: string;
+        notBefore: string | number;
+        notAfter: string | number;
+        privateKeyPEM?: string;
+      }>
+    >;
     if (did) {
       const index = store.index("did");
       request = index.getAll(IDBKeyRange.only(did));

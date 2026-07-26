@@ -52,13 +52,7 @@ export async function resolveDeviceCapabilities(
       continue; // unparseable cert — not a routable device
     }
 
-    // atsms-lib's tsc is non-strict and can't narrow dcgka's discriminated union;
-    // read through a permissive view (a reshape TODO: enable strictNullChecks).
-    const r = (await resolvePrekey(pds, did, fingerprint, identityPub, now)) as {
-      ok: boolean;
-      record?: PrekeyRecord;
-      reason?: string;
-    };
+    const r = await resolvePrekey(pds, did, fingerprint, identityPub, now);
     out.push(
       r.ok
         ? { fingerprint, capable: true, prekey: r.record }
