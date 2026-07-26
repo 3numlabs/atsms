@@ -25,6 +25,9 @@ export {
   ATSMSEndpointCertificate,
 } from "./certificates/index";
 
+// Export identity module (dcgka records/PDS/prekey bridge — sdk-shape.md Part A)
+export * from "./identity/index";
+
 // Export crypto operations
 export {
   decryptAndVerifyMessageSignature,
