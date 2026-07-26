@@ -32,10 +32,12 @@
 
 - **The device identity IS the endpoint-certificate keypair** (`at.atsms.x509`, P-256 — kept for
   S/MIME/WebCrypto interop). No separate device keypair, no `device_id`.
-- **Device fingerprint** = SHA-256 of the endpoint cert's SubjectPublicKeyInfo — **the device's sole
-  protocol identifier**: it is the `at.atsms.x509` and `at.atsms.prekey` rkey (§4), the cert's SKI, the
-  JWT `kid`, and the mailbox key (re-keyed from cert serial 2026-07-17; the serial survives only *inside*
-  X509/CMS artifacts).
+- **Device fingerprint** (lowercase hex) = **SHA-256 of the endpoint cert's public-key point** — the raw
+  uncompressed EC point (`0x04‖X‖Y`), i.e. the `subjectPublicKey` value, per **RFC 7093 method 1**, so it
+  *equals the cert's SKI* (§4.1). **The device's sole protocol identifier**: the `at.atsms.x509` and
+  `at.atsms.prekey` rkey (§4), the JWT `kid`, and the mailbox key (re-keyed from cert serial 2026-07-17 — the
+  serial survives only *inside* X509/CMS artifacts). *(Not SHA-256 of the full SPKI DER — that is RFC 7093
+  method 2; we use method 1 to match the SKI.)*
 - **DeviceID** = `(DID, deviceFingerprint)` — the identity-layer handle. **Membership** =
   `(DeviceID, admittedBy)` — the group-layer identifier: one device's tenure in one group, where
   `admittedBy` = the admitting op's MessageID (dgm.md §2). A re-added device is a fresh Membership —
