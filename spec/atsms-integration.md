@@ -133,13 +133,13 @@ SignedFrames (repair store), pending-envelope buffer, processed-EnvelopeID windo
    worst case.
 4. **Email worker**: classify the new MIME part type for sealed envelopes (alongside the pkcs7 paths,
    email-worker.js:390-415) → `/store` as `atsms-sealed`.
-5. **Fingerprint re-keying (breaking change, pre-alpha)**: DO names, `mailboxId`, JWT `kid`/`sub` rkey,
-   and record rkeys move from cert serial to the **device fingerprint**, lowercase hex (decided
-   2026-07-17 — identity-devices §4.1). Touches `atsms-lib` (`generateJWT` claims, `ATSMSClient` record
-   writes, SAN URI) and the worker (DO naming, JWT verification's record fetch by fingerprint rkey).
-   This also closes the old serial-case drift (API worker lowercases DO names, email worker doesn't —
-   email-worker.js:174 vs cloudflare-api-worker.js:191): the **lowercase-hex rule now applies to
-   fingerprints**, and mixed case splitting a mailbox in two gets a regression test (§11).
+5. **Fingerprint re-keying (breaking change, pre-alpha) — EXECUTED 2026-07-27** (atsms-lib `4d6ac55`,
+   worker `e310bb6`): DO names, JWT `kid`/`sub` rkey, and record rkeys moved from cert serial to the
+   **device fingerprint**, lowercase hex (identity-devices §4.1). atsms-lib: `generateJWT` claims,
+   `ATSMSClient` record writes, the cert SAN URI, `getDeviceFingerprint()` on the cert class, transport/
+   WS config renames. Worker: `getActiveClientCertificates` keys on the record RKEY, lowercased **at the
+   source** — closing the old serial-case drift (API worker lowercased DO names, email worker didn't)
+   with a mixed-case regression test. Live records migrated via the CLI's `migrate-x509-rkey` script.
 6. **Non-blockers noted**: the JWT verifier's PEM-as-key placeholder (jwt-verification.js:145-157) and the
    API worker's decode-without-verify routing (real verification is in the DO) are unchanged by DCGKA;
    TURN credentials path untouched.

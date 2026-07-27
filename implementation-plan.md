@@ -350,7 +350,9 @@ shipped): open-by-DID → sealed create → auto-bootstrap → bidirectional, pl
 Found+fixed three bugs the loopback couldn't see (atsms-lib dc0e0ab): worker list=metadata-only + per-message
 GET wraps {message:{...}} (drain silently skip-deleted everything); invisible drain/dispatch failures → new
 transport onError + facade onEvent; create-frame zero-groupId placeholder vs the known-group check
-(redelivered create could re-bootstrap). Then step 3 encryption-at-rest.
+(redelivered create could re-bootstrap). **Sequencing decided 2026-07-27: §8.5 fingerprint re-keying →
+`atsms.send()` (stateless X509-baseline surface) → encryption-at-rest.** §8.5 EXECUTED (lib 4d6ac55, worker
+e310bb6, CLI migrate-x509-rkey; live smoke pending one account's rotated credentials).
 
 - Wire `@atsms/dcgka` into `@atsms/client`: the stateful `conversations` surface wraps `Session`
   (create/add/remove/update + membership/security streams); `atsms.send()` is the stateless X509 floor; path
