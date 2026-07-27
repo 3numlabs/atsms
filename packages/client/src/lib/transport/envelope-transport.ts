@@ -73,7 +73,9 @@ export class ATSMSWorkerEnvelopeTransport implements EnvelopeTransport {
 
   constructor(private readonly config: ATSMSWorkerTransportConfig) {
     this.ingressUrl = `${config.apiUrl}/inbox/${encodeURIComponent(config.did)}`;
-    this.fetchFn = config.fetchFn ?? fetch;
+    // Bind: calling an unbound global fetch via a property (this.fetchFn())
+    // sets `this` to the transport and throws "Illegal invocation" in browsers.
+    this.fetchFn = config.fetchFn ?? fetch.bind(globalThis);
   }
 
   async deliverToUrl(url: string, envelope: Uint8Array): Promise<void> {
