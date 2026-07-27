@@ -255,7 +255,8 @@ limiting.
 **Status: tranche A BUILT** (records codec, pure/RN-safe — no network). Lexicon files
 `lexicons/at/atsms/{prekey,inbox}.json` (canonical schemas, x509.json format). `packages/dcgka/src/records.ts`:
 `at.atsms.prekey` build + `bundleSig` sign/verify (ECDSA-P256 over SHA-256 of the strict-CBOR positional array
-`[signedPrekey, createdAt, expiresAt]`, encoding pinned in identity-devices §4.2) + `expiresAt` check;
+`[signedPrekey, signingPk, createdAt, expiresAt]` — `signingPk` added by D14, Phase 5 T4b — encoding pinned in
+identity-devices §4.2) + `expiresAt` check;
 `at.atsms.inbox` build/validate (ordered `endpoints`, `mailto:` floor enforced, `pickEndpoint` preference/scheme
 selection). 11 record tests + frozen KAT `test-vectors/records.json` (incl. the §4.3 reordered-fields rejection).
 **Tranche B BUILT** (`src/identity.ts`, pure/RN-safe over an injected seam — no `@atproto/api` dep):
@@ -316,8 +317,31 @@ encrypt-at-rest). **RESOLVED (user: ONE storage layer, full-snapshot).**
   loadEngineState/deleteEngineState/listEngineStateIds; SQLite `engine_state` table + IndexedDB store v2);
   deleted the separate `DcgkaSessionStore`; `ConversationSession` reworked to persist `Session.serialize()`
   every op. Restart-and-still-send passes. 231 tests.
-- **Step 3 NEXT**: encryption-at-rest — device master key + `EncryptedStorageAdapter` sealing the engine-state
-  blob (FS must-have); message content = fast follow.
+- **Step 3 DEFERRED** (after T4c): encryption-at-rest — device master key + `EncryptedStorageAdapter` sealing
+  the engine-state blob (FS must-have); message content = fast follow.
+
+**T4(a) app-facing `Conversation` BUILT** (atsms-lib `473439c`): the god-object's *spirit* without the
+monolith — owns the receive pipeline (ingest → parse `ATSMSMessagePayload` → validate against the frame →
+persist), `messages$` = `storage.observeMessages(groupId)`.
+**T4(b) transport + facade + auto-routing BUILT** (dcgka `c990625`, atsms-lib `e935be9`/`0c60aed`/`5a3f494`):
+- **D14 (this repo)**: the prekey bundle now carries the device's **initial protocol signing key**
+  (`signingPk`, Ed25519, in `bundleSig`; ring holds current+grace keypairs; `PrekeyManager.liveSigningKeys()`
+  + `serialize()/restore()`). Closes the ordering-auth §5 anchor's discovery gap — a creator/adder could not
+  learn another device's initial pk from records. identity-devices §4.2 + lexicon + KATs updated.
+- **b1 sealed conversations**: `ConversationSession`/`Conversation` ops return per-recipient
+  `Outbound {to, url, envelope}` via an integrated `SealLayer`; `join()` = fromWelcome + mandatory heal;
+  `admissionKeysFor()` matches a create/welcome's pinned generation against the live rings;
+  `advertiseEndpoint()` (§12).
+- **b2 envelope transport**: `EnvelopeTransport` iface + `ATSMSWorkerEnvelopeTransport` (anonymous
+  `POST /inbox/{did}`, JWT `?type=atsms-envelope` backfill + WS push, handle-then-delete ack).
+- **b3 `ATSMS` facade**: `create()` publishes prekey + inbox records, reopens persisted conversations,
+  starts receiving; `open({members: dids})` = capability discovery → sealed create → route → ingress advert →
+  creator heal; inbound dispatch (asym → bootstrap/join/route-by-group; sym → offer to all open — §11.3);
+  `addMember(did)`; storage gains a `device_state` blob table (prekey ring). 4 loopback e2e tests (mock PDS +
+  awaiting hub): open-by-DID bidirectional, incapable-DID error, add→auto-join→3-way + FS, facade restart.
+  atsms-lib 233/0.
+**T4(c) NEXT**: `atsms-cli` — thin REPL over the facade (login via AtpAgent, publish records, open/send/recv
+against the deployed worker). Then step 3 encryption-at-rest.
 
 - Wire `@atsms/dcgka` into `@atsms/client`: the stateful `conversations` surface wraps `Session`
   (create/add/remove/update + membership/security streams); `atsms.send()` is the stateless X509 floor; path
