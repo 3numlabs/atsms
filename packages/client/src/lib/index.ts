@@ -32,7 +32,7 @@ export {
 // (a file:-linked copy nests its own @atproto/api; a consumer-constructed
 // AtpAgent from a second copy is nominally a different class).
 export type { AtpSessionData } from "@atproto/api";
-export { AtpAgent } from "@atproto/api";
+export { Agent, AtpAgent } from "@atproto/api";
 
 // Export identity module (dcgka records/PDS/prekey bridge — sdk-shape.md Part A)
 export * from "./identity/index";
