@@ -56,7 +56,7 @@ amend G9's dedicated-sealing-key recommendation):
 |---|---|---|---|---|
 | Device identity (endpoint) key | ECDSA P-256 | ~10 y (device lifetime) | Device identity; signs all subordinate material; JWT mailbox auth; S/MIME floor | `at.atsms.x509` endpoint record |
 | Signed prekey | X25519 | 1 week (+1 week grace secret) | BeeKEM **admission leaf key** (until the joiner's first self-update) **and** sealed-asym HPKE recipient key (joint use, §3.1; beekem-core §4.2/§6, [`sealed-sender.md`](./sealed-sender.md) §2) | `at.atsms.prekey.signedPrekey` |
-| Protocol signing key | Ed25519 | per group; rotates on every own `update`/`remove`/`create` | Signs ordering-layer frames (ordering-auth §5) | never published — declared in create/welcome material, signed by the device identity key |
+| Protocol signing key | Ed25519 | per group; rotates on every own `update`/`remove`/`create` | Signs ordering-layer frames (ordering-auth §5) | only the **initial** pk is published — in the prekey bundle (§4.2 `signingPk`, D14), which is the device-identity-signed declaration source create/add ops pin; every later per-group key exists only in-band |
 | Tree leaf/path & chain keys | X25519 / symmetric | per update / per epoch / per message | beekem-core §3/§7/§8 | never published |
 
 *(Removed 2026-07-22 by D11: the X3DH `identityDh` row — X3DH is retired with 2SM — and the one-time
@@ -155,13 +155,23 @@ at.atsms.prekey (rkey = device fingerprint)
 {
   $type:         "at.atsms.prekey",
   signedPrekey:  X25519Pub,        // rotated WEEKLY (parameters.md)
+  signingPk:     Ed25519Pub,       // the device's INITIAL PROTOCOL SIGNING KEY (ordering-auth §5 anchor):
+                                   // the pk a create/add op declares for this device. Rotated with the
+                                   // bundle; per-group rotation diverges from it on the member's first
+                                   // control op, so cross-group linkage ends at admission — the same
+                                   // exposure signedPrekey already has. (Added 2026-07-26 — D14: the §5
+                                   // anchor said "declared in create/welcome material, signed by the
+                                   // device identity key," but gave a creator/adder no way to *discover*
+                                   // another device's initial pk; the bundle is that device-identity-
+                                   // signed declaration source, X3DH-bundle precedent.)
   createdAt, expiresAt: datetime,
   bundleSig:     bytes             // ECDSA-P256 (64-byte compact r‖s) by the device identity key over
-                                   // SHA-256( cbor([signedPrekey, createdAt, expiresAt]) ) — the preceding
-                                   // fields as a strict-CBOR POSITIONAL array in declaration order
-                                   // (map-free DRISL profile, wire-format §1; bijective ⇒ the signature is
-                                   // unambiguous). Binds the whole generation — prevents cross-generation
-                                   // mix-and-match. Verify with RFC 6979 deterministic ECDSA.
+                                   // SHA-256( cbor([signedPrekey, signingPk, createdAt, expiresAt]) ) —
+                                   // the preceding fields as a strict-CBOR POSITIONAL array in declaration
+                                   // order (map-free DRISL profile, wire-format §1; bijective ⇒ the
+                                   // signature is unambiguous). Binds the whole generation — prevents
+                                   // cross-generation mix-and-match. Verify with RFC 6979 deterministic
+                                   // ECDSA.
 }
 ```
 
@@ -183,10 +193,12 @@ X509-floor one-shots seal to it — sealed-sender §2; joint-use analysis §3.1)
 4. (Target state) verify the MST/commit chain for both records; trust-the-PDS is the interim relaxation (§1).
 
 **Rotation**: `signedPrekey` rotates **weekly**; the retained-secret grace window equals one full rotation
-period — the device holds exactly two signed-prekey private halves (current + previous); each rotation
-promotes current → previous and deletes the old previous. An `add` pinning a just-superseded prekey
-still admits correctly for up to a week (the device holds the previous secret); older ones fail and the
-adder re-fetches ([`parameters.md`](./parameters.md)).
+period — the device holds exactly two live **generations** (current + previous), each a signed-prekey
+private half *plus* the matching initial-signing private half (`signingPk`'s Ed25519 secret rides the same
+ring: an admitting op may have pinned either live bundle's `signingPk`, and the joiner picks the keypair the
+op declared); each rotation promotes current → previous and deletes the old previous. An `add` pinning a
+just-superseded prekey still admits correctly for up to a week (the device holds the previous secrets);
+older ones fail and the adder re-fetches ([`parameters.md`](./parameters.md)).
 The same two live secrets serve `sealed-asym` trial-decryption — recipients trial-open incoming asym
 envelopes against current + previous, unchanged in count from the deleted sealing cert's current + grace
 pair (sealed-sender §4).

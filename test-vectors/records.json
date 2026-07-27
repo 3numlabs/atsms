@@ -1,12 +1,13 @@
 {
-  "note": "at.atsms.prekey bundleSig = ECDSA-P256 (RFC 6979 deterministic) over SHA-256 of cbor([signedPrekey, createdAt, expiresAt]); at.atsms.inbox = ordered endpoints, mailto floor (identity-devices §4.2 / inbound-delivery §3).",
+  "note": "at.atsms.prekey bundleSig = ECDSA-P256 (RFC 6979 deterministic) over SHA-256 of cbor([signedPrekey, signingPk, createdAt, expiresAt]); at.atsms.inbox = ordered endpoints, mailto floor (identity-devices §4.2 / inbound-delivery §3).",
   "prekey": {
     "identityPubHex": "03959edcd0e9cfea425d25b0b0d1d1bd6ab647a7525e6cf13eedc8a97b2caad318",
     "signedPrekeyHex": "24dca30645f5386782b1b5603f1e19bd2a24fe3b3fe68d6d60db993c37e6f154",
+    "signingPkHex": "03ed425040a502823a54958187aee1c6df07151eadfeee900df555717ef42008",
     "createdAt": "2026-07-26T00:00:00.000Z",
     "expiresAt": "2026-08-02T00:00:00.000Z",
-    "bundleSigInputHex": "e93a6a25fc121eed67bd3f3d68330b704b8b38b176ec526de46353988afb8ab7",
-    "bundleSigHex": "a823cb74f6859c3f1246663800ddf6bb3de2ab34f7a6d880b1a4a6e03a3d9e2fdb6eac230606056d63d43736301866c5621bd9b80642bb53d6b6d60c4dd94cfd"
+    "bundleSigInputHex": "ba4e0e1c6a4282d43075cfce31c40cd1af4ca251fe50c7c7a652416857743dc5",
+    "bundleSigHex": "2c5704431970b2b20739d37a221e62873ffc1f7a39aa798652e7fffdaecf3b1319a47b89deab2d306a827b7eb2a43b282bda145456a85cca6ba48fa55a4b7400"
   },
   "inbox": {
     "endpoints": [

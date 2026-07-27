@@ -8,11 +8,17 @@
       "key": "string",
       "record": {
         "type": "object",
-        "required": ["signedPrekey", "createdAt", "expiresAt", "bundleSig"],
+        "required": ["signedPrekey", "signingPk", "createdAt", "expiresAt", "bundleSig"],
         "properties": {
           "signedPrekey": {
             "type": "bytes",
             "description": "X25519 public key (32 bytes). Rotated weekly (parameters.md).",
+            "minLength": 32,
+            "maxLength": 32
+          },
+          "signingPk": {
+            "type": "bytes",
+            "description": "Ed25519 public key (32 bytes): the device's initial protocol signing key, declared in create/add ops that admit this device while this generation is current (ordering-auth §5 anchor). Per-group rotation diverges from it on the member's first control op. Rotated with the bundle.",
             "minLength": 32,
             "maxLength": 32
           },
@@ -28,7 +34,7 @@
           },
           "bundleSig": {
             "type": "bytes",
-            "description": "ECDSA-P256 signature by the device identity key (the at.atsms.x509 endpoint cert key) over SHA-256 of the deterministic CBOR positional array [signedPrekey, createdAt, expiresAt] — binds the whole generation, preventing cross-generation mix-and-match.",
+            "description": "ECDSA-P256 signature by the device identity key (the at.atsms.x509 endpoint cert key) over SHA-256 of the deterministic CBOR positional array [signedPrekey, signingPk, createdAt, expiresAt] — binds the whole generation, preventing cross-generation mix-and-match.",
             "minLength": 64,
             "maxLength": 64
           }

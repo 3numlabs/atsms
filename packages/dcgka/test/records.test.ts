@@ -4,7 +4,7 @@
  */
 
 import { p256 } from '@noble/curves/p256';
-import { x25519 } from '@noble/curves/ed25519';
+import { ed25519, x25519 } from '@noble/curves/ed25519';
 import { blake3 } from '@noble/hashes/blake3';
 import { describe, expect, it } from 'vitest';
 import {
@@ -22,12 +22,13 @@ import {
 const identitySk = blake3(new TextEncoder().encode('records:identity-sk'), { dkLen: 32 });
 const identityPub = p256.getPublicKey(identitySk); // device identity (P-256) pub, from the x509 cert
 const signedPrekey = x25519.getPublicKey(blake3(new TextEncoder().encode('records:prekey-sk'), { dkLen: 32 }));
+const signingPk = ed25519.getPublicKey(blake3(new TextEncoder().encode('records:signing-sk'), { dkLen: 32 }));
 const createdAt = '2026-07-26T00:00:00.000Z';
 const expiresAt = '2026-08-02T00:00:00.000Z';
 
 describe('at.atsms.prekey', () => {
   it('builds a record whose bundleSig verifies against the identity key', () => {
-    const rec = buildPrekeyRecord({ signedPrekey, createdAt, expiresAt }, identitySk);
+    const rec = buildPrekeyRecord({ signedPrekey, signingPk, createdAt, expiresAt }, identitySk);
     expect(rec.$type).toBe('at.atsms.prekey');
     expect(rec.bundleSig.length).toBe(64);
     expect(verifyPrekeyRecord(rec, identityPub)).toEqual({ ok: true });
@@ -36,26 +37,32 @@ describe('at.atsms.prekey', () => {
   it('rejects a bundleSig that signed reordered fields (§4.3 — cross-generation mix-and-match)', () => {
     // Sign createdAt/expiresAt swapped, then present the record in declared order.
     const bad = p256
-      .sign(prekeyBundleSigInput({ signedPrekey, createdAt: expiresAt, expiresAt: createdAt }), identitySk)
+      .sign(prekeyBundleSigInput({ signedPrekey, signingPk, createdAt: expiresAt, expiresAt: createdAt }), identitySk)
       .toCompactRawBytes();
-    const rec: PrekeyRecord = { $type: 'at.atsms.prekey', signedPrekey, createdAt, expiresAt, bundleSig: bad };
+    const rec: PrekeyRecord = { $type: 'at.atsms.prekey', signedPrekey, signingPk, createdAt, expiresAt, bundleSig: bad };
     expect(verifyPrekeyRecord(rec, identityPub)).toEqual({ ok: false, reason: 'bad-signature' });
   });
 
   it('rejects a tampered signedPrekey', () => {
-    const rec = buildPrekeyRecord({ signedPrekey, createdAt, expiresAt }, identitySk);
+    const rec = buildPrekeyRecord({ signedPrekey, signingPk, createdAt, expiresAt }, identitySk);
     const tampered = { ...rec, signedPrekey: x25519.getPublicKey(blake3(new TextEncoder().encode('other'), { dkLen: 32 })) };
     expect(verifyPrekeyRecord(tampered, identityPub).ok).toBe(false);
   });
 
+  it('rejects a tampered signingPk (initial protocol signing key is bundle-bound)', () => {
+    const rec = buildPrekeyRecord({ signedPrekey, signingPk, createdAt, expiresAt }, identitySk);
+    const tampered = { ...rec, signingPk: ed25519.getPublicKey(blake3(new TextEncoder().encode('evil'), { dkLen: 32 })) };
+    expect(verifyPrekeyRecord(tampered, identityPub)).toEqual({ ok: false, reason: 'bad-signature' });
+  });
+
   it('rejects the wrong identity key', () => {
-    const rec = buildPrekeyRecord({ signedPrekey, createdAt, expiresAt }, identitySk);
+    const rec = buildPrekeyRecord({ signedPrekey, signingPk, createdAt, expiresAt }, identitySk);
     const otherPub = p256.getPublicKey(blake3(new TextEncoder().encode('records:other-identity'), { dkLen: 32 }));
     expect(verifyPrekeyRecord(rec, otherPub)).toEqual({ ok: false, reason: 'bad-signature' });
   });
 
   it('enforces expiry only when a clock is supplied', () => {
-    const rec = buildPrekeyRecord({ signedPrekey, createdAt, expiresAt }, identitySk);
+    const rec = buildPrekeyRecord({ signedPrekey, signingPk, createdAt, expiresAt }, identitySk);
     expect(verifyPrekeyRecord(rec, identityPub, Date.parse('2026-07-27T00:00:00.000Z'))).toEqual({ ok: true });
     expect(verifyPrekeyRecord(rec, identityPub, Date.parse('2026-09-01T00:00:00.000Z'))).toEqual({
       ok: false,
@@ -65,7 +72,7 @@ describe('at.atsms.prekey', () => {
   });
 
   it('rejects a malformed record shape', () => {
-    const rec = buildPrekeyRecord({ signedPrekey, createdAt, expiresAt }, identitySk);
+    const rec = buildPrekeyRecord({ signedPrekey, signingPk, createdAt, expiresAt }, identitySk);
     expect(verifyPrekeyRecord({ ...rec, bundleSig: rec.bundleSig.slice(0, 32) }, identityPub)).toEqual({
       ok: false,
       reason: 'bad-shape',

@@ -54,7 +54,7 @@ import {
   sealSymTo,
 } from '../src/envelope.js';
 import { sealBase } from '../src/hpke.js';
-import { x25519 } from '@noble/curves/ed25519';
+import { ed25519, x25519 } from '@noble/curves/ed25519';
 
 const H = bytesToHex;
 const fill = (n: number, b: number) => new Uint8Array(n).fill(b);
@@ -280,21 +280,23 @@ function buildRecordVectors(): unknown {
   const identitySk = blake3(utf8('records:identity-sk'), { dkLen: 32 });
   const identityPub = p256.getPublicKey(identitySk);
   const signedPrekey = x25519.getPublicKey(blake3(utf8('records:prekey-sk'), { dkLen: 32 }));
+  const signingPk = ed25519.getPublicKey(blake3(utf8('records:signing-sk'), { dkLen: 32 }));
   const createdAt = '2026-07-26T00:00:00.000Z';
   const expiresAt = '2026-08-02T00:00:00.000Z';
-  const prekey = buildPrekeyRecord({ signedPrekey, createdAt, expiresAt }, identitySk);
+  const prekey = buildPrekeyRecord({ signedPrekey, signingPk, createdAt, expiresAt }, identitySk);
   const inbox = buildInboxRecord([
     { uri: 'https://relay.haiven.mobile/atsms/in/9d2e' },
     { uri: 'mailto:did!plc!abc123@haiven.mobile' },
   ]);
   return {
-    note: 'at.atsms.prekey bundleSig = ECDSA-P256 (RFC 6979 deterministic) over SHA-256 of cbor([signedPrekey, createdAt, expiresAt]); at.atsms.inbox = ordered endpoints, mailto floor (identity-devices §4.2 / inbound-delivery §3).',
+    note: 'at.atsms.prekey bundleSig = ECDSA-P256 (RFC 6979 deterministic) over SHA-256 of cbor([signedPrekey, signingPk, createdAt, expiresAt]); at.atsms.inbox = ordered endpoints, mailto floor (identity-devices §4.2 / inbound-delivery §3).',
     prekey: {
       identityPubHex: bytesToHex(identityPub),
       signedPrekeyHex: bytesToHex(signedPrekey),
+      signingPkHex: bytesToHex(signingPk),
       createdAt,
       expiresAt,
-      bundleSigInputHex: bytesToHex(prekeyBundleSigInput({ signedPrekey, createdAt, expiresAt })),
+      bundleSigInputHex: bytesToHex(prekeyBundleSigInput({ signedPrekey, signingPk, createdAt, expiresAt })),
       bundleSigHex: bytesToHex(prekey.bundleSig),
     },
     inbox: { endpoints: inbox.endpoints.map((e) => e.uri) },

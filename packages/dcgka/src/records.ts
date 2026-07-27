@@ -19,6 +19,14 @@ import { cborEncode } from './cbor.js';
 export interface PrekeyRecord {
   $type: 'at.atsms.prekey';
   signedPrekey: Uint8Array; // X25519 pub, 32 bytes
+  /** Ed25519 pub, 32 bytes — the device's *initial protocol signing key* for
+   *  groups it is created into / added to while this generation is current
+   *  (ordering-auth §5 anchor: "declared in the create/welcome material, signed
+   *  by the device identity key" — this bundle is that device-identity-signed
+   *  declaration source). Per-group rotation diverges from it on the member's
+   *  first control op, so cross-group linkage ends at admission — the same
+   *  exposure the signedPrekey already has. */
+  signingPk: Uint8Array;
   createdAt: string; // ISO 8601
   expiresAt: string; // ISO 8601
   bundleSig: Uint8Array; // ECDSA-P256, 64 bytes (compact r‖s)
@@ -32,18 +40,20 @@ export interface PrekeyRecord {
  */
 export function prekeyBundleSigInput(fields: {
   signedPrekey: Uint8Array;
+  signingPk: Uint8Array;
   createdAt: string;
   expiresAt: string;
 }): Uint8Array {
-  return sha256(cborEncode([fields.signedPrekey, fields.createdAt, fields.expiresAt]));
+  return sha256(cborEncode([fields.signedPrekey, fields.signingPk, fields.createdAt, fields.expiresAt]));
 }
 
 /** Build + sign a prekey record with the device identity (P-256) private key. */
 export function buildPrekeyRecord(
-  fields: { signedPrekey: Uint8Array; createdAt: string; expiresAt: string },
+  fields: { signedPrekey: Uint8Array; signingPk: Uint8Array; createdAt: string; expiresAt: string },
   identitySk: Uint8Array,
 ): PrekeyRecord {
   if (fields.signedPrekey.length !== 32) throw new Error('signedPrekey must be 32 bytes (X25519 pub)');
+  if (fields.signingPk.length !== 32) throw new Error('signingPk must be 32 bytes (Ed25519 pub)');
   const bundleSig = p256.sign(prekeyBundleSigInput(fields), identitySk).toCompactRawBytes();
   return { $type: 'at.atsms.prekey', ...fields, bundleSig };
 }
@@ -67,6 +77,8 @@ export function verifyPrekeyRecord(
     record.$type !== 'at.atsms.prekey' ||
     !(record.signedPrekey instanceof Uint8Array) ||
     record.signedPrekey.length !== 32 ||
+    !(record.signingPk instanceof Uint8Array) ||
+    record.signingPk.length !== 32 ||
     typeof record.createdAt !== 'string' ||
     typeof record.expiresAt !== 'string' ||
     !(record.bundleSig instanceof Uint8Array) ||

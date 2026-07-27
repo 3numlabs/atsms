@@ -115,9 +115,11 @@ ready message. A message unresolvable for `T_REPAIR_GIVEUP = 30 d` MAY be droppe
 
 ## 5. Authentication & signing-key rotation
 
-- **Anchor**: each member's initial **protocol signing key** is declared in the `create`/`welcome` material,
-  signed by the device identity key (endpoint cert, spec v1.1 §4.1) — chaining protocol authentication to
-  the DID via `DID → verificationKey → at.atsms.x509/<fingerprint> → device key → protocol signing key`.
+- **Anchor**: each member's initial **protocol signing key** is declared in the `create`/`welcome` material.
+  The creator/adder sources it from the member's prekey bundle (`at.atsms.prekey.signingPk`,
+  identity-devices §4.2 — D14), whose `bundleSig` is by the device identity key (endpoint cert, spec v1.1
+  §4.1) — chaining protocol authentication to the DID via
+  `DID → verificationKey → at.atsms.x509/<fingerprint> → device key → protocol signing key`.
   The device identity key itself is NOT used per-message (its exposure profile is different, and rotation
   must be cheap).
 - **Rotation (PCS for authenticity, Cremers et al.)**: every `update`, `remove`, and `create` the member
