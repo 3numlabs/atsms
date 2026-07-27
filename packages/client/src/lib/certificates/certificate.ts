@@ -177,11 +177,12 @@ export abstract class ATSMSCertificate extends X509Certificate {
   private _deviceFingerprint?: string;
 
   /**
-   * The DEVICE fingerprint (identity-devices §4): SHA-256 of the raw
-   * uncompressed P-256 public-key point (RFC 7093 method 1 = the cert SKI),
-   * lowercase hex. This is the `at.atsms.x509` / `at.atsms.prekey` record key
-   * and the per-device inbox key — distinct from `getFingerprint()`, which
-   * hashes the whole certificate for display.
+   * The DEVICE fingerprint (identity-devices §2): the full 32-byte SHA-256 of
+   * the raw uncompressed P-256 public-key point (`0x04‖X‖Y`, the
+   * subjectPublicKey value), lowercase hex — stable across cert re-issuance
+   * for the same key. This is the `at.atsms.x509` / `at.atsms.prekey` record
+   * key and the per-device inbox key — distinct from `getFingerprint()`,
+   * which hashes the whole certificate for display.
    */
   async getDeviceFingerprint(): Promise<string> {
     if (this._deviceFingerprint === undefined) {
