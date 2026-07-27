@@ -360,6 +360,16 @@ transport onError + facade onEvent; create-frame zero-groupId placeholder vs the
 - `atsms-demo`: group chat UI as the proving ground (this unblocks demo Phase 3), including add/remove/device
   flows and stale-member ("not covering") surfacing.
 
+## 8b. Queued editing pass — terminology (pre-release)
+
+**TODO (user, 2026-07-27): sweep "floor" out of the spec set and docs** — replace with "X509 **baseline**"
+(interoperability level) and "mailto:/SMTP **fallback**" (universally supported delivery route), including
+the normative sentences in `sealed-sender.md`, `inbound-delivery.md`, `identity-devices.md`,
+`atsms-integration.md`, `ordering-auth.md`, this plan, the umbrella/worker/lib CLAUDE.md + README/docs.
+Rationale: in-group shorthand reads as noise to outside readers of an open protocol. New code/comments are
+already clean (atsms-lib `3992019`, atsms-cli `1731aac`); "facade" is likewise retired in favor of
+"the `ATSMS` client". Do this as one dedicated pass, not incrementally.
+
 ## 9. Phase 6 — Hardening & review
 
 - G14 insider-divergence detection (epoch-hash gossip) or documented recovery; G15 GC bounds enforced; padding &
