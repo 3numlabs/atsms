@@ -31,6 +31,9 @@ export * from "./identity/index";
 // Export conversations module (stateful DCGKA sessions + persistence — sdk-shape.md Part A)
 export * from "./conversations/index";
 
+// Export transport module (opaque envelope carriage — inbound-delivery.md bindings)
+export * from "./transport/index";
+
 // Export crypto operations
 export {
   decryptAndVerifyMessageSignature,

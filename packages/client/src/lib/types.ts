@@ -16,7 +16,7 @@ export type ATSMSCertificateType = "endpoint";
  * - 'atsms-email': S/MIME encrypted email (enveloped-data, opaque blob)
  * - 'email': Normal parsed email with subject, body, attachments
  */
-export type ATSMSMessageType = "atsms" | "atsms-email" | "email";
+export type ATSMSMessageType = "atsms" | "atsms-email" | "atsms-envelope" | "email";
 
 /**
  * Result of decrypting and verifying an AT-SMS message signature
