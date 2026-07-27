@@ -4,7 +4,7 @@
  * Uses P-256 ECDSA endpoint certificates
  */
 
-import { AtpAgent } from "@atproto/api";
+import { Agent, AtpAgent } from "@atproto/api";
 
 import {
   ATSMSEndpointCertificate,
@@ -12,10 +12,10 @@ import {
 } from "./certificates/index";
 
 export class ATSMSClient {
-  public agent: AtpAgent;
+  public agent: Agent; // base class: credential AtpAgent OR an OAuth session agent
   public did: string;
 
-  constructor(agent: AtpAgent, did: string) {
+  constructor(agent: Agent, did: string) {
     if (!agent) {
       throw new Error("AtpAgent is required");
     }

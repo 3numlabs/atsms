@@ -13,7 +13,7 @@
  * plc-only gap).
  */
 
-import { AtpAgent } from "@atproto/api";
+import { Agent, AtpAgent } from "@atproto/api";
 import type { PdsClient, PdsRecordView, PutResult } from "@atsms/dcgka";
 
 interface DidDocument {
@@ -34,7 +34,7 @@ export class ATSMSPdsClient implements PdsClient {
   private readonly plcDirectoryUrl: string;
 
   constructor(
-    private readonly agent: AtpAgent,
+    private readonly agent: Agent, // base class: credential AtpAgent OR an OAuth session agent
     private readonly myDid: string,
     options: ATSMSPdsClientOptions = {},
   ) {
@@ -73,7 +73,7 @@ export class ATSMSPdsClient implements PdsClient {
   }
 
   /** Authenticated agent for our own repo; an unauthenticated PDS agent (cached) for others. */
-  private async readAgentFor(did: string): Promise<AtpAgent> {
+  private async readAgentFor(did: string): Promise<Agent> {
     if (did === this.myDid) return this.agent;
     const cached = this.readAgents.get(did);
     if (cached) return cached;
