@@ -83,6 +83,35 @@ describe("IndexedDBAdapter (browser storage layer)", () => {
     expect(await store.loadDeviceState("prekey-ring")).toBeNull();
   });
 
+  test("observers emit CURRENT data on subscribe (page-reload contract)", async () => {
+    // A freshly-loaded page subscribes to a store that already has data — it
+    // must hear about it without waiting for the next write.
+    const store = newStore();
+    await store.saveConversation({
+      id: "warm-1",
+      participantIds: ["did:plc:a", "did:plc:b"],
+      createdAt: new Date(),
+      lastMessageAt: new Date(),
+      unreadCount: 0,
+      metadata: { protocol: "dcgka" },
+    });
+    await store.saveMessage(msg("wm1", "warm-1"));
+
+    const convoLists: number[] = [];
+    const msgLists: number[] = [];
+    const s1 = store.observeConversations().subscribe((c) => convoLists.push(c.length));
+    const s2 = store.observeMessages("warm-1").subscribe((m) => msgLists.push(m.length));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(convoLists.at(0)).toBe(1); // initial emission, not silence
+    expect(msgLists.at(0)).toBe(1);
+
+    await store.saveMessage(msg("wm2", "warm-1"));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(msgLists.at(-1)).toBe(2); // and live updates still flow
+    s1.unsubscribe();
+    s2.unsubscribe();
+  });
+
   test("a full sealed conversation runs over IndexedDB-backed parties", async () => {
     const rngOf = (seed: number): Csprng => {
       let s = seed >>> 0;

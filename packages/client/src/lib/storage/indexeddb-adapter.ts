@@ -516,18 +516,29 @@ export class IndexedDBAdapter implements StorageAdapter {
   }
 
   // Observable support
+  // Observers emit the CURRENT data on subscribe (same contract as the SQLite
+  // adapter), then re-emit on every change — a bare Subject would leave a
+  // freshly-loaded page silent until the next write.
   observeConversations(
-    filter?: ConversationFilter,
+    _filter?: ConversationFilter,
   ): Observable<LocalConversation[]> {
-    // For now, return basic observable - filtering can be added later
-    return this.conversationSubject.asObservable();
+    return new Observable((subscriber) => {
+      void this.getConversations().then((convos) => subscriber.next(convos));
+      const sub = this.conversationSubject.subscribe((convos) => subscriber.next(convos));
+      return () => sub.unsubscribe();
+    });
   }
 
   observeMessages(convoId: string): Observable<LocalMessage[]> {
     if (!this.messageSubjects.has(convoId)) {
       this.messageSubjects.set(convoId, new Subject<LocalMessage[]>());
     }
-    return this.messageSubjects.get(convoId)!.asObservable();
+    const subject = this.messageSubjects.get(convoId)!;
+    return new Observable((subscriber) => {
+      void this.getMessages(convoId).then((msgs) => subscriber.next(msgs));
+      const sub = subject.subscribe((msgs) => subscriber.next(msgs));
+      return () => sub.unsubscribe();
+    });
   }
 
   observeConversation(convoId: string): Observable<LocalConversation | null> {
@@ -537,7 +548,12 @@ export class IndexedDBAdapter implements StorageAdapter {
         new Subject<LocalConversation | null>(),
       );
     }
-    return this.conversationSubjects.get(convoId)!.asObservable();
+    const subject = this.conversationSubjects.get(convoId)!;
+    return new Observable((subscriber) => {
+      void this.getConversation(convoId).then((convo) => subscriber.next(convo));
+      const sub = subject.subscribe((convo) => subscriber.next(convo));
+      return () => sub.unsubscribe();
+    });
   }
 
   // Certificate operations
