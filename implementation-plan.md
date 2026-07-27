@@ -344,8 +344,13 @@ persist), `messages$` = `storage.observeMessages(groupId)`.
 re-exports `AtpAgent` so file:-consumers share one @atproto/api instance): thin REPL over the facade —
 login (resumable session, no-echo password), first-run cert generate+publish, `ATSMS.create` wiring
 (worker transport, WS push + polls, prekey/inbox published), `/open /add /convos /use /members /history`
-+ live feed. tsc strict clean; behavior covered by the lib's loopback e2e; **live run against the deployed
-worker still to be exercised (needs real credentials)**. Then step 3 encryption-at-rest.
++ live feed. tsc strict clean; behavior covered by the lib's loopback e2e. **Live smoke PASSED 2026-07-27** (two real
+accounts, real PDSes, dev worker — which had to be deployed first; the merged inbound-delivery code had never
+shipped): open-by-DID → sealed create → auto-bootstrap → bidirectional, plus the REPL over the same profile.
+Found+fixed three bugs the loopback couldn't see (atsms-lib dc0e0ab): worker list=metadata-only + per-message
+GET wraps {message:{...}} (drain silently skip-deleted everything); invisible drain/dispatch failures → new
+transport onError + facade onEvent; create-frame zero-groupId placeholder vs the known-group check
+(redelivered create could re-bootstrap). Then step 3 encryption-at-rest.
 
 - Wire `@atsms/dcgka` into `@atsms/client`: the stateful `conversations` surface wraps `Session`
   (create/add/remove/update + membership/security streams); `atsms.send()` is the stateless X509 floor; path
