@@ -11,7 +11,7 @@
  *   as opaque, uncorrelatable blobs (sealed-sender §1).
  *
  * Transport stays out of scope: methods return the envelopes to deliver; who
- * carries them (worker POST /inbox, SMTP floor) is the transport layer's job.
+ * carries them (worker POST /inbox, SMTP fallback) is the transport layer's job.
  */
 
 import {

@@ -401,6 +401,17 @@ bun test src/tests/atsms-client-integration.test.ts
 - **Initial release**: This library has never been published and is often refactored to improve the data patterns. Never need backward compatibility with each refactor. (This line will be removed once we publish version 0.0.1)
 - **Email in certificates**: All client certificates MUST include an email in the Subject Alternative Name (SAN) extension. The email is deterministically computed from the DID and email domain (e.g., `plc.[plc-id]@[emailDomain]`).
 
+## Branding and Naming
+
+**`AT-SMS`** is the canonical brand form. Use these variants correctly:
+
+- **`AT-SMS`** — prose, documentation, headings, commit messages, user-facing text. Always hyphenated.
+- **`ATSMS`** (no hyphen) — only for code identifiers where `-` is illegal: TypeScript type prefix (`ATSMSClient`, `ATSMSEndpointCertificate`), JavaScript namespaces (`window.ATSMS`), import aliases (`import * as ATSMS from '@atsms/sms'`).
+- **`atsms`** (lowercase) — AT Protocol collection names (`at.atsms.x509`), npm package scope (`@atsms/sms`). These follow AT Protocol / npm conventions and should NOT be "corrected" to AT-SMS.
+- **`atsms-worker`, `atsms-lib`** — directory and package names use kebab-case.
+
+When in doubt in prose, use `AT-SMS`.
+
 ## Code Style Requirements
 
 - **NO inline imports**: NEVER use `import()` statements inside function bodies. All imports must be at the top of the file.

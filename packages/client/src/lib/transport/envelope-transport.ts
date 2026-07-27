@@ -38,7 +38,7 @@ export interface ATSMSWorkerTransportConfig {
   certSerial: string;
   /** Endpoint-cert private key (PEM) — signs the worker API JWTs. */
   privateKeyPEM: string;
-  /** Resolve a DID's public inbox to an `https:` POST target (the facade backs
+  /** Resolve a DID's public inbox to an `https:` POST target (the ATSMS client backs
    *  this with `resolveInbox` + `pickEndpoint(record, ["https"])`). */
   resolveInboxUrl: (did: string) => Promise<string | null>;
   /** Poll interval for the backfill drain (ms); WS push also triggers drains.
@@ -87,7 +87,7 @@ export class ATSMSWorkerEnvelopeTransport implements EnvelopeTransport {
 
   async deliverToDid(did: string, envelope: Uint8Array): Promise<void> {
     const url = await this.config.resolveInboxUrl(did);
-    if (url === null) throw new Error(`no https inbox endpoint for ${did} (mailto-only floor not carried by this transport)`);
+    if (url === null) throw new Error(`no https inbox endpoint for ${did} (this transport cannot deliver to mailto:-only inboxes)`);
     await this.deliverToUrl(url, envelope);
   }
 

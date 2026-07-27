@@ -2,7 +2,7 @@
  * `ATSMSDeviceIdentity` — this device, assembled from its endpoint cert
  * (identity-devices §4): the DeviceID (DID + fingerprint), the identity signing
  * scalar, and the prekey ring (`PrekeyManager`, persisted as an opaque
- * device-state blob in the one StorageAdapter). This is what the facade holds
+ * device-state blob in the one StorageAdapter). This is what the ATSMS client holds
  * to found/join conversations and to keep the device's `at.atsms.prekey` and
  * `at.atsms.inbox` records published.
  */
@@ -90,7 +90,7 @@ export class ATSMSDeviceIdentity {
   }
 
   /** Publish the per-DID `at.atsms.inbox` singleton (ordered by preference;
-   *  the mailto: floor is mandatory, inbound-delivery §3). */
+   *  a mailto: fallback is mandatory, inbound-delivery §3). */
   publishInbox(pds: PdsClient, endpoints: InboxEndpoint[]): Promise<unknown> {
     return publishInboxEndpoints(pds, endpoints);
   }
@@ -123,7 +123,7 @@ export class ATSMSDeviceIdentity {
   }
 }
 
-/** The `mailto:` floor address for a DID (inbound-delivery §3; the worker's
+/** The `mailto:` fallback address for a DID (inbound-delivery §3; the worker's
  *  encoded-DID local part: `:` → `!`, `.` → `#`). */
 export function didMailtoUri(did: string, emailDomain: string): string {
   return `mailto:${did.replace(/:/g, "!").replace(/\./g, "#")}@${emailDomain}`;

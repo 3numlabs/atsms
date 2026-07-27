@@ -1,6 +1,6 @@
 /**
  * Capability discovery (atsms-integration.md §3): is a peer reachable over the
- * advanced (DCGKA) tier, or only the X509 floor?
+ * advanced (DCGKA) tier, or only the X509 baseline?
  *
  * A recipient **device** is DCGKA-capable iff its `at.atsms.prekey/<fingerprint>`
  * record resolves and verifies against the device's identity key (from its

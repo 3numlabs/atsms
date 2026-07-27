@@ -1,5 +1,5 @@
 /**
- * `ATSMS` — the client facade (sdk-shape.md Part A): wires identity + storage +
+ * `ATSMS` — the top-level client (sdk-shape.md Part A): wires identity + storage +
  * transport + PDS into the two surfaces, and owns **auto-routing** in both
  * directions:
  *
@@ -54,8 +54,9 @@ export interface ATSMSConfig {
   pds: PdsClient;
   rng: Csprng;
   /** Publish the `at.atsms.inbox` record on create: the transport's ingress URL
-   *  plus this `mailto:` floor (skipped when undefined — e.g. in tests). */
-  mailtoFloor?: string;
+   *  plus this `mailto:` fallback address — the universally supported delivery
+   *  route the record must always include (skipped when undefined — e.g. in tests). */
+  mailtoAddress?: string;
   /** Dispatcher diagnostics (envelope drops, bootstraps, joins). Default: silent. */
   onEvent?: (kind: string, detail: string) => void;
 }
@@ -112,7 +113,7 @@ export class ATSMS {
 
   /**
    * Wire up a client: publish this device's prekey bundle (rotating if due) and
-   * the DID's inbox record (when a mailto floor is configured), reopen every
+   * the DID's inbox record (when a mailto address is configured), reopen every
    * persisted conversation, and start receiving.
    */
   static async create(config: ATSMSConfig): Promise<ATSMS> {
@@ -126,10 +127,10 @@ export class ATSMS {
     );
 
     await config.identity.ensurePrekeyPublished(config.pds);
-    if (config.mailtoFloor !== undefined) {
+    if (config.mailtoAddress !== undefined) {
       const endpoints = [
         ...(config.transport.ingressUrl !== null ? [{ uri: config.transport.ingressUrl }] : []),
-        { uri: config.mailtoFloor },
+        { uri: config.mailtoAddress },
       ];
       await config.identity.publishInbox(config.pds, endpoints);
     }
@@ -158,7 +159,7 @@ export class ATSMS {
    * Open (or reuse) the conversation with `members` (DIDs; self implied). Every
    * member must be DCGKA-capable — the incapable ones are named in the error,
    * never silently downgraded (capability §3); one-shots to them can use the
-   * stateless X509 floor instead.
+   * stateless X509 baseline instead.
    */
   async open(params: { members: string[]; admins?: string[] }): Promise<ATSMSConversation> {
     const others = [...new Set(params.members.filter((d) => d !== this.identity.did))];
