@@ -56,6 +56,8 @@ export interface ATSMSConfig {
   /** Publish the `at.atsms.inbox` record on create: the transport's ingress URL
    *  plus this `mailto:` floor (skipped when undefined — e.g. in tests). */
   mailtoFloor?: string;
+  /** Dispatcher diagnostics (envelope drops, bootstraps, joins). Default: silent. */
+  onEvent?: (kind: string, detail: string) => void;
 }
 
 /** App-facing handle for one conversation: subscribe + send, no crypto. */
@@ -105,6 +107,7 @@ export class ATSMS {
     private readonly transport: EnvelopeTransport,
     private readonly pds: PdsClient,
     private readonly rng: Csprng,
+    private readonly onEvent: (kind: string, detail: string) => void,
   ) {}
 
   /**
@@ -113,7 +116,14 @@ export class ATSMS {
    * persisted conversation, and start receiving.
    */
   static async create(config: ATSMSConfig): Promise<ATSMS> {
-    const atsms = new ATSMS(config.identity, config.storage, config.transport, config.pds, config.rng);
+    const atsms = new ATSMS(
+      config.identity,
+      config.storage,
+      config.transport,
+      config.pds,
+      config.rng,
+      config.onEvent ?? (() => {}),
+    );
 
     await config.identity.ensurePrekeyPublished(config.pds);
     if (config.mailtoFloor !== undefined) {
@@ -250,11 +260,18 @@ export class ATSMS {
     let frame: Uint8Array;
     try {
       frame = SealLayer.openBootstrap(envelope, this.identity.prekeySecrets);
-    } catch {
-      return; // not addressed to us (or a rotated-out generation) — drop + ack
+    } catch (err) {
+      // Not addressed to us (or a rotated-out generation) — drop + ack.
+      this.onEvent("drop-unopenable", err instanceof Error ? err.message : String(err));
+      return;
     }
     const parsed = parseFrame(frame);
-    const groupId = bytesToHex(parsed.body.groupId);
+    // A create frame carries a zero groupId placeholder (the GroupID *is* the
+    // create frame's id) — normalize so the known-group check works for both.
+    const isCreate =
+      parsed.body.cls === CLS_CONTROL &&
+      payloadFromCbor(parsed.body.payload, parsed.body.sender.device.fingerprint).type === "create";
+    const groupId = bytesToHex(isCreate ? parsed.id : parsed.body.groupId);
     if (this.openConvos.has(groupId)) {
       // Known group (e.g. a redelivered welcome, or an asym-sealed frame from
       // the pre-epoch window) — hand the frame to its session.
@@ -267,26 +284,33 @@ export class ATSMS {
 
     if (parsed.body.cls === CLS_WELCOME) {
       const keys = this.admissionKeys(frame);
-      if (keys === null) return; // pinned generation no longer held — undecryptable-by-design
+      if (keys === null) {
+        // The pinned generation is no longer held — undecryptable-by-design.
+        this.onEvent("drop-admission-keys", `welcome for group ${groupId}`);
+        return;
+      }
       const { conversation, outbound } = await Conversation.join(this.context(), { keys, welcomeFrame: frame });
       this.register(conversation);
+      this.onEvent("joined", groupId);
       if (this.transport.ingressUrl !== null) await conversation.advertiseEndpoint(this.transport.ingressUrl);
       await this.route(outbound, conversation);
       return;
     }
 
-    if (parsed.body.cls === CLS_CONTROL) {
-      const payload = payloadFromCbor(parsed.body.payload, parsed.body.sender.device.fingerprint);
-      if (payload.type === "create") {
-        const keys = this.admissionKeys(frame);
-        if (keys === null) return;
-        const conversation = await Conversation.bootstrap(this.context(), { keys, createFrame: frame });
-        this.register(conversation);
-        if (this.transport.ingressUrl !== null) await conversation.advertiseEndpoint(this.transport.ingressUrl);
+    if (isCreate) {
+      const keys = this.admissionKeys(frame);
+      if (keys === null) {
+        this.onEvent("drop-admission-keys", `create for group ${groupId}`);
         return;
       }
+      const conversation = await Conversation.bootstrap(this.context(), { keys, createFrame: frame });
+      this.register(conversation);
+      this.onEvent("bootstrapped", groupId);
+      if (this.transport.ingressUrl !== null) await conversation.advertiseEndpoint(this.transport.ingressUrl);
+      return;
     }
     // A non-bootstrap frame for a group we don't hold — nothing to attach it to.
+    this.onEvent("drop-unknown-group", groupId);
   }
 
   // ── internals ──────────────────────────────────────────────────────────────

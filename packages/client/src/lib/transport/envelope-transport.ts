@@ -44,6 +44,9 @@ export interface ATSMSWorkerTransportConfig {
   /** Poll interval for the backfill drain (ms); WS push also triggers drains.
    *  Undefined ⇒ no timer (drain on start + on push only). */
   pollIntervalMs?: number;
+  /** Called when a background drain fails (list/fetch errors); the drain
+   *  retries on the next trigger either way. Default: silent. */
+  onError?: (error: Error) => void;
   /** Injectable for tests. */
   fetchFn?: typeof fetch;
   webSocket?: boolean; // default true
@@ -123,11 +126,15 @@ export class ATSMSWorkerEnvelopeTransport implements EnvelopeTransport {
 
   /** Serialize drains (WS bursts + timer must not interleave inbox reads). */
   private scheduleDrain(): Promise<void> {
-    this.draining = this.draining.then(() => this.drain()).catch(() => {});
+    this.draining = this.draining
+      .then(() => this.drain())
+      .catch((err) => this.config.onError?.(err instanceof Error ? err : new Error(String(err))));
     return this.draining;
   }
 
-  /** List undelivered envelopes, hand each to the dispatcher, delete on success. */
+  /** List undelivered envelopes (metadata), fetch each body, hand it to the
+   *  dispatcher, and delete on success. The list endpoint returns metadata
+   *  only — `encryptedContent` requires the per-message GET. */
   private async drain(): Promise<void> {
     if (this.handler === null) return;
     const base = `${this.config.apiUrl}/messages/${encodeURIComponent(this.config.did)}/${encodeURIComponent(this.config.certSerial)}`;
@@ -138,8 +145,17 @@ export class ATSMSWorkerEnvelopeTransport implements EnvelopeTransport {
     const { messages } = (await res.json()) as { messages: InboxMessage[] };
     for (const m of messages) {
       if (this.handler === null) return;
-      if (typeof m.encryptedContent !== "string") continue;
-      await this.handler(fromBase64(m.encryptedContent));
+      const got = await this.fetchFn(`${base}/${encodeURIComponent(m.id)}`, {
+        headers: { Authorization: `Bearer ${await this.token()}` },
+      });
+      if (!got.ok) throw new Error(`inbox get ${m.id} failed: ${got.status}`);
+      // The API worker wraps the message: { message: {...} }.
+      const raw = (await got.json()) as { message?: InboxMessage } & InboxMessage;
+      const body = raw.message ?? raw;
+      if (typeof body.encryptedContent !== "string") {
+        throw new Error(`inbox get ${m.id}: no encryptedContent in response`);
+      }
+      await this.handler(fromBase64(body.encryptedContent));
       await this.fetchFn(`${base}/${encodeURIComponent(m.id)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${await this.token()}` },

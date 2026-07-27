@@ -22,12 +22,21 @@ function fakeWorker() {
     const method = init?.method ?? "GET";
     requests.push({ url, method, body: init?.body === undefined ? undefined : JSON.parse(init.body as string) });
     if (method === "POST") return Response.json({ success: true });
-    if (url.includes("/list")) return Response.json({ messages: [...inbox] });
+    // The real worker's list returns METADATA ONLY — content needs the per-message GET.
+    if (url.includes("/list")) {
+      return Response.json({ messages: inbox.map(({ id, seq, messageType }) => ({ id, seq, messageType })) });
+    }
     if (method === "DELETE") {
       const id = url.split("/").pop()!;
       const i = inbox.findIndex((m) => m.id === id);
       if (i >= 0) inbox.splice(i, 1);
       return Response.json({ success: true });
+    }
+    if (method === "GET") {
+      const id = url.split("/").pop()!;
+      const msg = inbox.find((m) => m.id === id);
+      // The real API worker wraps the per-message GET: { message: {...} }.
+      if (msg !== undefined) return Response.json({ message: msg });
     }
     return Response.json({ error: "not found" }, { status: 404 });
   }) as typeof fetch;
