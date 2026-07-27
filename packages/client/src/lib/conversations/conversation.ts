@@ -4,16 +4,16 @@
  * messages (decrypted, verified, ordered, deduped, persisted) and calls `send()`.
  * Crypto is entirely below it, in the `ConversationSession` it wraps.
  *
- * It owns the receive pipeline: an inbound frame → `ConversationSession.ingest`
- * (decrypt/verify/order) → parse the `ATSMSMessagePayload` → validate → persist as
- * a `LocalMessage`, at which point the store's `observeMessages` stream fires. So
- * `messages$` IS `storage.observeMessages(groupId)` — the app never touches an
- * envelope, a frame, or a key. (Transport is a separate layer; these methods
- * return the frames to deliver.)
+ * It owns the receive pipeline: an inbound sealed envelope → `ConversationSession
+ * .deliver` (unseal/decrypt/verify/order) → parse the `ATSMSMessagePayload` →
+ * validate → persist as a `LocalMessage`, at which point the store's
+ * `observeMessages` stream fires. So `messages$` IS `storage.observeMessages
+ * (groupId)` — the app never touches an envelope, a frame, or a key. (Transport
+ * is a separate layer; these methods return sealed envelopes to deliver.)
  */
 
 import { Observable } from "rxjs";
-import type { DeviceID, SessionEvents } from "@atsms/dcgka";
+import { bytesToHex, type DeviceID, type SessionEvents } from "@atsms/dcgka";
 
 import { createMessagePayload, createTextContent } from "../messages.js";
 import type { StorageAdapter } from "../storage/interface.js";
@@ -25,6 +25,7 @@ import {
   type ConversationDeps,
   type LocalKeys,
   type MemberDescriptor,
+  type Outbound,
 } from "./conversation-session.js";
 
 const dec = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -40,7 +41,6 @@ export class Conversation {
     private readonly session: ConversationSession,
     private readonly storage: StorageAdapter,
     private readonly ctx: ConversationContext,
-    private readonly participants: string[],
   ) {}
 
   get groupId(): string {
@@ -52,18 +52,26 @@ export class Conversation {
     return this.storage.observeMessages(this.groupId);
   }
 
-  /** Everyone in the conversation (DIDs), including self. */
+  /** Everyone in the conversation (DIDs, deduped across devices), including self —
+   *  derived live from the engine's membership. */
   get members(): string[] {
-    return this.participants;
+    return [...new Set(this.session.engine.members().map((m) => m.device.did))];
+  }
+
+  /** The member devices (fingerprint hex → DID) — what outbound routing needs. */
+  get memberDevices(): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const m of this.session.engine.members()) out.set(bytesToHex(m.device.fingerprint), m.device.did);
+    return out;
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
-  /** Found a conversation. `members` includes this device. */
+  /** Found a conversation. `members` includes this device first (the creator). */
   static async open(
     ctx: ConversationContext,
     params: { keys: LocalKeys; members: MemberDescriptor[]; admins: string[] },
-  ): Promise<{ conversation: Conversation; outbound: Uint8Array[] }> {
+  ): Promise<{ conversation: Conversation; outbound: Outbound[] }> {
     const holder: { convo: Conversation | null } = { convo: null };
     const { conversation: session, outbound } = await ConversationSession.create(ctx, {
       keys: params.keys,
@@ -71,17 +79,16 @@ export class Conversation {
       admins: params.admins,
       events: eventsFor(holder),
     });
-    const participants = params.members.map((m) => m.device.did);
-    const convo = new Conversation(session, ctx.storage, ctx, participants);
+    const convo = new Conversation(session, ctx.storage, ctx);
     holder.convo = convo;
     await convo.saveConversationRecord();
     return { conversation: convo, outbound };
   }
 
-  /** Join as a founding member from the conversation's `create` frame. */
+  /** Join as a founding member from the conversation's (unsealed) `create` frame. */
   static async bootstrap(
     ctx: ConversationContext,
-    params: { keys: LocalKeys; createFrame: Uint8Array; participants: string[] },
+    params: { keys: LocalKeys; createFrame: Uint8Array },
   ): Promise<Conversation> {
     const holder: { convo: Conversation | null } = { convo: null };
     const session = await ConversationSession.bootstrap(ctx, {
@@ -89,32 +96,78 @@ export class Conversation {
       createFrame: params.createFrame,
       events: eventsFor(holder),
     });
-    const convo = new Conversation(session, ctx.storage, ctx, params.participants);
+    const convo = new Conversation(session, ctx.storage, ctx);
     holder.convo = convo;
     await convo.saveConversationRecord();
     return convo;
   }
 
-  // ── operations ───────────────────────────────────────────────────────────────
-
-  /** Send a text message. Returns the frames to deliver; the sent message is
-   *  persisted immediately (so it appears in `messages$` right away). */
-  async send(text: string): Promise<Uint8Array[]> {
-    const recipients = this.participants.filter((p) => p !== this.ctx.did);
-    const payload = createMessagePayload(this.ctx.did, recipients, createTextContent(text), "atsms/text", this.groupId);
-    const frames = await this.session.send(enc(JSON.stringify(payload)));
-    await this.storage.saveMessage(payloadToLocalMessage(payload));
-    return frames;
+  /** Join as an added member from an (unsealed) `welcome` frame. The returned
+   *  envelopes carry the mandatory post-join update and MUST be delivered. */
+  static async join(
+    ctx: ConversationContext,
+    params: { keys: LocalKeys; welcomeFrame: Uint8Array },
+  ): Promise<{ conversation: Conversation; outbound: Outbound[] }> {
+    const holder: { convo: Conversation | null } = { convo: null };
+    const { conversation: session, outbound } = await ConversationSession.join(ctx, {
+      keys: params.keys,
+      welcomeFrame: params.welcomeFrame,
+      events: eventsFor(holder),
+    });
+    const convo = new Conversation(session, ctx.storage, ctx);
+    holder.convo = convo;
+    await convo.saveConversationRecord();
+    return { conversation: convo, outbound };
   }
 
-  /** Ingest an inbound frame (a decrypted message lands in `messages$`). */
-  async ingestFrame(frame: Uint8Array): Promise<Uint8Array[]> {
-    return this.session.ingest(frame);
+  /** Reopen a persisted conversation (engine-state restore). Null if unknown. */
+  static async restore(ctx: ConversationContext, groupId: string): Promise<Conversation | null> {
+    const holder: { convo: Conversation | null } = { convo: null };
+    const session = await ConversationSession.restore(ctx, groupId, eventsFor(holder));
+    if (session === null) return null;
+    const convo = new Conversation(session, ctx.storage, ctx);
+    holder.convo = convo;
+    return convo;
+  }
+
+  // ── operations (return sealed envelopes for the transport) ──────────────────
+
+  /** Send a text message. The sent message is persisted immediately (so it
+   *  appears in `messages$` right away); deliver the returned envelopes. */
+  async send(text: string): Promise<Outbound[]> {
+    const recipients = this.members.filter((p) => p !== this.ctx.did);
+    const payload = createMessagePayload(this.ctx.did, recipients, createTextContent(text), "atsms/text", this.groupId);
+    const outbound = await this.session.send(enc(JSON.stringify(payload)));
+    await this.storage.saveMessage(payloadToLocalMessage(payload));
+    return outbound;
+  }
+
+  /** Add a member device (its welcome rides among the returned envelopes). */
+  async addMember(member: MemberDescriptor): Promise<Outbound[]> {
+    const outbound = await this.session.addMember(member);
+    await this.saveConversationRecord();
+    return outbound;
+  }
+
+  /** Deliver an inbound sealed envelope (a decrypted message lands in
+   *  `messages$`); returns any triggered repair envelopes. */
+  async deliverEnvelope(envelope: Uint8Array): Promise<Outbound[]> {
+    return this.session.deliver(envelope);
+  }
+
+  /** Ingest an already-unsealed frame (dispatcher bootstrap path). */
+  async ingestFrame(frame: Uint8Array): Promise<Outbound[]> {
+    return this.session.ingestFrame(frame);
   }
 
   /** Rotate keys (post-compromise healing / mandatory post-join update). */
-  update(): Promise<Uint8Array[]> {
+  update(): Promise<Outbound[]> {
     return this.session.update();
+  }
+
+  /** Advertise this device's non-welcome delivery endpoint in-band (§12). */
+  advertiseEndpoint(url: string): Promise<void> {
+    return this.session.advertiseEndpoint(url);
   }
 
   // ── internals ───────────────────────────────────────────────────────────────
@@ -138,12 +191,13 @@ export class Conversation {
 
   private async saveConversationRecord(): Promise<void> {
     const now = Date.now();
+    const existing = await this.storage.getConversation(this.groupId);
     await this.storage.saveConversation({
       id: this.groupId,
-      participantIds: this.participants,
-      createdAt: new Date(now),
+      participantIds: this.members,
+      createdAt: existing?.createdAt ?? new Date(now),
       lastMessageAt: new Date(now),
-      unreadCount: 0,
+      unreadCount: existing?.unreadCount ?? 0,
       metadata: { protocol: "dcgka" },
     });
   }

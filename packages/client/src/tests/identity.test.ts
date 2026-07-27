@@ -150,8 +150,9 @@ describe("identityPublicKeyFromCert", () => {
     const identitySk = await sha256(enc("id-scalar"));
     const identityPub = p256.getPublicKey(identitySk);
     const signedPrekey = await sha256(enc("x25519-stand-in")); // 32-byte stand-in for an X25519 pub
+    const signingPk = await sha256(enc("ed25519-stand-in")); // 32-byte stand-in for an Ed25519 pub
     const record = buildPrekeyRecord(
-      { signedPrekey, createdAt: "2026-07-26T00:00:00.000Z", expiresAt: "2026-08-02T00:00:00.000Z" },
+      { signedPrekey, signingPk, createdAt: "2026-07-26T00:00:00.000Z", expiresAt: "2026-08-02T00:00:00.000Z" },
       identitySk,
     );
     expect(verifyPrekeyRecord(record, identityPub).ok).toBe(true);
@@ -209,8 +210,9 @@ async function seedDevice(
   if (opts.prekey) {
     const scalar = await p256Scalar(privateKey);
     const signedPrekey = await sha256(enc(`sp-${rkey}`));
+    const signingPk = await sha256(enc(`spk-${rkey}`));
     const expiresAt = opts.prekey === "expired" ? iso(T0 - WEEK) : iso(T0 + WEEK);
-    const record = buildPrekeyRecord({ signedPrekey, createdAt: iso(T0 - WEEK), expiresAt }, scalar);
+    const record = buildPrekeyRecord({ signedPrekey, signingPk, createdAt: iso(T0 - WEEK), expiresAt }, scalar);
     if (opts.prekey === "tampered") record.signedPrekey = new Uint8Array(32); // breaks bundleSig
     await pds.putRecord("at.atsms.prekey", fp, record);
   }
