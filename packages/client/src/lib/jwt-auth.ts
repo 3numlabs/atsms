@@ -10,17 +10,18 @@ import { decodeJwt, importPKCS8, SignJWT } from "jose";
  * Generate a JWT token signed with the endpoint's private key (ES256 / P-256 ECDSA)
  *
  * @param privateKeyPEM - The private key in PEM format (PKCS#8)
- * @param endpointCertSerialNumber - The serial number of the endpoint certificate
+ * @param deviceFingerprint - The device fingerprint (the at.atsms.x509 record key)
  * @param did - The DID of the user
  * @returns The signed JWT token
  */
 export async function generateJWT(
   privateKeyPEM: string,
-  endpointCertSerialNumber: string,
+  deviceFingerprint: string,
   did: string,
 ): Promise<string> {
-  // Create the AT Protocol URL for the user ID
-  const userId = `at://${did}/at.atsms.x509/${endpointCertSerialNumber}`;
+  // Create the AT Protocol URI for the user ID — fingerprint-keyed record
+  // (identity-devices §4; integration §8.5 re-keying)
+  const userId = `at://${did}/at.atsms.x509/${deviceFingerprint}`;
 
   // Ensure the private key is in proper PKCS#8 format
   if (!privateKeyPEM.includes("BEGIN PRIVATE KEY")) {
@@ -39,7 +40,7 @@ export async function generateJWT(
     .setProtectedHeader({
       alg: "ES256",
       typ: "JWT",
-      kid: endpointCertSerialNumber, // Key ID is the certificate serial number
+      kid: deviceFingerprint, // Key ID is the device fingerprint (the record rkey)
     })
     .setIssuedAt()
     .setExpirationTime("1h")

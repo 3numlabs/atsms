@@ -724,7 +724,8 @@ export class IndexedDBAdapter implements StorageAdapter {
     endpointCert: ATSMSEndpointCertificate,
   ): Promise<void> {
     const now = Date.now();
-    const certSerial = endpointCert.serialNumber;
+    // Legacy column name; the VALUE is the device fingerprint (integration §8.5).
+    const certSerial = await endpointCert.getDeviceFingerprint();
 
     // Check if DID already exists
     const existing = await this.getDid(did);

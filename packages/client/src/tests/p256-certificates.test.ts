@@ -37,6 +37,23 @@ describe("P-256 ECDSA Endpoint Certificate", () => {
       expect(privateKeyPEM).toContain("BEGIN PRIVATE KEY");
     });
 
+    it("device fingerprint is lowercase hex and keys the SAN URI (integration §8.5)", async () => {
+      const endpointCert = await ATSMSEndpointCertificate.generate(
+        "did:plc:test123",
+        "test.acme.xyz",
+        "test.acme.xyz",
+      );
+      const fingerprint = await endpointCert.getDeviceFingerprint();
+      // Lowercase-hex rule — mixed case would split a device's mailbox in two.
+      expect(fingerprint).toMatch(/^[0-9a-f]{64}$/);
+      // The SAN URI carries the fingerprint-keyed record path (not the serial),
+      // and it survives a PEM round-trip.
+      const parsed = loadEndpointCertificate(endpointCert.certificatePEM);
+      expect(parsed.atUri).toBe(`at://did:plc:test123/at.atsms.x509/${fingerprint}`);
+      expect(await parsed.getDeviceFingerprint()).toBe(fingerprint);
+      expect(parsed.did).toBe("did:plc:test123");
+    });
+
     it("should load certificate with private key using fromPEMWithKey", async () => {
       const originalCert = await ATSMSEndpointCertificate.generate(
         "did:plc:test123",

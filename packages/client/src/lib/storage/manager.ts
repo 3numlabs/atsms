@@ -422,7 +422,7 @@ export class ATSMSStorageManager {
         }
 
         endpoints.push({
-          certSerial: endpointCert.serialNumber,
+          certSerial: await endpointCert.getDeviceFingerprint(), // legacy field name; value = fingerprint (§8.5)
           email: endpointCert.email,
         });
       }
@@ -547,7 +547,7 @@ export class ATSMSStorageManager {
         }
 
         endpoints.push({
-          certSerial: cert.serialNumber,
+          certSerial: await cert.getDeviceFingerprint(), // legacy field name; value = fingerprint (§8.5)
           email: cert.email,
         });
         allEndpointCerts.push(cert);
@@ -680,7 +680,7 @@ export class ATSMSStorageManager {
         }
 
         endpoints.push({
-          certSerial: cert.serialNumber,
+          certSerial: await cert.getDeviceFingerprint(), // legacy field name; value = fingerprint (§8.5)
           email: cert.email,
         });
         allEndpointCerts.push(cert);
@@ -963,20 +963,17 @@ export class ATSMSStorageManager {
     const wsApiUrl = this.httpClient.config.apiUrl;
     const activeDid = await this.getActiveDid();
 
+    const deviceFingerprint = await endpointCert.getDeviceFingerprint();
     const wsClient = new ATSMSWebSocketClient({
       apiUrl: wsApiUrl,
       did: activeDid,
-      certSerial: endpointCert.serialNumber,
+      deviceFingerprint,
       getToken: async () => {
         const privateKeyPEM = endpointCert.certificatePrivateKeyPEM;
         if (!privateKeyPEM) {
           throw new Error("No private key available for WebSocket auth");
         }
-        return await generateJWT(
-          privateKeyPEM,
-          endpointCert.serialNumber,
-          activeDid,
-        );
+        return await generateJWT(privateKeyPEM, deviceFingerprint, activeDid);
       },
       onMessage: async (wsMessage) => {
         // Only process actual message notifications
@@ -1151,7 +1148,7 @@ export class ATSMSStorageManager {
     const activeDid = await this.getActiveDid();
     const jwt = await generateJWT(
       privateKeyPEM,
-      endpointCert.serialNumber,
+      await endpointCert.getDeviceFingerprint(),
       activeDid,
     );
 

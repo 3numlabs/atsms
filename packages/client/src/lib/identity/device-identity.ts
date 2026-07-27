@@ -19,7 +19,6 @@ import {
   publishPrekey,
 } from "@atsms/dcgka";
 
-import { loadEndpointCertificate } from "../certificates/index.js";
 import type { LocalKeys, MemberDescriptor } from "../conversations/index.js";
 import type { StorageAdapter } from "../storage/interface.js";
 import { deviceFingerprintFromCert, identityScalarFromKey } from "./cert-key.js";
@@ -41,10 +40,9 @@ export class ATSMSDeviceIdentity {
   private constructor(
     readonly did: string,
     readonly device: DeviceID,
-    /** Lowercase-hex fingerprint — the at.atsms.{x509,prekey} rkey. */
+    /** Lowercase-hex device fingerprint — the at.atsms.{x509,prekey} record
+     *  key, the per-device worker-inbox key, and the JWT subject rkey. */
     readonly fingerprint: string,
-    /** The worker-inbox key (pre-§8.5 the inboxes are still serial-keyed). */
-    readonly certSerial: string,
     readonly certificatePEM: string,
     readonly privateKeyPEM: string,
     private readonly prekeys: PrekeyManager,
@@ -54,7 +52,6 @@ export class ATSMSDeviceIdentity {
 
   static async load(config: DeviceIdentityConfig): Promise<ATSMSDeviceIdentity> {
     const fingerprint = await deviceFingerprintFromCert(config.certificatePEM);
-    const certSerial = loadEndpointCertificate(config.certificatePEM).serialNumber;
     const identitySk = await identityScalarFromKey(config.privateKeyPEM);
     const ttlMs = config.prekeyTtlMs ?? WEEK_MS;
 
@@ -68,7 +65,6 @@ export class ATSMSDeviceIdentity {
       config.did,
       { did: config.did, fingerprint: hexToBytes(fingerprint) },
       fingerprint,
-      certSerial,
       config.certificatePEM,
       config.privateKeyPEM,
       prekeys,

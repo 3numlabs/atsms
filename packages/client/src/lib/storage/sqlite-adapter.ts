@@ -704,7 +704,8 @@ export class SQLiteAdapter implements StorageAdapter {
     endpointCert: import("../certificates/index.js").ATSMSEndpointCertificate,
   ): Promise<void> {
     const now = Date.now();
-    const certSerial = endpointCert.serialNumber;
+    // Legacy column name; the VALUE is the device fingerprint (integration §8.5).
+    const certSerial = await endpointCert.getDeviceFingerprint();
 
     // Check if DID already exists
     const existingStmt = this.db.prepare(

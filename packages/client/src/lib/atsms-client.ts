@@ -35,6 +35,9 @@ export class ATSMSClient {
   ): Promise<void> {
     const endpointCertPEM = endpointCert.certificatePEM;
     const serialNumber = endpointCert.serialNumber;
+    // rkey = device fingerprint (identity-devices §4) — structural pairing with
+    // at.atsms.prekey/<fingerprint>; the serial stays a field of the X509 artifact.
+    const fingerprint = await endpointCert.getDeviceFingerprint();
     const validUntil = endpointCert.notAfter.toISOString();
     const createdAt = new Date().toISOString();
 
@@ -42,7 +45,7 @@ export class ATSMSClient {
       await this.agent.com.atproto.repo.putRecord({
         repo: this.did,
         collection: "at.atsms.x509",
-        rkey: serialNumber,
+        rkey: fingerprint,
         record: {
           certificate: endpointCertPEM,
           serialNumber: serialNumber,

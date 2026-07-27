@@ -32,7 +32,8 @@ export interface ATSMSWebSocketMessage {
 export interface ATSMSWebSocketClientConfig {
   apiUrl: string;
   did: string;
-  certSerial: string;
+  /** Device fingerprint (lowercase hex) — the per-device inbox key. */
+  deviceFingerprint: string;
   getToken: () => Promise<string> | string;
   onMessage?: (message: ATSMSWebSocketMessage) => void;
   onConnect?: () => void;
@@ -96,8 +97,8 @@ export class ATSMSWebSocketClient {
     try {
       // URL encode the DID and cert serial (DIDs contain colons which need encoding)
       const encodedDid = encodeURIComponent(this.config.did);
-      const encodedCertSerial = encodeURIComponent(this.config.certSerial);
-      const wsUrl = `${this.config.apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedCertSerial}`;
+      const encodedDeviceFingerprint = encodeURIComponent(this.config.deviceFingerprint);
+      const wsUrl = `${this.config.apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedDeviceFingerprint}`;
 
       if (this.isBrowser) {
         // Browser: Use post-connection authentication

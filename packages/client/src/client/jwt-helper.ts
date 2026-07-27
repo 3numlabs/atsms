@@ -59,7 +59,8 @@ export class JWTHelper {
     const endpointCertPath = path.join(this.certsDir, "endpoint.pem");
     const endpointCertPEM = fs.readFileSync(endpointCertPath, "utf8");
     const endpointCert = ATSMSEndpointCertificate.fromPEM(endpointCertPEM);
-    const endpointCertSerialNumber = endpointCert.serialNumber;
+    // Device fingerprint keys the record/inbox/JWT since §8.5 (was the serial).
+    const endpointCertSerialNumber = await endpointCert.getDeviceFingerprint();
 
     // Check if we have a cached token that's still valid
     const cachedToken = this.getCachedToken();
@@ -143,12 +144,12 @@ export class JWTHelper {
   }
 
   /**
-   * Get the certificate serial number from the endpoint certificate file
+   * Get the device fingerprint (the record/inbox key since §8.5)
    */
-  getCertificateSerialNumber(): string {
+  async getCertificateSerialNumber(): Promise<string> {
     const endpointCertPath = path.join(this.certsDir, "endpoint.pem");
     const certPEM = fs.readFileSync(endpointCertPath, "utf8");
     const endpointCert = ATSMSEndpointCertificate.fromPEM(certPEM);
-    return endpointCert.serialNumber;
+    return endpointCert.getDeviceFingerprint();
   }
 }

@@ -77,7 +77,7 @@ class ATSMSCLITool {
     const certPEM = readFileSync(certPath, "utf8");
     const keyPEM = readFileSync(keyPath, "utf8");
     const endpointCert = await loadEndpointCertificateWithKey(certPEM, keyPEM);
-    return generateJWT(keyPEM, endpointCert.serialNumber, this.did);
+    return generateJWT(keyPEM, await endpointCert.getDeviceFingerprint(), this.did);
   }
 
   /**

@@ -34,8 +34,8 @@ export interface ATSMSWorkerTransportConfig {
   /** Worker base URL, e.g. `https://inbox.atsms.at`. */
   apiUrl: string;
   did: string;
-  /** This device's endpoint-cert serial (the worker inbox key, pre-§8.5). */
-  certSerial: string;
+  /** This device's fingerprint (lowercase hex) — the per-device inbox key. */
+  deviceFingerprint: string;
   /** Endpoint-cert private key (PEM) — signs the worker API JWTs. */
   privateKeyPEM: string;
   /** Resolve a DID's public inbox to an `https:` POST target (the ATSMS client backs
@@ -97,7 +97,7 @@ export class ATSMSWorkerEnvelopeTransport implements EnvelopeTransport {
       this.ws = new ATSMSWebSocketClient({
         apiUrl: this.config.apiUrl,
         did: this.config.did,
-        certSerial: this.config.certSerial,
+        deviceFingerprint: this.config.deviceFingerprint,
         getToken: () => this.token(),
         onMessage: (m) => {
           if ((m as { type?: string }).type === "new_message") this.scheduleDrain();
@@ -137,7 +137,7 @@ export class ATSMSWorkerEnvelopeTransport implements EnvelopeTransport {
    *  only — `encryptedContent` requires the per-message GET. */
   private async drain(): Promise<void> {
     if (this.handler === null) return;
-    const base = `${this.config.apiUrl}/messages/${encodeURIComponent(this.config.did)}/${encodeURIComponent(this.config.certSerial)}`;
+    const base = `${this.config.apiUrl}/messages/${encodeURIComponent(this.config.did)}/${encodeURIComponent(this.config.deviceFingerprint)}`;
     const res = await this.fetchFn(`${base}/list?type=atsms-envelope&limit=100`, {
       headers: { Authorization: `Bearer ${await this.token()}` },
     });
@@ -165,7 +165,7 @@ export class ATSMSWorkerEnvelopeTransport implements EnvelopeTransport {
 
   private async token(): Promise<string> {
     if (this.jwt === null || Date.now() - this.jwt.mintedAt > JWT_REFRESH_MS) {
-      const token = await generateJWT(this.config.privateKeyPEM, this.config.certSerial, this.config.did);
+      const token = await generateJWT(this.config.privateKeyPEM, this.config.deviceFingerprint, this.config.did);
       this.jwt = { token, mintedAt: Date.now() };
     }
     return this.jwt.token;

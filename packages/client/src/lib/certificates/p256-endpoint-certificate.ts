@@ -21,6 +21,18 @@ import { computeATSMSEmail, generateSerialNumber } from "./san-utils";
  * Endpoint Certificate class - self-signed P-256 ECDSA certificates
  * Uses P-256 for both signing (ECDSA) and key agreement (ECDH)
  */
+
+/** Device fingerprint (identity-devices §4): SHA-256 of the raw uncompressed
+ *  P-256 public-key point, lowercase hex — computed pre-issuance so the cert's
+ *  SAN URI can carry the fingerprint-keyed record path. */
+async function deviceFingerprintOf(publicKey: CryptoKey): Promise<string> {
+  const raw = await cryptoProvider.subtle.exportKey("raw", publicKey);
+  const digest = new Uint8Array(await cryptoProvider.subtle.digest("SHA-256", raw));
+  return Array.from(digest)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export class ATSMSEndpointCertificate extends ATSMSCertificate {
   /**
    * Generate a new self-signed P-256 endpoint certificate
@@ -91,6 +103,9 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
       "verify",
     ])) as CryptoKeyPair;
 
+    // The SAN URI carries the fingerprint-keyed record path (integration §8.5).
+    const deviceFingerprint = await deviceFingerprintOf(ecKeys.publicKey);
+
     // Create self-signed certificate with ECDSA
     const cert = await X509CertificateGenerator.createSelfSigned(
       {
@@ -119,7 +134,7 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
           ),
           new SubjectAlternativeNameExtension([
             { type: "dns", value: domain },
-            { type: "url", value: `at://${did}/at.atsms.x509/${serialNumber.hex}` },
+            { type: "url", value: `at://${did}/at.atsms.x509/${deviceFingerprint}` },
             { type: "email", value: sanEmail },
           ]),
         ],
@@ -198,6 +213,8 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
     // Generate serial number and compute email
     const serialNumber = await generateSerialNumber();
     const sanEmail = computeATSMSEmail(did, emailDomain);
+    // The SAN URI carries the fingerprint-keyed record path (integration §8.5).
+    const deviceFingerprint = await deviceFingerprintOf(ecKeys.publicKey);
 
     // Create self-signed certificate
     const cert = await X509CertificateGenerator.createSelfSigned(
@@ -227,7 +244,7 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
           ),
           new SubjectAlternativeNameExtension([
             { type: "dns", value: domain },
-            { type: "url", value: `at://${did}/at.atsms.x509/${serialNumber.hex}` },
+            { type: "url", value: `at://${did}/at.atsms.x509/${deviceFingerprint}` },
             { type: "email", value: sanEmail },
           ]),
         ],

@@ -61,6 +61,7 @@ interface AuthCache {
 }
 
 interface CertificateRow {
+  certificatePEM: string;
   serialNumber: string;
   privateKeyPEM: string;
   privateKeyEncrypted: number;
@@ -146,6 +147,24 @@ if (!command) {
 }
 
 // Load or generate JWT token from data directory
+
+/** Device fingerprint (§8.5): SHA-256 of the raw uncompressed P-256 public-key
+ *  point of the cert's SPKI, lowercase hex — the record/inbox/JWT key. */
+async function deviceFingerprintFromPEM(certPEM: string): Promise<string> {
+  const b64 = certPEM.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const der = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  // Locate the SPKI's uncompressed point: 0x04 followed by 64 bytes, inside a
+  // BIT STRING (03 42 00 04 for P-256). Robust enough for our own certs.
+  for (let i = 0; i < der.length - 3; i++) {
+    if (der[i] === 0x03 && der[i + 1] === 0x42 && der[i + 2] === 0x00 && der[i + 3] === 0x04) {
+      const point = der.slice(i + 3, i + 3 + 65);
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", point));
+      return Array.from(digest).map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+  }
+  throw new Error("no P-256 public key point found in certificate");
+}
+
 async function loadOrGenerateJWT(handle: string): Promise<string> {
   const configDir = dataDir;
 
@@ -184,7 +203,7 @@ async function loadOrGenerateJWT(handle: string): Promise<string> {
     const db = new Database(dbPath);
 
     const stmt = db.prepare(`
-      SELECT serialNumber, privateKeyPEM, privateKeyEncrypted
+      SELECT serialNumber, certificatePEM, privateKeyPEM, privateKeyEncrypted
       FROM certificates
       WHERE did = ? AND type = 'endpoint'
       LIMIT 1
@@ -204,7 +223,9 @@ async function loadOrGenerateJWT(handle: string): Promise<string> {
 
     // Generate JWT using jose library
     // Detect key type by trying to import as EC first (P-256 is the new default)
-    const userId = `at://${did}/at.atsms.x509/${cert.serialNumber}`;
+    // Device fingerprint keys the record/inbox/JWT since §8.5 (was the serial).
+    const deviceFingerprint = await deviceFingerprintFromPEM(cert.certificatePEM);
+    const userId = `at://${did}/at.atsms.x509/${deviceFingerprint}`;
     let privateKey: CryptoKey;
     let algorithm: string;
 
@@ -225,7 +246,7 @@ async function loadOrGenerateJWT(handle: string): Promise<string> {
       .setProtectedHeader({
         alg: algorithm,
         typ: "JWT",
-        kid: cert.serialNumber,
+        kid: deviceFingerprint,
       })
       .setIssuedAt()
       .setExpirationTime("1h")

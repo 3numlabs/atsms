@@ -58,16 +58,9 @@ function b64urlToBytes(s: string): Uint8Array {
  * The device fingerprint (lowercase hex) — the `at.atsms.x509` / `at.atsms.prekey`
  * record rkey pairing a device's cert with its prekey. Per identity-devices §4:
  * **SHA-256 of the raw uncompressed public-key point** (`0x04‖X‖Y`), RFC 7093
- * method 1, = the cert's SKI. (The x509 records are still serial-keyed in the
- * prototype; the serial→fingerprint re-keying is the decided pre-alpha migration,
- * atsms-integration §8.5. This capability path is rkey-agnostic — it derives the
- * fingerprint from the cert content — so it works either way.)
+ * method 1, = the cert's SKI. The x509 records, prekey records, worker inboxes,
+ * and JWT subject all key on it (integration §8.5 re-keying, executed).
  */
 export async function deviceFingerprintFromCert(certPEM: string): Promise<string> {
-  const raw = await identityPublicKeyFromCert(certPEM);
-  // Cast: lib.dom's BufferSource rejects Uint8Array<ArrayBufferLike> (SharedArrayBuffer union).
-  const digest = new Uint8Array(await cryptoProvider.subtle.digest("SHA-256", raw as BufferSource));
-  let hex = "";
-  for (const b of digest) hex += b.toString(16).padStart(2, "0");
-  return hex;
+  return loadEndpointCertificate(certPEM).getDeviceFingerprint();
 }

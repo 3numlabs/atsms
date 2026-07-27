@@ -174,14 +174,46 @@ export abstract class ATSMSCertificate extends X509Certificate {
       .toUpperCase();
   }
 
+  private _deviceFingerprint?: string;
+
+  /**
+   * The DEVICE fingerprint (identity-devices §4): SHA-256 of the raw
+   * uncompressed P-256 public-key point (RFC 7093 method 1 = the cert SKI),
+   * lowercase hex. This is the `at.atsms.x509` / `at.atsms.prekey` record key
+   * and the per-device inbox key — distinct from `getFingerprint()`, which
+   * hashes the whole certificate for display.
+   */
+  async getDeviceFingerprint(): Promise<string> {
+    if (this._deviceFingerprint === undefined) {
+      const key = await this.getPublicKey();
+      const raw = await cryptoProvider.subtle.exportKey("raw", key);
+      const digest = new Uint8Array(await cryptoProvider.subtle.digest("SHA-256", raw));
+      this._deviceFingerprint = Array.from(digest)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+    return this._deviceFingerprint;
+  }
+
   /**
    * Get the DID from the Subject Alternative Name extension
    *
    * The DID is extracted from the URI field in the SAN extension.
-   * Expected format: at://[did]/at.atsms.x509/[serial-hex]
-   * Example: at://did:plc:abc123/at.atsms.x509/1234abcd
+   * Expected format: at://[did]/at.atsms.x509/[device-fingerprint]
    */
   get did(): string | undefined {
+    const uri = this.atUri;
+    if (uri === undefined) return undefined;
+    const pathStart = uri.indexOf("/at.atsms.x509/");
+    const did = uri.slice(5, pathStart);
+    return did.startsWith("did:") ? did : undefined;
+  }
+
+  /**
+   * The full AT URI from the SAN extension —
+   * `at://[did]/at.atsms.x509/[device-fingerprint]` (the record path).
+   */
+  get atUri(): string | undefined {
     try {
       const sanExt = this.extensions.find(
         (ext) => ext.type === "2.5.29.17", // subjectAltName OID
@@ -204,16 +236,9 @@ export abstract class ATSMSCertificate extends X509Certificate {
             const valueHex = item.valueBlock.valueHex;
             const valueStr = new TextDecoder().decode(new Uint8Array(valueHex));
 
-            // Parse AT URI format: at://[did]/at.atsms.x509/[serial]
-            if (valueStr.startsWith("at://")) {
-              const pathStart = valueStr.indexOf("/at.atsms.x509/");
-              if (pathStart !== -1) {
-                // Extract DID between "at://" and "/at.atsms.x509/"
-                const did = valueStr.slice(5, pathStart);
-                if (did.startsWith("did:")) {
-                  return did;
-                }
-              }
+            // AT URI format: at://[did]/at.atsms.x509/[fingerprint]
+            if (valueStr.startsWith("at://") && valueStr.includes("/at.atsms.x509/")) {
+              return valueStr;
             }
           }
         }
