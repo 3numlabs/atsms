@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { ATSMSEndpointCertificate } from "../lib/certificates/index.js";
+import { deviceFingerprintFromKey } from "../lib/identity/cert-key.js";
 import {
   deriveFromSeed,
   deriveIdentityKeyPEM,
@@ -43,6 +44,12 @@ describe("seed-derived identity", () => {
     const store = await deriveStorageKey(seed(4));
     expect(store).toHaveLength(32);
     expect(Buffer.from(ident).toString("hex")).not.toBe(Buffer.from(store).toString("hex"));
+  });
+
+  test("deviceFingerprintFromKey matches the cert-derived fingerprint", async () => {
+    const keyPEM = await deriveIdentityKeyPEM(seed(5));
+    const cert = await ATSMSEndpointCertificate.generateWithKey(keyPEM, "did:plc:fk", "a.example", "a.example");
+    expect(await deviceFingerprintFromKey(keyPEM)).toBe(await cert.getDeviceFingerprint());
   });
 
   test("rejects a too-short seed", async () => {

@@ -66,3 +66,29 @@ function b64urlToBytes(s: string): Uint8Array {
 export async function deviceFingerprintFromCert(certPEM: string): Promise<string> {
   return loadEndpointCertificate(certPEM).getDeviceFingerprint();
 }
+
+/**
+ * The device fingerprint straight from a PKCS#8 private-key PEM (no cert
+ * needed) — e.g. to look up the published cert record for a seed-derived key
+ * before any cert exists locally. Same derivation: SHA-256 of the raw
+ * uncompressed public-key point, lowercase hex.
+ */
+export async function deviceFingerprintFromKey(privateKeyPEM: string): Promise<string> {
+  const key = await cryptoProvider.subtle.importKey(
+    "pkcs8",
+    pemToDer(privateKeyPEM) as BufferSource,
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign"],
+  );
+  const jwk = await cryptoProvider.subtle.exportKey("jwk", key);
+  if (jwk.x === undefined || jwk.y === undefined) throw new Error("private key JWK has no public point");
+  const point = new Uint8Array(65);
+  point[0] = 0x04;
+  point.set(b64urlToBytes(jwk.x), 1);
+  point.set(b64urlToBytes(jwk.y), 33);
+  const digest = new Uint8Array(await cryptoProvider.subtle.digest("SHA-256", point));
+  return Array.from(digest)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
