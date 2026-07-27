@@ -340,8 +340,12 @@ persist), `messages$` = `storage.observeMessages(groupId)`.
   `addMember(did)`; storage gains a `device_state` blob table (prekey ring). 4 loopback e2e tests (mock PDS +
   awaiting hub): open-by-DID bidirectional, incapable-DID error, add→auto-join→3-way + FS, facade restart.
   atsms-lib 233/0.
-**T4(c) NEXT**: `atsms-cli` — thin REPL over the facade (login via AtpAgent, publish records, open/send/recv
-against the deployed worker). Then step 3 encryption-at-rest.
+**T4(c) BUILT** (new sibling repo `atsms-cli/`, commit 482fcc1; atsms-lib `374f387` exports cert factories +
+re-exports `AtpAgent` so file:-consumers share one @atproto/api instance): thin REPL over the facade —
+login (resumable session, no-echo password), first-run cert generate+publish, `ATSMS.create` wiring
+(worker transport, WS push + polls, prekey/inbox published), `/open /add /convos /use /members /history`
++ live feed. tsc strict clean; behavior covered by the lib's loopback e2e; **live run against the deployed
+worker still to be exercised (needs real credentials)**. Then step 3 encryption-at-rest.
 
 - Wire `@atsms/dcgka` into `@atsms/client`: the stateful `conversations` surface wraps `Session`
   (create/add/remove/update + membership/security streams); `atsms.send()` is the stateless X509 floor; path
