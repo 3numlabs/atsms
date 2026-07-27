@@ -18,7 +18,7 @@ import {
   type LocalMessage,
 } from "./types";
 
-const DB_NAME = "atsms";
+const DEFAULT_DB_NAME = "atsms";
 const DB_VERSION = 3;
 
 // Object store names
@@ -41,7 +41,12 @@ export class IndexedDBAdapter implements StorageAdapter {
     Subject<LocalConversation | null>
   >();
 
-  constructor() {
+  private readonly dbName: string;
+
+  /** @param dbName one database per account/profile (default "atsms") — a
+   *  browser origin hosting several identities needs separate stores. */
+  constructor(dbName: string = DEFAULT_DB_NAME) {
+    this.dbName = dbName;
     // Database will be initialized on first use
   }
 
@@ -49,7 +54,7 @@ export class IndexedDBAdapter implements StorageAdapter {
     if (this.db) return this.db;
 
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = indexedDB.open(this.dbName, DB_VERSION);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
@@ -184,47 +189,25 @@ export class IndexedDBAdapter implements StorageAdapter {
 
   async getMessages(
     convoId: string,
-    limit?: number,
+    limit = 50,
     cursor?: string,
   ): Promise<LocalMessage[]> {
+    // Same contract as the SQLite adapter: the `limit` most-recent messages
+    // (older than `cursor`, when given), returned in ASCENDING createdAt order
+    // for the UI. The convoId index orders by primary key, not createdAt, so
+    // sort explicitly (per-conversation sets are small client-side).
     const store = await this.getStore(STORES.MESSAGES);
     const index = store.index("convoId");
-    const range = IDBKeyRange.only(convoId);
-
-    const request = index.openCursor(range, "prev"); // Newest first
-    const messages: LocalMessage[] = [];
-    let count = 0;
-    let shouldSkip = !!cursor;
-
-    return new Promise((resolve, reject) => {
-      request.onsuccess = () => {
-        const cursorResult = request.result;
-        if (!cursorResult) {
-          resolve(messages);
-          return;
-        }
-
-        // Handle cursor pagination
-        if (shouldSkip && cursorResult.value.id === cursor) {
-          shouldSkip = false;
-          cursorResult.continue();
-          return;
-        }
-
-        if (!shouldSkip) {
-          messages.push(this.deserializeMessage(cursorResult.value));
-          count++;
-
-          if (limit && count >= limit) {
-            resolve(messages);
-            return;
-          }
-        }
-
-        cursorResult.continue();
-      };
-      request.onerror = () => reject(request.error);
-    });
+    const rows = await this.promisifyRequest<unknown[]>(index.getAll(IDBKeyRange.only(convoId)));
+    const all = rows
+      .map((r) => this.deserializeMessage(r))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
+    let end = all.length;
+    if (cursor) {
+      const at = all.findIndex((m) => m.id === cursor);
+      if (at >= 0) end = at;
+    }
+    return all.slice(Math.max(0, end - limit), end);
   }
 
   async updateMessage(
