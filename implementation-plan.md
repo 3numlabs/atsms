@@ -351,7 +351,14 @@ Found+fixed three bugs the loopback couldn't see (atsms-lib dc0e0ab): worker lis
 GET wraps {message:{...}} (drain silently skip-deleted everything); invisible drain/dispatch failures → new
 transport onError + facade onEvent; create-frame zero-groupId placeholder vs the known-group check
 (redelivered create could re-bootstrap). **Sequencing decided 2026-07-27: §8.5 fingerprint re-keying →
-`atsms.send()` (stateless X509-baseline surface) → encryption-at-rest.** §8.5 EXECUTED AND CLOSED (lib 4d6ac55, worker
+`atsms.send()` (stateless X509-baseline surface) → encryption-at-rest.** **`atsms.send()` BUILT + LIVE (2026-07-27, atsms-lib 3988b27):** the stateless X509-baseline surface —
+send/one-shot.ts (sign-then-encrypt via the salvaged prepareMessageForSending, deterministic
+oneShotConvoId over the participant set, fingerprint-keyed sender authenticity: signer cert must resolve
+in the claimed DID's at.atsms.x509; forged thread ids rejected); ATSMS.send({to,text}) + received$;
+one-shots ride the SAME payload-agnostic /inbox binding (told apart from sealed envelopes by
+CBOR-vs-DER); CLI /send + live feed. e2e incl. a prekey-less recipient (open() refuses, send()
+delivers). Live smoke: sealed conversation + one-shots, both directions. Both sdk-shape Part A
+surfaces now exist. §8.5 EXECUTED AND CLOSED (lib 4d6ac55, worker
 e310bb6 deployed; all live records migrated, two-party smoke PASSED on the fingerprint-keyed stack;
 migration script deleted after use).
 
