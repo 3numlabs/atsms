@@ -32,12 +32,18 @@
 
 - **The device identity IS the endpoint-certificate keypair** (`at.atsms.x509`, P-256 — kept for
   S/MIME/WebCrypto interop). No separate device keypair, no `device_id`.
-- **Device fingerprint** (lowercase hex) = **SHA-256 of the endpoint cert's public-key point** — the raw
-  uncompressed EC point (`0x04‖X‖Y`), i.e. the `subjectPublicKey` value, per **RFC 7093 method 1**, so it
-  *equals the cert's SKI* (§4.1). **The device's sole protocol identifier**: the `at.atsms.x509` and
+- **Device fingerprint** (lowercase hex, 32 bytes) = **SHA-256 of the endpoint cert's public-key point** —
+  the raw uncompressed EC point (`0x04‖X‖Y`, 65 bytes for P-256), i.e. exactly the `subjectPublicKey`
+  BIT STRING value — as the **full, untruncated digest**. This derivation is normative on its own (frozen
+  vectors, §9): it shares its *input* with RFC 7093's key-identifier methods but matches none of them
+  exactly (those truncate to 160 bits, or hash the whole SPKI DER). Explicitly NOT the whole-certificate
+  hash (`openssl x509 -fingerprint`) — a device keeps its fingerprint across cert re-issuance for the same
+  key — and NOT a hash of the DER `SubjectPublicKeyInfo` structure (that would drag the algorithm header
+  into the identifier). Cross-check:
+  `openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform DER | tail -c 65 | openssl dgst -sha256`.
+  **The device's sole protocol identifier**: the `at.atsms.x509` and
   `at.atsms.prekey` rkey (§4), the JWT `kid`, and the mailbox key (re-keyed from cert serial 2026-07-17 — the
-  serial survives only *inside* X509/CMS artifacts). *(Not SHA-256 of the full SPKI DER — that is RFC 7093
-  method 2; we use method 1 to match the SKI.)*
+  serial survives only *inside* X509/CMS artifacts).
 - **DeviceID** = `(DID, deviceFingerprint)` — the identity-layer handle. **Membership** =
   `(DeviceID, admittedBy)` — the group-layer identifier: one device's tenure in one group, where
   `admittedBy` = the admitting op's MessageID (dgm.md §2). A re-added device is a fresh Membership —
@@ -102,7 +108,7 @@ P-256 key, any tree-internal key, or any chain key (sealed-sender §2).
 
 ### 4.1 `at.atsms.x509` — the endpoint certificate collection
 
-**rkey = the fingerprint (SHA-256 of SPKI, lowercase hex) of the record's own key** — the rkey
+**rkey = the fingerprint (SHA-256 of the raw public-key point, §2; lowercase hex) of the record's own key** — the rkey
 self-certifies which key the record serves, and a same-key cert re-issuance updates the record in place
 instead of minting a phantom new device. *(Re-keyed from cert serial, decided 2026-07-17: `serialNumber`
 remains a required field inside the X509 artifact and CMS structures — `IssuerAndSerialNumber` etc. — but
@@ -128,8 +134,9 @@ retired with it.)*
   device-signed. *(Consumers that read `inviteAddress` now read `at.atsms.inbox`; a per-device override MAY
   return later if a device wants a distinct address — not needed for v1.)*
 
-- **SKI = SHA-256 of the public key (RFC 7093 method 1 profile)**, so the cert's SKI *equals* its
-  record's rkey = the device fingerprint.
+- **No SKI extension is currently embedded** in the certs. If one is ever added, its `keyIdentifier`
+  SHOULD be the device fingerprint (§2) verbatim — RFC 5280 does not constrain the keyIdentifier length,
+  so the full 32-byte digest is legal — keeping SKI == rkey == fingerprint by construction.
 
 **Why no `CA = true` / PKIX path validation.** Chain semantics are split across two mechanisms:
 *DID-level delegation* is proven by the signed-commit/MST chain (§1), and *device-level authority over
@@ -185,7 +192,7 @@ X509-floor one-shots seal to it — sealed-sender §2; joint-use analysis §3.1)
 **Resolution & verification path (cert ↔ prekey pairing, normative)**:
 
 1. `getRecord(repo = DID, collection = "at.atsms.x509", rkey = fingerprint)` → endpoint cert; require
-   `certificateType == "endpoint"`, `SHA-256(cert SPKI) == rkey`, valid lifetime, not revoked. (Consumers
+   `certificateType == "endpoint"`, `deviceFingerprint(cert public key) == rkey` (§2), valid lifetime, not revoked. (Consumers
    holding a DeviceID resolve **directly** — the list-and-hash-match step the serial scheme required is
    gone.)
 2. `getRecord(repo = DID, collection = "at.atsms.prekey", rkey = fingerprint)` → bundle.
@@ -289,7 +296,7 @@ X3DH mode relied on, now permanent and sufficient. (Design record: 2sm.md §5.0.
 3. **Rotation flows**: routine self-rotation end-to-end (records + per-group remove/add + old-record
    revocation); loss flow driven from a second device; verify old-instance state is unreachable afterward
    (fresh Membership, dgm.md §2).
-4. **Fingerprint/Membership vectors**: SPKI hashing (fingerprint == rkey == SKI), DeviceID/Membership
+4. **Fingerprint/Membership vectors**: public-key-point hashing (fingerprint == rkey, §2), DeviceID/Membership
    encoding (wire-format §1), re-add produces a distinct Membership.
 5. **Revocation propagation**: verifier honors `revokedAt` from a stale cache after re-fetch; new bootstrap
    against a revoked device fails.

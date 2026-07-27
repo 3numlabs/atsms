@@ -78,7 +78,7 @@ Primitive conventions:
 | signature (ECDSA-P256, identity layer only) | `bstr` (raw r‖s, 64 bytes) |
 | `seq` / `ctrlSeq` / `generation` / counters | `uint` (< 2⁶³; JS implementations MUST use BigInt-safe decoding — no precision loss) |
 | `DID` | `tstr` (the full `did:…` string) |
-| `DeviceID` | `[ did: tstr, fingerprint: bstr32 ]` (dgm.md §2; fingerprint = SHA-256 of endpoint SPKI = the `at.atsms.x509` rkey) |
+| `DeviceID` | `[ did: tstr, fingerprint: bstr32 ]` (dgm.md §2; fingerprint = SHA-256 of the raw public-key point, identity-devices §2 = the `at.atsms.x509` rkey) |
 | `Membership` | `[ device: DeviceID, admittedBy: bstr32 ]` (dgm.md §2; `admittedBy` = MessageID of the admitting op) |
 | `MailboxAddress` | `[ providerUrl: tstr, mailboxId: tstr ]` (spec v1.1 §7) |
 
