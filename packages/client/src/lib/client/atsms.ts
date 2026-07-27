@@ -1,0 +1,329 @@
+/**
+ * `ATSMS` — the client facade (sdk-shape.md Part A): wires identity + storage +
+ * transport + PDS into the two surfaces, and owns **auto-routing** in both
+ * directions:
+ *
+ * - outbound: every op's sealed envelopes are delivered via the transport —
+ *   to the in-band advertised URL when known (sealed-sender §12), else to the
+ *   recipient DID's public `at.atsms.inbox` (inbound-delivery §3/§5);
+ * - inbound: the transport's envelope stream is dispatched — `sealed-asym`
+ *   envelopes are trial-opened with the device's prekey secrets and either
+ *   bootstrap a conversation (create/welcome) or route to one by GroupID;
+ *   `sealed-sym` envelopes are offered to every open conversation (only tag
+ *   tables can tell whose they are — sealed-sender §11.3).
+ *
+ * A dispatch that throws leaves the envelope unacknowledged in the inbox (the
+ * transport redelivers on the next drain).
+ */
+
+import {
+  bytesToHex,
+  CLS_CONTROL,
+  CLS_WELCOME,
+  type Csprng,
+  envelopeMode,
+  hexToBytes,
+  MODE_ASYM,
+  parseFrame,
+  payloadFromCbor,
+  type PdsClient,
+  pickEndpoint,
+  resolveInbox,
+  SealLayer,
+} from "@atsms/dcgka";
+import { x25519 } from "@noble/curves/ed25519";
+import type { Observable } from "rxjs";
+
+import {
+  admissionKeysFor,
+  Conversation,
+  type ConversationContext,
+  type MemberDescriptor,
+  type Outbound,
+} from "../conversations/index.js";
+import { capableDevices } from "../identity/capability.js";
+import { ATSMSDeviceIdentity } from "../identity/device-identity.js";
+import type { StorageAdapter } from "../storage/interface.js";
+import type { LocalConversation, LocalMessage } from "../storage/types.js";
+import type { EnvelopeTransport } from "../transport/envelope-transport.js";
+
+export interface ATSMSConfig {
+  identity: ATSMSDeviceIdentity;
+  storage: StorageAdapter;
+  transport: EnvelopeTransport;
+  pds: PdsClient;
+  rng: Csprng;
+  /** Publish the `at.atsms.inbox` record on create: the transport's ingress URL
+   *  plus this `mailto:` floor (skipped when undefined — e.g. in tests). */
+  mailtoFloor?: string;
+}
+
+/** App-facing handle for one conversation: subscribe + send, no crypto. */
+export class ATSMSConversation {
+  constructor(
+    private readonly convo: Conversation,
+    private readonly router: (outbound: Outbound[], convo: Conversation) => Promise<void>,
+  ) {}
+
+  get id(): string {
+    return this.convo.groupId;
+  }
+
+  /** Fully-processed messages (decrypted, verified, deduped, persisted). */
+  get messages$(): Observable<LocalMessage[]> {
+    return this.convo.messages$;
+  }
+
+  /** Member DIDs (deduped across devices), including self. */
+  get members(): string[] {
+    return this.convo.members;
+  }
+
+  /** Send a text message; sealing + delivery are automatic. */
+  async send(text: string): Promise<void> {
+    await this.router(await this.convo.send(text), this.convo);
+  }
+
+  /** Rotate keys (post-compromise healing). */
+  async update(): Promise<void> {
+    await this.router(await this.convo.update(), this.convo);
+  }
+
+  /** @internal the wrapped conversation (dispatcher use). */
+  get inner(): Conversation {
+    return this.convo;
+  }
+}
+
+export class ATSMS {
+  /** Open conversations by GroupID (hex) — the sym-envelope offer set. */
+  private readonly openConvos = new Map<string, ATSMSConversation>();
+
+  private constructor(
+    readonly identity: ATSMSDeviceIdentity,
+    private readonly storage: StorageAdapter,
+    private readonly transport: EnvelopeTransport,
+    private readonly pds: PdsClient,
+    private readonly rng: Csprng,
+  ) {}
+
+  /**
+   * Wire up a client: publish this device's prekey bundle (rotating if due) and
+   * the DID's inbox record (when a mailto floor is configured), reopen every
+   * persisted conversation, and start receiving.
+   */
+  static async create(config: ATSMSConfig): Promise<ATSMS> {
+    const atsms = new ATSMS(config.identity, config.storage, config.transport, config.pds, config.rng);
+
+    await config.identity.ensurePrekeyPublished(config.pds);
+    if (config.mailtoFloor !== undefined) {
+      const endpoints = [
+        ...(config.transport.ingressUrl !== null ? [{ uri: config.transport.ingressUrl }] : []),
+        { uri: config.mailtoFloor },
+      ];
+      await config.identity.publishInbox(config.pds, endpoints);
+    }
+
+    for (const groupId of await config.storage.listEngineStateIds()) {
+      const convo = await Conversation.restore(atsms.context(), groupId);
+      if (convo !== null) atsms.register(convo);
+    }
+
+    await config.transport.start((envelope) => atsms.dispatch(envelope));
+    return atsms;
+  }
+
+  async close(): Promise<void> {
+    await this.transport.stop();
+  }
+
+  /** All conversations, reactively (metadata level). */
+  get conversations$(): Observable<LocalConversation[]> {
+    return this.storage.observeConversations();
+  }
+
+  // ── the stateful surface ───────────────────────────────────────────────────
+
+  /**
+   * Open (or reuse) the conversation with `members` (DIDs; self implied). Every
+   * member must be DCGKA-capable — the incapable ones are named in the error,
+   * never silently downgraded (capability §3); one-shots to them can use the
+   * stateless X509 floor instead.
+   */
+  async open(params: { members: string[]; admins?: string[] }): Promise<ATSMSConversation> {
+    const others = [...new Set(params.members.filter((d) => d !== this.identity.did))];
+    const participants = [this.identity.did, ...others];
+
+    const existing = await this.storage.findConversationByParticipants(participants);
+    if (existing !== null) {
+      const reopened = await this.get(existing.id);
+      if (reopened !== null) return reopened;
+    }
+
+    const descriptors: MemberDescriptor[] = [this.identity.descriptor];
+    const incapable: string[] = [];
+    for (const did of others) {
+      const devices = await capableDevices(this.pds, did);
+      if (devices.length === 0) {
+        incapable.push(did);
+        continue;
+      }
+      for (const d of devices) {
+        descriptors.push({
+          device: { did, fingerprint: hexToBytes(d.fingerprint) },
+          leafPk: d.prekey.signedPrekey,
+          signingPk: d.prekey.signingPk,
+        });
+      }
+    }
+    if (incapable.length > 0) {
+      throw new Error(`not DCGKA-capable (no verified prekey): ${incapable.join(", ")}`);
+    }
+
+    const { conversation, outbound } = await Conversation.open(this.context(), {
+      keys: this.identity.localKeys,
+      members: descriptors,
+      admins: params.admins ?? [this.identity.did],
+    });
+    const handle = this.register(conversation);
+    await this.route(outbound, conversation);
+
+    // Advertise our ingress in-band, then the creator's mandatory first update
+    // (healing rule) carries the advert and establishes the first epoch.
+    if (this.transport.ingressUrl !== null) await conversation.advertiseEndpoint(this.transport.ingressUrl);
+    await this.route(await conversation.update(), conversation);
+    return handle;
+  }
+
+  /** A conversation by GroupID — open handle, or restored from storage. Null if unknown. */
+  async get(groupId: string): Promise<ATSMSConversation | null> {
+    const open = this.openConvos.get(groupId);
+    if (open !== undefined) return open;
+    const convo = await Conversation.restore(this.context(), groupId);
+    return convo === null ? null : this.register(convo);
+  }
+
+  /** Add a DID to a conversation (every capable device of it). */
+  async addMember(groupId: string, did: string): Promise<void> {
+    const handle = await this.get(groupId);
+    if (handle === null) throw new Error(`unknown conversation ${groupId}`);
+    const devices = await capableDevices(this.pds, did);
+    if (devices.length === 0) throw new Error(`not DCGKA-capable (no verified prekey): ${did}`);
+    for (const d of devices) {
+      const outbound = await handle.inner.addMember({
+        device: { did, fingerprint: hexToBytes(d.fingerprint) },
+        leafPk: d.prekey.signedPrekey,
+        signingPk: d.prekey.signingPk,
+      });
+      await this.route(outbound, handle.inner);
+    }
+  }
+
+  // ── auto-routing ───────────────────────────────────────────────────────────
+
+  /** Outbound: in-band advertised URL first, else the DID's public inbox. */
+  private async route(outbound: Outbound[], convo: Conversation): Promise<void> {
+    const devices = convo.memberDevices;
+    for (const o of outbound) {
+      if (o.url !== null) {
+        await this.transport.deliverToUrl(o.url, o.envelope);
+        continue;
+      }
+      const did = devices.get(o.to);
+      if (did === undefined || did === this.identity.did) continue; // not routable / self
+      await this.transport.deliverToDid(did, o.envelope);
+    }
+  }
+
+  /** Inbound: one envelope from the transport (throw ⇒ no ack ⇒ redelivery). */
+  private async dispatch(envelope: Uint8Array): Promise<void> {
+    if (envelopeMode(envelope) === MODE_ASYM) return this.dispatchBootstrap(envelope);
+    // sealed-sym: only a conversation's tag table can recognize it — offer to
+    // all; the seal layer dedups (EnvelopeID) and buffers unknown tags briefly.
+    for (const handle of this.openConvos.values()) {
+      const repairs = await handle.inner.deliverEnvelope(envelope);
+      await this.route(repairs, handle.inner);
+    }
+  }
+
+  private async dispatchBootstrap(envelope: Uint8Array): Promise<void> {
+    let frame: Uint8Array;
+    try {
+      frame = SealLayer.openBootstrap(envelope, this.identity.prekeySecrets);
+    } catch {
+      return; // not addressed to us (or a rotated-out generation) — drop + ack
+    }
+    const parsed = parseFrame(frame);
+    const groupId = bytesToHex(parsed.body.groupId);
+    if (this.openConvos.has(groupId)) {
+      // Known group (e.g. a redelivered welcome, or an asym-sealed frame from
+      // the pre-epoch window) — hand the frame to its session.
+      const handle = this.openConvos.get(groupId)!;
+      if (parsed.body.cls !== CLS_WELCOME) {
+        await this.route(await handle.inner.ingestFrame(frame), handle.inner);
+      }
+      return;
+    }
+
+    if (parsed.body.cls === CLS_WELCOME) {
+      const keys = this.admissionKeys(frame);
+      if (keys === null) return; // pinned generation no longer held — undecryptable-by-design
+      const { conversation, outbound } = await Conversation.join(this.context(), { keys, welcomeFrame: frame });
+      this.register(conversation);
+      if (this.transport.ingressUrl !== null) await conversation.advertiseEndpoint(this.transport.ingressUrl);
+      await this.route(outbound, conversation);
+      return;
+    }
+
+    if (parsed.body.cls === CLS_CONTROL) {
+      const payload = payloadFromCbor(parsed.body.payload, parsed.body.sender.device.fingerprint);
+      if (payload.type === "create") {
+        const keys = this.admissionKeys(frame);
+        if (keys === null) return;
+        const conversation = await Conversation.bootstrap(this.context(), { keys, createFrame: frame });
+        this.register(conversation);
+        if (this.transport.ingressUrl !== null) await conversation.advertiseEndpoint(this.transport.ingressUrl);
+        return;
+      }
+    }
+    // A non-bootstrap frame for a group we don't hold — nothing to attach it to.
+  }
+
+  // ── internals ──────────────────────────────────────────────────────────────
+
+  private context(): ConversationContext {
+    return {
+      storage: this.storage,
+      rng: this.rng,
+      device: this.identity.device,
+      did: this.identity.did,
+      prekeySecrets: this.identity.prekeySecrets,
+    };
+  }
+
+  private admissionKeys(frame: Uint8Array) {
+    return admissionKeysFor(
+      frame,
+      this.identity.device,
+      this.identity.prekeySecrets,
+      this.identity.signingKeys,
+      (sk) => x25519.getPublicKey(sk),
+    );
+  }
+
+  private register(convo: Conversation): ATSMSConversation {
+    const handle = new ATSMSConversation(convo, (out, c) => this.route(out, c));
+    this.openConvos.set(convo.groupId, handle);
+    return handle;
+  }
+}
+
+/** Back an `EnvelopeTransport`'s inbox resolution with the PDS record
+ *  (inbound-delivery §3): the highest-preference `https:` endpoint, or null. */
+export function inboxUrlResolver(pds: PdsClient): (did: string) => Promise<string | null> {
+  return async (did) => {
+    const r = await resolveInbox(pds, did);
+    if (!r.ok) return null;
+    return pickEndpoint(r.record, ["https"])?.uri ?? null;
+  };
+}

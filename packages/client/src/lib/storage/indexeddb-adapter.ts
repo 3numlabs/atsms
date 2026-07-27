@@ -19,7 +19,7 @@ import {
 } from "./types";
 
 const DB_NAME = "atsms";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 // Object store names
 const STORES = {
@@ -29,6 +29,7 @@ const STORES = {
   CERTIFICATES: "certificates",
   DIDS: "dids",
   ENGINE_STATE: "engine_state",
+  DEVICE_STATE: "device_state",
 };
 
 export class IndexedDBAdapter implements StorageAdapter {
@@ -107,6 +108,10 @@ export class IndexedDBAdapter implements StorageAdapter {
 
         if (!db.objectStoreNames.contains(STORES.ENGINE_STATE)) {
           db.createObjectStore(STORES.ENGINE_STATE, { keyPath: "convoId" });
+        }
+
+        if (!db.objectStoreNames.contains(STORES.DEVICE_STATE)) {
+          db.createObjectStore(STORES.DEVICE_STATE, { keyPath: "key" });
         }
       };
     });
@@ -469,6 +474,23 @@ export class IndexedDBAdapter implements StorageAdapter {
     return keys.map((k) => String(k));
   }
 
+  // Device-local secret state
+  async saveDeviceState(key: string, state: Uint8Array): Promise<void> {
+    const store = await this.getStore(STORES.DEVICE_STATE, "readwrite");
+    await this.promisifyRequest(store.put({ key, state, updatedAt: Date.now() }));
+  }
+
+  async loadDeviceState(key: string): Promise<Uint8Array | null> {
+    const store = await this.getStore(STORES.DEVICE_STATE);
+    const row = await this.promisifyRequest<{ state: Uint8Array } | undefined>(store.get(key));
+    return row ? new Uint8Array(row.state) : null;
+  }
+
+  async deleteDeviceState(key: string): Promise<void> {
+    const store = await this.getStore(STORES.DEVICE_STATE, "readwrite");
+    await this.promisifyRequest(store.delete(key));
+  }
+
   async clearAll(): Promise<void> {
     const db = await this.ensureDB();
     const storeNames = [
@@ -478,6 +500,7 @@ export class IndexedDBAdapter implements StorageAdapter {
       STORES.CERTIFICATES,
       STORES.DIDS,
       STORES.ENGINE_STATE,
+      STORES.DEVICE_STATE,
     ];
 
     const transaction = db.transaction(storeNames, "readwrite");

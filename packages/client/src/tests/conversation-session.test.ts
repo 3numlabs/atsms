@@ -6,18 +6,18 @@
  * (sdk-shape.md Part A; sealed-sender §1).
  */
 
-import { Database } from "bun:sqlite";
+import { bytesToHex, type Csprng,generateSigningKeypair, SealLayer } from "@atsms/dcgka";
 import { x25519 } from "@noble/curves/ed25519";
-import { SealLayer, bytesToHex, generateSigningKeypair, type Csprng } from "@atsms/dcgka";
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 
-import { SQLiteAdapter } from "../lib/storage/sqlite-adapter.js";
 import {
   ConversationSession,
   type LocalKeys,
   type MemberDescriptor,
   type Outbound,
 } from "../lib/conversations/index.js";
+import { SQLiteAdapter } from "../lib/storage/sqlite-adapter.js";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const dec = (b: Uint8Array) => new TextDecoder().decode(b);

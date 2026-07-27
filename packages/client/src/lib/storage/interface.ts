@@ -60,6 +60,13 @@ export interface StorageAdapter {
   deleteEngineState(convoId: string): Promise<void>;
   listEngineStateIds(): Promise<string[]>;
 
+  // Device-local secret state (opaque blobs keyed by name — e.g. the prekey ring
+  // from PrekeyManager.serialize()). Same encryption-at-rest obligation as
+  // engine state: these are live admission secrets.
+  saveDeviceState(key: string, state: Uint8Array): Promise<void>;
+  loadDeviceState(key: string): Promise<Uint8Array | null>;
+  deleteDeviceState(key: string): Promise<void>;
+
   // LiveQuery support (for reactive updates)
   observeConversations(
     filter?: ConversationFilter,

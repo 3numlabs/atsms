@@ -1,0 +1,6 @@
+/**
+ * Client module (sdk-shape.md Part A): the `ATSMS` facade — create() wiring +
+ * inbound envelope dispatch + outbound auto-routing.
+ */
+
+export * from "./atsms.js";

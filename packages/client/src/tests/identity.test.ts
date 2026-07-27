@@ -3,19 +3,19 @@
  * resolution (incl. did:web), and the cert→identity-pubkey bridge.
  */
 
-import { p256 } from "@noble/curves/p256";
 import { buildPrekeyRecord, resolvePrekey, verifyPrekeyRecord } from "@atsms/dcgka";
+import { p256 } from "@noble/curves/p256";
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { ATSMSPdsClient, resolveDidToPds } from "../lib/identity/pds-client.js";
-import { deviceFingerprintFromCert, identityPublicKeyFromCert } from "../lib/identity/cert-key.js";
+import { cryptoProvider } from "../lib/crypto-provider.js";
 import {
   capableDevices,
   isDcgkaCapable,
   resolveDeviceCapabilities,
   selectGroupPath,
 } from "../lib/identity/capability.js";
-import { cryptoProvider } from "../lib/crypto-provider.js";
+import { deviceFingerprintFromCert, identityPublicKeyFromCert } from "../lib/identity/cert-key.js";
+import { ATSMSPdsClient, resolveDidToPds } from "../lib/identity/pds-client.js";
 import { generateTestEndpointCertificate } from "./test-certificates.js";
 
 const enc = (s: string) => new TextEncoder().encode(s);

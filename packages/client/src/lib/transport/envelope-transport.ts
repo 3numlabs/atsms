@@ -12,8 +12,8 @@
  *   returns (a failed handler leaves it for the next drain).
  */
 
-import { ATSMSWebSocketClient } from "../websocket-client.js";
 import { generateJWT } from "../jwt-auth.js";
+import { ATSMSWebSocketClient } from "../websocket-client.js";
 
 /** Carries sealed envelopes; implementations: worker HTTP/WS, loopback (tests). */
 export interface EnvelopeTransport {

@@ -3,6 +3,7 @@
  * surface, bridging `@atsms/dcgka`'s record + PDS seams to AT Protocol.
  */
 
-export * from "./pds-client.js";
-export * from "./cert-key.js";
 export * from "./capability.js";
+export * from "./cert-key.js";
+export * from "./device-identity.js";
+export * from "./pds-client.js";

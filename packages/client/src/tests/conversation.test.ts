@@ -5,20 +5,20 @@
  * piped directly here; transport is a separate layer.
  */
 
-import { Database } from "bun:sqlite";
+import { bytesToHex, type Csprng,generateSigningKeypair, SealLayer } from "@atsms/dcgka";
 import { x25519 } from "@noble/curves/ed25519";
-import { SealLayer, bytesToHex, generateSigningKeypair, type Csprng } from "@atsms/dcgka";
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 
-import { SQLiteAdapter } from "../lib/storage/sqlite-adapter.js";
-import { parseTextContent } from "../lib/messages.js";
-import type { LocalMessage } from "../lib/storage/types.js";
 import {
   Conversation,
   type LocalKeys,
   type MemberDescriptor,
   type Outbound,
 } from "../lib/conversations/index.js";
+import { parseTextContent } from "../lib/messages.js";
+import { SQLiteAdapter } from "../lib/storage/sqlite-adapter.js";
+import type { LocalMessage } from "../lib/storage/types.js";
 
 class BunSQLiteWrapper {
   private db = new Database(":memory:");

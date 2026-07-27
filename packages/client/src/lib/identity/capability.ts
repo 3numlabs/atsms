@@ -11,7 +11,7 @@
  * these `signedPrekey`s (the BeeKEM admission leaf keys).
  */
 
-import { resolvePrekey, type PdsClient, type PrekeyRecord } from "@atsms/dcgka";
+import { type PdsClient, type PrekeyRecord,resolvePrekey } from "@atsms/dcgka";
 
 import { deviceFingerprintFromCert, identityPublicKeyFromCert } from "./cert-key.js";
 

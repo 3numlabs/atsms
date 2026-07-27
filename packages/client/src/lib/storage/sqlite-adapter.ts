@@ -94,6 +94,12 @@ export class SQLiteAdapter implements StorageAdapter {
         updatedAt INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS device_state (
+        key TEXT PRIMARY KEY,     -- blob name (e.g. 'prekey-ring')
+        state BLOB NOT NULL,      -- opaque device secret state (encrypt at rest)
+        updatedAt INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_messages_convo ON messages(convoId);
       CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(createdAt);
       CREATE INDEX IF NOT EXISTS idx_conversations_last ON conversations(lastMessageAt);
@@ -320,6 +326,7 @@ export class SQLiteAdapter implements StorageAdapter {
       this.db.exec("DELETE FROM conversations");
       this.db.exec("DELETE FROM sync_metadata");
       this.db.exec("DELETE FROM engine_state");
+      this.db.exec("DELETE FROM device_state");
     });
 
     // Notify all observers
@@ -363,6 +370,22 @@ export class SQLiteAdapter implements StorageAdapter {
   async listEngineStateIds(): Promise<string[]> {
     const rows = this.db.prepare("SELECT convoId FROM engine_state").all();
     return rows.map((r: { convoId: string }) => r.convoId);
+  }
+
+  // Device-local secret state
+  async saveDeviceState(key: string, state: Uint8Array): Promise<void> {
+    this.db
+      .prepare("INSERT OR REPLACE INTO device_state (key, state, updatedAt) VALUES (?, ?, ?)")
+      .run(key, state, Date.now());
+  }
+
+  async loadDeviceState(key: string): Promise<Uint8Array | null> {
+    const row = this.db.prepare("SELECT state FROM device_state WHERE key = ?").get(key);
+    return row ? new Uint8Array(row.state) : null;
+  }
+
+  async deleteDeviceState(key: string): Promise<void> {
+    this.db.prepare("DELETE FROM device_state WHERE key = ?").run(key);
   }
 
   // LiveQuery support

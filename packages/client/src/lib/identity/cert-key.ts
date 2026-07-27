@@ -20,6 +20,41 @@ export async function identityPublicKeyFromCert(certPEM: string): Promise<Uint8A
 }
 
 /**
+ * The raw 32-byte P-256 scalar from a PKCS#8 private-key PEM — the device
+ * identity signing key in the form @noble (inside dcgka's `buildPrekeyRecord`)
+ * expects. WebCrypto can't export a raw EC private scalar directly; go through
+ * JWK and decode `d`.
+ */
+export async function identityScalarFromKey(privateKeyPEM: string): Promise<Uint8Array> {
+  const key = await cryptoProvider.subtle.importKey(
+    "pkcs8",
+    pemToDer(privateKeyPEM) as BufferSource,
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign"],
+  );
+  const jwk = await cryptoProvider.subtle.exportKey("jwk", key);
+  if (jwk.d === undefined) throw new Error("private key JWK has no scalar (d)");
+  return b64urlToBytes(jwk.d);
+}
+
+function pemToDer(pem: string): Uint8Array {
+  const b64 = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const bin = atob(b64);
+  const der = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) der[i] = bin.charCodeAt(i);
+  return der;
+}
+
+function b64urlToBytes(s: string): Uint8Array {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/**
  * The device fingerprint (lowercase hex) — the `at.atsms.x509` / `at.atsms.prekey`
  * record rkey pairing a device's cert with its prekey. Per identity-devices §4:
  * **SHA-256 of the raw uncompressed public-key point** (`0x04‖X‖Y`), RFC 7093

@@ -7,8 +7,8 @@
 import { nanoid } from "nanoid";
 
 import { ATSMSEndpointCertificate } from "./certificates/index";
-import { cryptoProvider } from "./crypto-provider";
 import { encryptMessage, signMessage } from "./crypto";
+import { cryptoProvider } from "./crypto-provider";
 import {
   type ATProtoFacet,
   type ATSMSMessagePayload,

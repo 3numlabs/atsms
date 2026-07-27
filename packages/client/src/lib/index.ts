@@ -34,6 +34,9 @@ export * from "./conversations/index";
 // Export transport module (opaque envelope carriage — inbound-delivery.md bindings)
 export * from "./transport/index";
 
+// Export client module (the ATSMS facade — create() wiring + auto-routing)
+export * from "./client/index";
+
 // Export crypto operations
 export {
   decryptAndVerifyMessageSignature,

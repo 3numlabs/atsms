@@ -12,17 +12,17 @@
  * is a separate layer; these methods return sealed envelopes to deliver.)
  */
 
-import { Observable } from "rxjs";
 import { bytesToHex, type DeviceID, type SessionEvents } from "@atsms/dcgka";
+import { Observable } from "rxjs";
 
 import { createMessagePayload, createTextContent } from "../messages.js";
 import type { StorageAdapter } from "../storage/interface.js";
-import { payloadToLocalMessage } from "../storage/types.js";
 import type { LocalMessage } from "../storage/types.js";
+import { payloadToLocalMessage } from "../storage/types.js";
 import type { ATSMSMessagePayload } from "../types.js";
 import {
-  ConversationSession,
   type ConversationDeps,
+  ConversationSession,
   type LocalKeys,
   type MemberDescriptor,
   type Outbound,
