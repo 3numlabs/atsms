@@ -19,6 +19,7 @@ import {
   publishPrekey,
 } from "@atsms/dcgka";
 
+import { loadEndpointCertificateWithKey, type ATSMSEndpointCertificate } from "../certificates/index.js";
 import type { LocalKeys, MemberDescriptor } from "../conversations/index.js";
 import type { StorageAdapter } from "../storage/interface.js";
 import { deviceFingerprintFromCert, identityScalarFromKey } from "./cert-key.js";
@@ -116,6 +117,15 @@ export class ATSMSDeviceIdentity {
   get descriptor(): MemberDescriptor {
     const keys = this.localKeys;
     return { device: this.device, leafPk: keys.leafPk, signingPk: keys.signingPk };
+  }
+
+  private _endpointCert: Promise<ATSMSEndpointCertificate> | null = null;
+
+  /** The endpoint certificate with its private key loaded — what the X509
+   *  one-shot path signs with and decrypts with. Cached. */
+  endpointCertificate(): Promise<ATSMSEndpointCertificate> {
+    this._endpointCert ??= loadEndpointCertificateWithKey(this.certificatePEM, this.privateKeyPEM);
+    return this._endpointCert;
   }
 }
 

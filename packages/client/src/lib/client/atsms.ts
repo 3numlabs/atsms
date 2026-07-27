@@ -24,6 +24,7 @@ import {
   envelopeMode,
   hexToBytes,
   MODE_ASYM,
+  MODE_SYM,
   parseFrame,
   payloadFromCbor,
   type PdsClient,
@@ -32,7 +33,7 @@ import {
   SealLayer,
 } from "@atsms/dcgka";
 import { x25519 } from "@noble/curves/ed25519";
-import type { Observable } from "rxjs";
+import { Subject, type Observable } from "rxjs";
 
 import {
   admissionKeysFor,
@@ -42,6 +43,15 @@ import {
   type Outbound,
 } from "../conversations/index.js";
 import { capableDevices } from "../identity/capability.js";
+import {
+  oneShotConvoId,
+  oneShotSenderProblem,
+  openOneShot,
+  resolveRecipientCerts,
+  sealOneShot,
+} from "../send/index.js";
+import { createMessagePayload, createTextContent } from "../messages.js";
+import { payloadToLocalMessage } from "../storage/types.js";
 import { ATSMSDeviceIdentity } from "../identity/device-identity.js";
 import type { StorageAdapter } from "../storage/interface.js";
 import type { LocalConversation, LocalMessage } from "../storage/types.js";
@@ -101,6 +111,8 @@ export class ATSMSConversation {
 export class ATSMS {
   /** Open conversations by GroupID (hex) — the sym-envelope offer set. */
   private readonly openConvos = new Map<string, ATSMSConversation>();
+  /** Inbound one-shots (verified + persisted), as they arrive. */
+  private readonly oneShots = new Subject<LocalMessage>();
 
   private constructor(
     readonly identity: ATSMSDeviceIdentity,
@@ -151,6 +163,52 @@ export class ATSMS {
   /** All conversations, reactively (metadata level). */
   get conversations$(): Observable<LocalConversation[]> {
     return this.storage.observeConversations();
+  }
+
+  /** Inbound one-shots (X509 baseline), fully processed: decrypted, signature
+   *  verified, sender resolved against their published records, persisted. */
+  get received$(): Observable<LocalMessage> {
+    return this.oneShots.asObservable();
+  }
+
+  // ── the stateless surface ──────────────────────────────────────────────────
+
+  /**
+   * Send a stateless one-shot (sdk-shape.md Part A): X509 sign-then-encrypt to
+   * every valid endpoint cert of every recipient — no session, no stored
+   * crypto state. Works for any recipient with published certs (DCGKA
+   * capability not required); recipients with none are named in the error.
+   */
+  async send(params: { to: string[]; text: string }): Promise<void> {
+    const recipients = [...new Set(params.to.filter((d) => d !== this.identity.did))];
+    if (recipients.length === 0) throw new Error("send: no recipients");
+
+    const recipientCerts = [];
+    const unreachable: string[] = [];
+    for (const did of recipients) {
+      const certs = await resolveRecipientCerts(this.pds, did);
+      if (certs.length === 0) unreachable.push(did);
+      else recipientCerts.push(...certs);
+    }
+    if (unreachable.length > 0) {
+      throw new Error(`no published endpoint certificates: ${unreachable.join(", ")}`);
+    }
+
+    const convoId = await oneShotConvoId([this.identity.did, ...recipients]);
+    const payload = createMessagePayload(
+      this.identity.did,
+      recipients,
+      createTextContent(params.text),
+      "atsms/text",
+      convoId,
+    );
+    const bytes = await sealOneShot(payload, await this.identity.endpointCertificate(), recipientCerts);
+
+    await this.saveOneShotConversation(convoId, [this.identity.did, ...recipients]);
+    await this.storage.saveMessage(payloadToLocalMessage(payload));
+    for (const did of recipients) {
+      await this.transport.deliverToDid(did, bytes);
+    }
   }
 
   // ── the stateful surface ───────────────────────────────────────────────────
@@ -246,15 +304,64 @@ export class ATSMS {
     }
   }
 
-  /** Inbound: one envelope from the transport (throw ⇒ no ack ⇒ redelivery). */
+  /** Inbound: one opaque delivery from the transport (throw ⇒ no ack ⇒
+   *  redelivery). Sealed envelopes are strict-CBOR; anything else is offered
+   *  to the X509 one-shot opener (the delivery contract is payload-agnostic,
+   *  inbound-delivery §1). */
   private async dispatch(envelope: Uint8Array): Promise<void> {
-    if (envelopeMode(envelope) === MODE_ASYM) return this.dispatchBootstrap(envelope);
-    // sealed-sym: only a conversation's tag table can recognize it — offer to
-    // all; the seal layer dedups (EnvelopeID) and buffers unknown tags briefly.
-    for (const handle of this.openConvos.values()) {
-      const repairs = await handle.inner.deliverEnvelope(envelope);
-      await this.route(repairs, handle.inner);
+    const mode = sealedMode(envelope);
+    if (mode === MODE_ASYM) return this.dispatchBootstrap(envelope);
+    if (mode === MODE_SYM) {
+      // Only a conversation's tag table can recognize it — offer to all; the
+      // seal layer dedups (EnvelopeID) and buffers unknown tags briefly.
+      for (const handle of this.openConvos.values()) {
+        const repairs = await handle.inner.deliverEnvelope(envelope);
+        await this.route(repairs, handle.inner);
+      }
+      return;
     }
+    return this.dispatchOneShot(envelope);
+  }
+
+  private async dispatchOneShot(bytes: Uint8Array): Promise<void> {
+    let opened;
+    try {
+      opened = await openOneShot(bytes, await this.identity.endpointCertificate());
+    } catch (err) {
+      // Not addressed to this device / bad signature / not a one-shot at all.
+      this.onEvent("drop-unopenable", err instanceof Error ? err.message : String(err));
+      return;
+    }
+    const problem = await oneShotSenderProblem(this.pds, opened);
+    if (problem !== null) {
+      this.onEvent("drop-unverified-sender", problem);
+      return;
+    }
+    // The convoId must be the deterministic id for the payload's participant
+    // set — a verified sender still cannot inject into an arbitrary thread.
+    const participants = [opened.payload.senderId, ...opened.payload.recipientIds];
+    if (opened.payload.convoId !== (await oneShotConvoId(participants))) {
+      this.onEvent("drop-forged-thread", opened.payload.convoId);
+      return;
+    }
+    await this.saveOneShotConversation(opened.payload.convoId, participants);
+    const message = payloadToLocalMessage(opened.payload);
+    await this.storage.saveMessage(message);
+    this.oneShots.next(message);
+    this.onEvent("one-shot", `${opened.payload.senderId} → ${opened.payload.convoId.slice(0, 8)}…`);
+  }
+
+  private async saveOneShotConversation(convoId: string, participants: string[]): Promise<void> {
+    const existing = await this.storage.getConversation(convoId);
+    const now = new Date();
+    await this.storage.saveConversation({
+      id: convoId,
+      participantIds: [...new Set(participants)].sort(),
+      createdAt: existing?.createdAt ?? now,
+      lastMessageAt: now,
+      unreadCount: existing?.unreadCount ?? 0,
+      metadata: { protocol: "x509" },
+    });
   }
 
   private async dispatchBootstrap(envelope: Uint8Array): Promise<void> {
@@ -340,6 +447,17 @@ export class ATSMS {
     const handle = new ATSMSConversation(convo, (out, c) => this.route(out, c));
     this.openConvos.set(convo.groupId, handle);
     return handle;
+  }
+}
+
+/** The sealed-envelope mode of an opaque delivery, or null when the bytes are
+ *  not a sealed envelope at all (e.g. an X509 one-shot: DER, not strict CBOR). */
+function sealedMode(bytes: Uint8Array): number | null {
+  try {
+    const mode = envelopeMode(bytes);
+    return mode === MODE_ASYM || mode === MODE_SYM ? mode : null;
+  } catch {
+    return null;
   }
 }
 

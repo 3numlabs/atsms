@@ -40,6 +40,9 @@ export * from "./identity/index";
 // Export conversations module (stateful DCGKA sessions + persistence — sdk-shape.md Part A)
 export * from "./conversations/index";
 
+// Export send module (stateless X509-baseline one-shots — sdk-shape.md Part A)
+export * from "./send/index";
+
 // Export transport module (opaque envelope carriage — inbound-delivery.md bindings)
 export * from "./transport/index";
 
