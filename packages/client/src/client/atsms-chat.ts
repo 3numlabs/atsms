@@ -28,7 +28,7 @@ import { type ATSMSConfig, type ATSMSWebRTCContent } from "../lib/types";
 import { ATSMSWebSocketClient } from "../lib/websocket-client";
 
 // AT-SMS API Configuration
-const ATSMS_API_DOMAIN = "atsms-api.enumdao.workers.dev";
+const ATSMS_API_DOMAIN = "atsms-api.3numlabs.workers.dev";
 
 // Default configuration directory
 const DEFAULT_DATA_DIR = path.join(os.homedir(), ".atsms");

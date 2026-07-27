@@ -32,8 +32,8 @@ const colors = {
 } as const;
 
 // API configuration
-const API_BASE = "https://atsms-api.enumdao.workers.dev";
-const WS_BASE = "wss://atsms-api.enumdao.workers.dev";
+const API_BASE = "https://atsms-api.3numlabs.workers.dev";
+const WS_BASE = "wss://atsms-api.3numlabs.workers.dev";
 const DEFAULT_DATA_DIR = join(homedir(), ".atsms");
 
 // Type definitions

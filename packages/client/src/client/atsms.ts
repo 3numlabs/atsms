@@ -875,7 +875,7 @@ Options (varies by command):
     --password <password>       PDS password (optional, prompts if not provided)
 
 Global Options:
-  --api-url <url>              API URL (default: https://atsms-api.enumdao.workers.dev)
+  --api-url <url>              API URL (default: https://atsms-api.3numlabs.workers.dev)
 
 Examples:
   # Generate certificate (no PDS)
@@ -919,7 +919,7 @@ Examples:
   const config: ATSMSConfig = {
     apiUrl:
       (parsedArgs["api-url"] as string) ||
-      "https://atsms-api.enumdao.workers.dev",
+      "https://atsms-api.3numlabs.workers.dev",
   };
 
   const tool = new ATSMSCLITool(config);
