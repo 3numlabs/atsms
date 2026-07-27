@@ -20,7 +20,7 @@
  * recover every past generation. They stay random, persisted in storage.
  */
 
-import { p256 } from "@noble/curves/nist.js";
+import { p256 } from "@noble/curves/p256";
 
 import { cryptoProvider } from "../crypto-provider.js";
 
@@ -52,7 +52,7 @@ export async function deriveFromSeed(seed: Uint8Array, label: string, length: nu
  */
 export async function deriveIdentityKeyPEM(seed: Uint8Array): Promise<string> {
   const wide = await deriveFromSeed(seed, SEED_LABEL_IDENTITY, 48);
-  const n = p256.Point.CURVE().n;
+  const n = p256.CURVE.n;
   let acc = 0n;
   for (const b of wide) acc = (acc << 8n) | BigInt(b);
   const scalar = (acc % (n - 1n)) + 1n;
