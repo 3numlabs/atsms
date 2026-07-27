@@ -16,11 +16,12 @@
  * set, so a sender cannot inject into an arbitrary thread.
  */
 
-import { loadEndpointCertificate, type ATSMSEndpointCertificate } from "../certificates/index.js";
-import { cryptoProvider } from "../crypto-provider.js";
-import { decryptAndVerifyMessageSignature } from "../crypto.js";
-import { prepareMessageForSending } from "../messages.js";
 import type { PdsClient } from "@atsms/dcgka";
+
+import { type ATSMSEndpointCertificate,loadEndpointCertificate } from "../certificates/index.js";
+import { decryptAndVerifyMessageSignature } from "../crypto.js";
+import { cryptoProvider } from "../crypto-provider.js";
+import { prepareMessageForSending } from "../messages.js";
 import type { ATSMSMessagePayload } from "../types.js";
 
 const COLLECTION_X509 = "at.atsms.x509";

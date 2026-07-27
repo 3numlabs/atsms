@@ -31,8 +31,8 @@ export {
 // Re-export the AT Protocol agent so consumers share this package's instance
 // (a file:-linked copy nests its own @atproto/api; a consumer-constructed
 // AtpAgent from a second copy is nominally a different class).
-export { AtpAgent } from "@atproto/api";
 export type { AtpSessionData } from "@atproto/api";
+export { AtpAgent } from "@atproto/api";
 
 // Export identity module (dcgka records/PDS/prekey bridge — sdk-shape.md Part A)
 export * from "./identity/index";

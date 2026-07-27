@@ -19,7 +19,7 @@ import {
   publishPrekey,
 } from "@atsms/dcgka";
 
-import { loadEndpointCertificateWithKey, type ATSMSEndpointCertificate } from "../certificates/index.js";
+import { type ATSMSEndpointCertificate,loadEndpointCertificateWithKey } from "../certificates/index.js";
 import type { LocalKeys, MemberDescriptor } from "../conversations/index.js";
 import type { StorageAdapter } from "../storage/interface.js";
 import { deviceFingerprintFromCert, identityScalarFromKey } from "./cert-key.js";
