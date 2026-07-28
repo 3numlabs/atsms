@@ -92,9 +92,18 @@ export class ATSMSConversation {
     return this.convo.members;
   }
 
-  /** Send a text message; sealing + delivery are automatic. */
+  /** Send a text message; sealing + delivery are automatic. If the engine has
+   *  no established epoch (e.g. a conversation restored from a snapshot taken
+   *  before the first update — an interrupted open), it self-heals: run the
+   *  mandatory update, then retry once. */
   async send(text: string): Promise<void> {
-    await this.router(await this.convo.send(text), this.convo);
+    try {
+      await this.router(await this.convo.send(text), this.convo);
+    } catch (err) {
+      if (!(err instanceof Error) || !err.message.includes("NoRootKey")) throw err;
+      await this.router(await this.convo.update(), this.convo);
+      await this.router(await this.convo.send(text), this.convo);
+    }
   }
 
   /** Rotate keys (post-compromise healing). */
