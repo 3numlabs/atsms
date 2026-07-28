@@ -235,11 +235,14 @@ export class ATSMS {
     const existing = await this.storage.findConversationByParticipants(participants);
     if (existing !== null) {
       const reopened = await this.get(existing.id);
-      // NOTE: device reconciliation (admitting a member DID's newly-published
-      // devices on reuse) is NOT wired here yet — `reconcileDevices` exists but
-      // exposed a convergence gap (the original device does not re-derive the
-      // post-join epoch), tracked as its own task. Reuse returns as-is.
-      if (reopened !== null) return reopened;
+      if (reopened !== null) {
+        // Reconcile membership with the members' CURRENT device lists: a DID
+        // may have published a new device (or re-keyed one) since the group was
+        // founded — admit anything missing so it can participate. Its welcome
+        // carries the log; traffic before admission stays unreadable to it (FS).
+        await this.reconcileDevices(reopened);
+        return reopened;
+      }
     }
 
     const descriptors: MemberDescriptor[] = [this.identity.descriptor];
@@ -287,7 +290,6 @@ export class ATSMS {
 
   /** Admit every capable device of the conversation's member DIDs that is not
    *  yet in the group (device enrollment / re-key catch-up). */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async reconcileDevices(handle: ATSMSConversation): Promise<void> {
     const present = handle.inner.memberDevices;
     for (const did of handle.members.filter((d) => d !== this.identity.did)) {
@@ -310,7 +312,9 @@ export class ATSMS {
     if (handle === null) throw new Error(`unknown conversation ${groupId}`);
     const devices = await capableDevices(this.pds, did);
     if (devices.length === 0) throw new Error(`not DCGKA-capable (no verified prekey): ${did}`);
+    const present = handle.inner.memberDevices;
     for (const d of devices) {
+      if (present.has(d.fingerprint)) continue; // already a member
       const outbound = await handle.inner.addMember({
         device: { did, fingerprint: hexToBytes(d.fingerprint) },
         leafPk: d.prekey.signedPrekey,
@@ -322,7 +326,11 @@ export class ATSMS {
 
   // ── auto-routing ───────────────────────────────────────────────────────────
 
-  /** Outbound: in-band advertised URL first, else the DID's public inbox. */
+  /** Outbound: in-band advertised URL first, else the DID's public inbox. The
+   *  seal layer already excludes THIS device from recipients, so each envelope
+   *  targets another device — routed by that device's DID, never skipped just
+   *  because it shares our DID (multi-device: our other devices are real
+   *  recipients; the worker fans a copy to our own inbox, which we drop). */
   private async route(outbound: Outbound[], convo: Conversation): Promise<void> {
     const devices = convo.memberDevices;
     for (const o of outbound) {
@@ -331,7 +339,7 @@ export class ATSMS {
         continue;
       }
       const did = devices.get(o.to);
-      if (did === undefined || did === this.identity.did) continue; // not routable / self
+      if (did === undefined) continue; // not a known member device — unroutable
       await this.transport.deliverToDid(did, o.envelope);
     }
   }
