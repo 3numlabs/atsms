@@ -34,6 +34,8 @@ const enc = (s: string) => new TextEncoder().encode(s);
 export interface ConversationContext extends ConversationDeps {
   /** This device's DID (message sender identity). */
   did: string;
+  /** Engine diagnostics (drops, security events) — surfaced, never fatal. */
+  onEngineEvent?: (kind: string, detail: string) => void;
 }
 
 export class Conversation {
@@ -77,7 +79,7 @@ export class Conversation {
       keys: params.keys,
       members: params.members,
       admins: params.admins,
-      events: eventsFor(holder),
+      events: eventsFor(holder, ctx),
     });
     const convo = new Conversation(session, ctx.storage, ctx);
     holder.convo = convo;
@@ -94,7 +96,7 @@ export class Conversation {
     const session = await ConversationSession.bootstrap(ctx, {
       keys: params.keys,
       createFrame: params.createFrame,
-      events: eventsFor(holder),
+      events: eventsFor(holder, ctx),
     });
     const convo = new Conversation(session, ctx.storage, ctx);
     holder.convo = convo;
@@ -112,7 +114,7 @@ export class Conversation {
     const { conversation: session, outbound } = await ConversationSession.join(ctx, {
       keys: params.keys,
       welcomeFrame: params.welcomeFrame,
-      events: eventsFor(holder),
+      events: eventsFor(holder, ctx),
     });
     const convo = new Conversation(session, ctx.storage, ctx);
     holder.convo = convo;
@@ -123,7 +125,7 @@ export class Conversation {
   /** Reopen a persisted conversation (engine-state restore). Null if unknown. */
   static async restore(ctx: ConversationContext, groupId: string): Promise<Conversation | null> {
     const holder: { convo: Conversation | null } = { convo: null };
-    const session = await ConversationSession.restore(ctx, groupId, eventsFor(holder));
+    const session = await ConversationSession.restore(ctx, groupId, eventsFor(holder, ctx));
     if (session === null) return null;
     const convo = new Conversation(session, ctx.storage, ctx);
     holder.convo = convo;
@@ -204,11 +206,20 @@ export class Conversation {
 
 }
 
-/** Wire the engine's app-message callback to the (not-yet-constructed) Conversation. */
-function eventsFor(holder: { convo: Conversation | null }): SessionEvents {
+/** Wire the engine's callbacks to the (not-yet-constructed) Conversation. */
+function eventsFor(holder: { convo: Conversation | null }, ctx: ConversationContext): SessionEvents {
   return {
     onAppMessage: (plaintext: Uint8Array, sender: { device: DeviceID }) => {
       void holder.convo?.handleDecrypted(plaintext, sender.device.did);
     },
+    onDropped: (reason, id) => ctx.onEngineEvent?.("engine-drop", `${reason} (${hex8(id)})`),
+    onSecurityEvent: (kind, detail) => ctx.onEngineEvent?.("engine-security", `${kind}: ${detail}`),
+    onDigestMismatch: (frameId) => ctx.onEngineEvent?.("engine-digest-mismatch", frameId),
   };
+}
+
+function hex8(id: Uint8Array): string {
+  let out = "";
+  for (const b of id.slice(0, 4)) out += b.toString(16).padStart(2, "0");
+  return out;
 }

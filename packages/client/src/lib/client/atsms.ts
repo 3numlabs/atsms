@@ -235,6 +235,10 @@ export class ATSMS {
     const existing = await this.storage.findConversationByParticipants(participants);
     if (existing !== null) {
       const reopened = await this.get(existing.id);
+      // NOTE: device reconciliation (admitting a member DID's newly-published
+      // devices on reuse) is NOT wired here yet — `reconcileDevices` exists but
+      // exposed a convergence gap (the original device does not re-derive the
+      // post-join epoch), tracked as its own task. Reuse returns as-is.
       if (reopened !== null) return reopened;
     }
 
@@ -279,6 +283,25 @@ export class ATSMS {
     if (open !== undefined) return open;
     const convo = await Conversation.restore(this.context(), groupId);
     return convo === null ? null : this.register(convo);
+  }
+
+  /** Admit every capable device of the conversation's member DIDs that is not
+   *  yet in the group (device enrollment / re-key catch-up). */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async reconcileDevices(handle: ATSMSConversation): Promise<void> {
+    const present = handle.inner.memberDevices;
+    for (const did of handle.members.filter((d) => d !== this.identity.did)) {
+      for (const d of await capableDevices(this.pds, did)) {
+        if (present.has(d.fingerprint)) continue;
+        this.onEvent("device-added", `${did} device ${d.fingerprint.slice(0, 12)}… → ${handle.id.slice(0, 8)}…`);
+        const outbound = await handle.inner.addMember({
+          device: { did, fingerprint: hexToBytes(d.fingerprint) },
+          leafPk: d.prekey.signedPrekey,
+          signingPk: d.prekey.signingPk,
+        });
+        await this.route(outbound, handle.inner);
+      }
+    }
   }
 
   /** Add a DID to a conversation (every capable device of it). */
@@ -439,6 +462,7 @@ export class ATSMS {
       device: this.identity.device,
       did: this.identity.did,
       prekeySecrets: this.identity.prekeySecrets,
+      onEngineEvent: (kind, detail) => this.onEvent(kind, detail),
     };
   }
 
