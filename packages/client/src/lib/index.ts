@@ -16,6 +16,7 @@ export {
   type ATSMSStorageManagerConfig,
 } from "./storage/manager";
 export { SQLiteAdapter } from "./storage/sqlite-adapter";
+export { EncryptedStorageAdapter } from "./storage/encrypted-adapter";
 export { payloadToLocalMessage } from "./storage/types";
 export * from "./storage/types";
 
