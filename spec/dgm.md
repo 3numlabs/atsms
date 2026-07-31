@@ -188,3 +188,12 @@ detectable by every member individually, no comparison protocol needed. What rem
 - **Ban-on-remove (compromised-device re-add veto)** — discussed 2026-07-17, **parked by user** pending
   the MemberID-shape resolution above; revisit: same-DID re-adds need no admin, so a group-level,
   history-derived ban is the deterministic complement to identity-layer revocation.
+- **Versioned authorization policy at `create`** — raised 2026-07-31, **open**. Today the authorization
+  model (roles, who-can-do-what — §4) is fixed by this spec; `create` selects only the initial roster/admins,
+  not a *policy*. Should `create` instead pin a **policy identifier** (e.g. `authPolicy: 1`) naming one of a
+  set of spec-defined policies, so the ruleset can evolve without breaking existing groups (old groups keep
+  policy 1; new groups opt into policy N)? The policy definitions live in the spec, not in the op — the op
+  carries only the version tag, evaluated identically by every member (determinism/P1 preserved). Motivation:
+  future changes like a third role (read-only, cut from v1 above), configurable "who can add" (admin-only vs
+  any-member), or per-group invite rules would otherwise be un-negotiable across a group's lifetime. Decide
+  whether v1 reserves the field now (cheap forward-compat) even if it only ever defines policy 1.

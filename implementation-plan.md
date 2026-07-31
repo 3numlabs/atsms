@@ -386,6 +386,13 @@ already clean (atsms-lib `3992019`, atsms-cli `1731aac`); "facade" is likewise r
   batching tuned against the G16 budget (state the 150-device cap in docs).
 - External cryptographic review of the composed system (sealed sender × DCGKA is a novel composition the paper
   does not analyze) — G18.
+- **Malicious-insider attack surface (explicit review focus):** treat a validly-admitted group member running
+  modified/malicious client code as a first-class adversary and enumerate how it could attack the protocol —
+  crafting malformed, invalid, or adversarially-ordered operations to (a) defeat the **DGM validity filter**
+  (get an invalid op to mutate the tree, or a valid op to be filtered out), (b) force cross-member divergence /
+  break convergence, (c) equivocate (divergent key material or op histories), (d) escalate role/authorization,
+  or (e) exhaust resources / stall GC (DoS). The DGM + tree-validity filter (beekem-core §4.1, dgm.md) is the
+  primary trust boundary and the highest-value place to concentrate review effort.
 - Interop/perf runs at n = 8/32/64/128/150 devices against the paper's numbers.
 
 ---
