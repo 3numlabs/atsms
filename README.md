@@ -21,6 +21,7 @@ design records. Pre-BeeKEM state preserved at git tag **`dcgka-classic-v1`**.
 
 | Doc | What |
 |---|---|
+| [`beekem-dcgka-vs-mls.md`](./beekem-dcgka-vs-mls.md) | Plain-language explainer: how our BeeKEM DCGKA works and the important ways it differs from MLS (start here for the "why not MLS" intuition) |
 | [`beekem-analysis.md`](./beekem-analysis.md) | The D11 evaluation: BeeKEM vs DCGKA, what survives, risks, plan update |
 | [`spike-a-messaging-profile.md`](./spike-a-messaging-profile.md) · [`spike-b-dgm-reconciliation.md`](./spike-b-dgm-reconciliation.md) | The two D11 gate spikes (both PASS): messaging profile over BeeKEM; DGM/strong-remove reconciliation |
 | [`implementation-plan.md`](./implementation-plan.md) | Decision log D1–D11, parity inventory, Phases 0–6 |
