@@ -41,3 +41,7 @@ trash/
 tmp/
 temp/
 *.tmp
+
+# Local test-account profiles (certs, private keys, session caches, message DBs).
+# Never commit these — they are live account material.
+*-dot-atsms/

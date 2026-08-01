@@ -6,7 +6,7 @@ import { Database } from "bun:sqlite";
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { firstValueFrom, skip, take } from "rxjs";
 
-import { createTextContent } from "../lib/messages";
+import { createContent, oneShotConvoIdV2, textOf, textPart } from "../lib/format/index.js";
 import { SQLiteAdapter } from "../lib/storage/sqlite-adapter";
 import type { LocalConversation, LocalMessage } from "../lib/storage/types";
 
@@ -40,6 +40,10 @@ class BunSQLiteWrapper {
   }
 }
 
+const testConvoId = oneShotConvoIdV2(["did:plc:sender123", "did:plc:recipient123"]);
+const textContent = (text: string) =>
+  createContent({ convoId: testConvoId, salt: new Uint8Array(16), createdAt: 0, body: [textPart(text)] });
+
 describe("SQLiteAdapter", () => {
   let db: BunSQLiteWrapper;
   let adapter: SQLiteAdapter;
@@ -58,9 +62,7 @@ describe("SQLiteAdapter", () => {
       id: "msg-001",
       convoId: "convo-001",
       senderId: "did:plc:sender123",
-      recipientIds: ["did:plc:recipient123"],
-      content: createTextContent("Hello, world!"),
-      contentType: "atsms/text",
+      content: textContent("Hello, world!"),
       createdAt: new Date("2024-01-01T12:00:00Z"),
       isInvitation: false,
     };
@@ -71,10 +73,8 @@ describe("SQLiteAdapter", () => {
 
       expect(retrieved).toBeDefined();
       expect(retrieved?.id).toBe(testMessage.id);
-      expect(retrieved?.content).toBe(testMessage.content);
-      expect(retrieved?.contentType).toBe(testMessage.contentType);
+      expect(textOf(retrieved!.content)).toBe("Hello, world!");
       expect(retrieved?.senderId).toBe(testMessage.senderId);
-      expect(retrieved?.recipientIds).toEqual(testMessage.recipientIds);
     });
 
     test("should return null for non-existent message", async () => {
@@ -85,17 +85,17 @@ describe("SQLiteAdapter", () => {
     test("should update a message", async () => {
       await adapter.saveMessage(testMessage);
 
+      const editedAt = new Date("2024-01-02T12:00:00Z");
       const updates = {
-        content: createTextContent("Updated message"),
-        contentType: "atsms/text",
-        metadata: { edited: true },
+        content: textContent("Updated message"),
+        editedAt,
       };
 
       await adapter.updateMessage(testMessage.id, updates);
       const updated = await adapter.getMessage(testMessage.id);
 
-      expect(updated?.content).toBe(updates.content);
-      expect(updated?.metadata).toEqual(updates.metadata);
+      expect(textOf(updated!.content)).toBe("Updated message");
+      expect(updated?.editedAt).toEqual(editedAt);
     });
 
     test("should delete a message", async () => {
@@ -301,10 +301,9 @@ describe("SQLiteAdapter", () => {
         id: "msg-clear",
         convoId: "convo-clear",
         senderId: "did:plc:sender",
-        recipientIds: ["did:plc:recipient"],
-        content: createTextContent("To be cleared"),
-        contentType: "atsms/text",
+        content: textContent("To be cleared"),
         createdAt: new Date(),
+        isInvitation: false,
       };
 
       const conversation: LocalConversation = {
@@ -360,10 +359,9 @@ describe("SQLiteAdapter", () => {
         id: "msg-live",
         convoId: "convo-observe",
         senderId: "did:plc:sender",
-        recipientIds: ["did:plc:recipient"],
-        content: createTextContent("Observable message"),
-        contentType: "atsms/text",
+        content: textContent("Observable message"),
         createdAt: new Date(),
+        isInvitation: false,
       };
 
       const observable = adapter.observeMessages("convo-observe");
@@ -424,32 +422,12 @@ describe("SQLiteAdapter", () => {
   });
 
   describe("Edge Cases", () => {
-    test("should handle empty recipientIds array", async () => {
-      const message: LocalMessage = {
-        id: "msg-empty-recipients",
-        convoId: "convo-001",
-        senderId: "did:plc:sender",
-        recipientIds: [],
-        content: createTextContent("No recipients"),
-        contentType: "atsms/text",
-        createdAt: new Date(),
-      };
-
-      await adapter.saveMessage(message);
-      const retrieved = await adapter.getMessage(message.id);
-
-      expect(retrieved).toBeDefined();
-      expect(retrieved?.recipientIds).toEqual([]);
-    });
-
     test("should handle special characters in text", async () => {
       const message: LocalMessage = {
         id: "msg-special",
         convoId: "convo-001",
         senderId: "did:plc:sender",
-        recipientIds: ["did:plc:recipient"],
-        content: createTextContent("Special chars: \"'<>&\n\t\\"),
-        contentType: "atsms/text",
+        content: textContent("Special chars: \"'<>&\n\t\\"),
         createdAt: new Date(),
         isInvitation: false,
       };
@@ -457,7 +435,7 @@ describe("SQLiteAdapter", () => {
       await adapter.saveMessage(message);
       const retrieved = await adapter.getMessage(message.id);
 
-      expect(retrieved?.content).toBe(message.content);
+      expect(textOf(retrieved!.content)).toBe("Special chars: \"'<>&\n\t\\");
     });
 
     test("should handle null metadata gracefully", async () => {
@@ -482,10 +460,9 @@ describe("SQLiteAdapter", () => {
         id: `msg-${i.toString().padStart(3, "0")}`,
         convoId: "convo-paginated",
         senderId: "did:plc:sender",
-        recipientIds: ["did:plc:recipient"],
-        content: createTextContent(`Message ${i}`),
-        contentType: "atsms/text",
+        content: textContent(`Message ${i}`),
         createdAt: new Date(Date.now() - i * 1000),
+        isInvitation: false,
       }));
 
       for (const msg of messages) {

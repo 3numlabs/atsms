@@ -4,37 +4,30 @@
  * cert, no session, no persisted crypto state. This is what reaches recipients
  * who are not DCGKA-capable, and what carries first contact.
  *
- * One-shots travel the SAME delivery contract as sealed envelopes — opaque
- * bytes into a DID's public inbox (inbound-delivery.md §1: the contract is
- * payload-agnostic). The receiving client tells them apart by content: sealed
- * envelopes are strict-CBOR arrays; a one-shot is a DER CMS blob.
+ * v2 (docs/message-format.md §8): the CMS plaintext is the deterministic-CBOR
+ * `MessageContent`, and the CMS itself travels **inside the sealed-sender
+ * envelope** (`CONTENT_CMS`) whenever the recipient device published a prekey
+ * to seal to; recipients with only an X509 certificate get the bare CMS as
+ * the explicit legacy form. Dispatch reads the declared sealed content type —
+ * bare DER remains recognizable as "not CBOR" without sniffing heuristics.
  *
  * Trust: the CMS signature is verified against the embedded signer cert, and
- * then the signer cert must RESOLVE in the claimed sender's `at.atsms.x509`
- * collection at its fingerprint rkey — an unpublished (or mismatched) signer
- * is dropped. `convoId` for one-shots is deterministic over the participant
- * set, so a sender cannot inject into an arbitrary thread.
+ * then the signer cert must RESOLVE in its DID's `at.atsms.x509` collection
+ * at its fingerprint rkey — an unpublished (or mismatched) signer is dropped.
+ * The sender identity IS the authenticated signer; the content carries no
+ * sender field. `convoId` is deterministic over the participant set (the
+ * signer + the `EXT_RECIPIENTS` extension), so a verified sender still
+ * cannot inject into an arbitrary thread.
  */
 
 import type { PdsClient } from "@atsms/dcgka";
 
-import { type ATSMSEndpointCertificate,loadEndpointCertificate } from "../certificates/index.js";
+import { type ATSMSEndpointCertificate, loadEndpointCertificate } from "../certificates/index.js";
 import { decryptAndVerifyMessageSignature } from "../crypto.js";
-import { cryptoProvider } from "../crypto-provider.js";
+import { decodeContent, type MessageContent } from "../format/index.js";
 import { prepareMessageForSending } from "../messages.js";
-import type { ATSMSMessagePayload } from "../types.js";
 
 const COLLECTION_X509 = "at.atsms.x509";
-
-/** Deterministic conversation id for a one-shot: SHA-256 over the sorted,
- *  deduped participant DIDs (the 2-party case equals `generateDMConvoId`). */
-export async function oneShotConvoId(participants: string[]): Promise<string> {
-  const sorted = [...new Set(participants)].sort().join(",");
-  const digest = await cryptoProvider.subtle.digest("SHA-256", new TextEncoder().encode(sorted));
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 /** A DID's valid endpoint certs (its devices), from its `at.atsms.x509` records. */
 export async function resolveRecipientCerts(
@@ -56,61 +49,53 @@ export async function resolveRecipientCerts(
   return certs;
 }
 
-/** Sign (PKCS#7) then encrypt (CMS EnvelopedData) a payload to every recipient
- *  device cert. Returns the opaque DER bytes the delivery contract carries. */
+/** Sign (PKCS#7) then encrypt (CMS EnvelopedData) v2 content bytes to every
+ *  recipient device cert. Returns the CMS DER (seal or deliver bare — §8). */
 export function sealOneShot(
-  payload: ATSMSMessagePayload,
+  contentBytes: Uint8Array,
   senderCert: ATSMSEndpointCertificate,
   recipientCerts: ATSMSEndpointCertificate[],
 ): Promise<Uint8Array> {
-  return prepareMessageForSending(payload, senderCert, recipientCerts);
+  return prepareMessageForSending(contentBytes, senderCert, recipientCerts);
 }
 
 export interface OpenedOneShot {
-  payload: ATSMSMessagePayload;
+  content: MessageContent;
+  /** The exact signed plaintext bytes — what the message ID derives from. */
+  contentBytes: Uint8Array;
   signer: ATSMSEndpointCertificate;
 }
 
 /**
- * Decrypt with this device's cert, verify the CMS signature, and parse the
- * payload. Throws when the blob is not addressed to this device or the
- * signature/shape is invalid. Sender AUTHENTICITY (signer published under the
- * claimed DID) is the caller's next step — it needs PDS access.
+ * Decrypt with this device's cert, verify the CMS signature, and decode the
+ * v2 content. Throws when the blob is not addressed to this device or the
+ * signature/content is invalid. Sender AUTHENTICITY (signer published under
+ * its DID) is the caller's next step — it needs PDS access.
  */
 export async function openOneShot(
   bytes: Uint8Array,
   myCert: ATSMSEndpointCertificate,
 ): Promise<OpenedOneShot> {
   const { messageSigner, decryptedContent } = await decryptAndVerifyMessageSignature(bytes, myCert);
-  const payload = JSON.parse(new TextDecoder().decode(decryptedContent)) as ATSMSMessagePayload;
-  if (
-    typeof payload.id !== "string" ||
-    typeof payload.senderId !== "string" ||
-    typeof payload.convoId !== "string" ||
-    typeof payload.content !== "string" ||
-    typeof payload.contentType !== "string" ||
-    !Array.isArray(payload.recipientIds)
-  ) {
-    throw new Error("one-shot payload has the wrong shape");
-  }
-  return { payload, signer: messageSigner };
+  const content = decodeContent(decryptedContent); // throws on non-v2 shapes
+  return { content, contentBytes: decryptedContent, signer: messageSigner };
 }
 
 /**
- * Sender authenticity (the fingerprint-keyed check, integration §8.5): the
- * signer cert must carry the claimed sender DID, and a record for the signer's
- * fingerprint must exist in that DID's `at.atsms.x509` collection with the
- * same public key. Returns null when authentic, else the reason to drop.
+ * Sender authenticity (the fingerprint-keyed check, integration §8.5): a
+ * record for the signer's fingerprint must exist in the signer DID's
+ * `at.atsms.x509` collection with the same public key. Returns null when
+ * authentic, else the reason to drop.
  */
 export async function oneShotSenderProblem(
   pds: PdsClient,
-  opened: OpenedOneShot,
+  signer: ATSMSEndpointCertificate,
 ): Promise<string | null> {
-  const claimed = opened.payload.senderId;
-  if (opened.signer.did !== claimed) return `signer cert DID ${opened.signer.did} ≠ payload sender ${claimed}`;
-  const fingerprint = await opened.signer.getDeviceFingerprint();
-  const rec = await pds.getRecord(claimed, COLLECTION_X509, fingerprint);
-  if (rec === null) return `signer ${fingerprint.slice(0, 12)}… not published under ${claimed}`;
+  const did = signer.did;
+  if (did === undefined) return "signer certificate carries no DID";
+  const fingerprint = await signer.getDeviceFingerprint();
+  const rec = await pds.getRecord(did, COLLECTION_X509, fingerprint);
+  if (rec === null) return `signer ${fingerprint.slice(0, 12)}… not published under ${did}`;
   const pem = (rec.value as { certificate?: unknown }).certificate;
   if (typeof pem !== "string") return "published record has no certificate";
   try {

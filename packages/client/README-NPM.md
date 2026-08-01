@@ -2,6 +2,11 @@
 
 End-to-end encrypted messaging library for AT Protocol (Bluesky) with X.509 certificate-based encryption.
 
+> **STALE (2026-07-31):** this README predates the v2 message format (deterministic-CBOR content,
+> derived message IDs, part registry — see the umbrella `docs/message-format.md`) and the removal of
+> the legacy `ATSMSClient`/`ATSMSStorageManager` API it documents. Until it is rewritten, trust the
+> repo `CLAUDE.md` and `src/lib/format/` over the examples below.
+
 ## Installation
 
 ```bash

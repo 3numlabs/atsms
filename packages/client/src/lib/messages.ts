@@ -1,158 +1,25 @@
 /**
- * Message Manipulation Library
- * Handles creation, signing, encryption, decryption, and parsing of AT-SMS messages
- * This module is browser-compatible
+ * Message CMS composition + email extraction helpers.
+ *
+ * The v2 application content format lives in `format/` (docs/message-format.md);
+ * this module only wraps already-encoded content bytes in the X509 CMS
+ * pipeline (sign PKCS#7, encrypt EnvelopedData) and digs P7M blobs out of
+ * inbound email.
  */
-
-import { nanoid } from "nanoid";
 
 import { ATSMSEndpointCertificate } from "./certificates/index";
 import { encryptMessage, signMessage } from "./crypto";
-import { cryptoProvider } from "./crypto-provider";
-import {
-  type ATProtoFacet,
-  type ATSMSMessagePayload,
-  type ATSMSTextContent,
-  type ATSMSWebRTCContent,
-} from "./types";
 
 /**
- * Generate deterministic conversation ID for 1:1 DMs.
- * Both parties will compute the same ID given the same DIDs,
- * preventing duplicate conversations between the same two users.
- *
- * @param did1 - First participant DID
- * @param did2 - Second participant DID
- * @returns Deterministic convoId with "dm_" prefix
- */
-export async function generateDMConvoId(
-  did1: string,
-  did2: string,
-): Promise<string> {
-  const sortedDids = [did1, did2].sort().join(",");
-  const encoder = new TextEncoder();
-  const data = encoder.encode(sortedDids);
-  const hashBuffer = await cryptoProvider.subtle.digest("SHA-256", data);
-  const hashArray = new Uint8Array(hashBuffer);
-  const hashHex = Array.from(hashArray)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return `dm_${hashHex.substring(0, 16)}`;
-}
-
-/**
- * Check if a conversation ID is a deterministic DM ID
- */
-export function isDMConvoId(convoId: string): boolean {
-  return convoId.startsWith("dm_");
-}
-
-/**
- * Helper: Create content for "atsms/text" message
- * Returns JSON string ready to use in ATSMSMessagePayload.content
- *
- * @param text - The text content
- * @param facets - Optional AT Protocol facets (mentions, links, hashtags)
- * @returns JSON-serialized content
- */
-export function createTextContent(
-  text: string,
-  facets?: ATProtoFacet[],
-): string {
-  const content: ATSMSTextContent = {
-    text,
-    ...(facets && facets.length > 0 && { facets }),
-  };
-  return JSON.stringify(content);
-}
-
-/**
- * Helper: Create content for "atsms/webrtc" message
- * Returns JSON string ready to use in ATSMSMessagePayload.content
- * Used for WebRTC signaling (offers, answers, ICE candidates)
- *
- * @param webrtcContent - WebRTC signaling data
- * @returns JSON-serialized content
- */
-export function createWebRTCContent(webrtcContent: ATSMSWebRTCContent): string {
-  return JSON.stringify(webrtcContent);
-}
-
-/**
- * Helper: Parse content from "atsms/webrtc" message
- *
- * @param content - JSON-serialized content from message
- * @returns Parsed WebRTC content
- */
-export function parseWebRTCContent(content: string): ATSMSWebRTCContent {
-  return JSON.parse(content) as ATSMSWebRTCContent;
-}
-
-/**
- * Create a message payload
- *
- * @param senderId - DID of sender
- * @param recipientIds - DIDs of recipients
- * @param content - JSON-serialized content (use createTextContent helper)
- * @param contentType - MIME type (default: "atsms/text")
- * @param conversationId - Optional conversation ID
- */
-export function createMessagePayload(
-  senderId: string,
-  recipientIds: string[],
-  content: string,
-  contentType: string = "atsms/text",
-  conversationId?: string,
-): ATSMSMessagePayload {
-  return {
-    version: "1.0",
-    contentType,
-    id: nanoid(13),
-    content,
-    senderId,
-    recipientIds,
-    convoId: conversationId || nanoid(13),
-    createdAt: new Date().toISOString(),
-  };
-}
-
-/**
- * Parse "atsms/text" content
- * Returns the parsed object for rendering
- *
- * @param content - JSON-serialized content
- * @returns Parsed content object with text and optional facets
- */
-export function parseTextContent(content: string): ATSMSTextContent {
-  try {
-    const parsed = JSON.parse(content);
-    if (typeof parsed.text !== "string") {
-      throw new Error('Text content must have a "text" field');
-    }
-    return parsed as ATSMSTextContent;
-  } catch (error) {
-    throw new Error(`Failed to parse text content: ${error}`);
-  }
-}
-
-/**
- * Sign and encrypt a message for sending
+ * Sign and encrypt opaque content bytes for sending (the X509 one-shot seal).
  */
 export async function prepareMessageForSending(
-  payload: ATSMSMessagePayload,
+  contentBytes: Uint8Array,
   senderCert: ATSMSEndpointCertificate,
   recipientCerts: ATSMSEndpointCertificate[],
 ): Promise<Uint8Array> {
-  // 1. Serialize payload to JSON
-  const messageContent = JSON.stringify(payload, null, 2);
-
-  // 2. Sign the message
-  const signedContent = await signMessage(messageContent, senderCert);
-
-  // 3. Encrypt the signed content for recipients
-  const encryptedContent = await encryptMessage(signedContent, recipientCerts);
-
-  return encryptedContent;
+  const signedContent = await signMessage(contentBytes, senderCert);
+  return encryptMessage(signedContent, recipientCerts);
 }
 
 /**

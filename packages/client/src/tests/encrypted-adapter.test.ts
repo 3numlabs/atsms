@@ -3,16 +3,16 @@
  * engine/device state blobs, over a real SQLite adapter.
  */
 
-import { Database } from "bun:sqlite";
+import { bytesToHex, type Csprng,generateSigningKeypair, SealLayer } from "@atsms/dcgka";
 import { x25519 } from "@noble/curves/ed25519";
-import { generateSigningKeypair, SealLayer, bytesToHex, type Csprng } from "@atsms/dcgka";
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 
 import { Conversation, ConversationSession, type LocalKeys, type MemberDescriptor } from "../lib/conversations/index.js";
-import { parseTextContent } from "../lib/messages.js";
+import { textOf } from "../lib/format/index.js";
 import { EncryptedStorageAdapter } from "../lib/storage/encrypted-adapter.js";
-import { SQLiteAdapter } from "../lib/storage/sqlite-adapter.js";
 import type { StorageAdapter } from "../lib/storage/interface.js";
+import { SQLiteAdapter } from "../lib/storage/sqlite-adapter.js";
 
 class BunSQLiteWrapper {
   private db = new Database(":memory:");
@@ -157,7 +157,7 @@ describe("EncryptedStorageAdapter (envelope encryption-at-rest)", () => {
     };
     await pipe(await a.update());
     await pipe(await a.send("encrypted at rest"));
-    expect((await bob.ctx.storage.getMessages(b.groupId)).map((m) => parseTextContent(m.content).text)).toContain(
+    expect((await bob.ctx.storage.getMessages(b.convoId)).map((m) => textOf(m.content))).toContain(
       "encrypted at rest",
     );
 

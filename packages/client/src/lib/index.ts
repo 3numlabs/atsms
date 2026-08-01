@@ -9,15 +9,10 @@
 export * from "./types";
 
 // Export storage types and interfaces
+export { EncryptedStorageAdapter } from "./storage/encrypted-adapter";
 export { IndexedDBAdapter } from "./storage/indexeddb-adapter";
 export * from "./storage/interface";
-export {
-  ATSMSStorageManager,
-  type ATSMSStorageManagerConfig,
-} from "./storage/manager";
 export { SQLiteAdapter } from "./storage/sqlite-adapter";
-export { EncryptedStorageAdapter } from "./storage/encrypted-adapter";
-export { payloadToLocalMessage } from "./storage/types";
 export * from "./storage/types";
 
 // Export certificate classes + factories
@@ -60,18 +55,15 @@ export {
 // Export crypto provider utilities
 export { setCryptoProvider } from "./crypto-provider";
 
-// Export message handling functions
-export {
-  createMessagePayload,
-  createTextContent,
-  createWebRTCContent,
-  extractP7MFromEmail,
-  generateDMConvoId,
-  isDMConvoId,
-  parseTextContent,
-  parseWebRTCContent,
-  prepareMessageForSending,
-} from "./messages";
+// Export message CMS composition + email extraction helpers
+export { extractP7MFromEmail, prepareMessageForSending } from "./messages";
+
+// Export the v2 message format (docs/message-format.md): CBOR content codec,
+// derived IDs, part-kind registry, constructors, shared render model
+export * from "./format/index";
+
+// Export the shared inbound ingest + transcript helpers
+export { ingestMessage, transcriptMessages } from "./storage/apply";
 
 // Export API client
 export { ATSMSApiClient } from "./atsms-api";
@@ -89,13 +81,10 @@ export { ATSMSTransportLayer } from "./transport-layer";
 // Export JWT authentication
 export { generateJWT, getTokenExpiration } from "./jwt-auth";
 
-// Export the ATSMSClient (main client class)
-export { ATSMSClient } from "./atsms-client";
 
 // Re-export commonly used types for convenience
 export type {
   ATProtocolRecord,
-  ATProtoFacet,
   ATSMSCertificateType,
   ATSMSConfig,
   ATSMSDecryptedMessage,
@@ -104,11 +93,8 @@ export type {
   ATSMSListMessagesOptions,
   ATSMSListMessagesResponse,
   ATSMSMessageMetadata,
-  ATSMSMessagePayload,
   ATSMSStatsResponse,
-  ATSMSTextContent,
   ATSMSTransportLayerConfig,
   ATSMSTransportMessage,
   ATSMSTransportReceipt,
-  ATSMSWebRTCContent,
 } from "./types";

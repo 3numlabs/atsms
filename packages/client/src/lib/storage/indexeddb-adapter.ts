@@ -13,9 +13,13 @@ import type { ATSMSCertificateType } from "../types";
 import type { StorageAdapter } from "./interface";
 import {
   type ATSMSDidInfo,
+  contentFromStorage,
+  contentToStorage,
   type ConversationFilter,
   type LocalConversation,
   type LocalMessage,
+  reactionsFromStorage,
+  reactionsToStorage,
 } from "./types";
 
 const DEFAULT_DB_NAME = "atsms";
@@ -154,21 +158,28 @@ export class IndexedDBAdapter implements StorageAdapter {
   }
 
   // Message operations
+
+  /** LocalMessage → stored record (plain JSON values; content as base64 CBOR). */
+  private serializeMessage(message: LocalMessage) {
+    return {
+      id: message.id,
+      convoId: message.convoId,
+      senderId: message.senderId,
+      createdAt: message.createdAt.getTime(),
+      causalOrder: message.causalOrder ?? null,
+      isInvitation: message.isInvitation ? 1 : 0,
+      content: contentToStorage(message.content),
+      reactions: reactionsToStorage(message.reactions),
+      editedAt: message.editedAt ? message.editedAt.getTime() : null,
+      deleted: message.deleted ? 1 : 0,
+    };
+  }
+
   async saveMessage(message: LocalMessage): Promise<void> {
     const transaction = await this.getTransaction(STORES.MESSAGES, "readwrite");
     const store = transaction.objectStore(STORES.MESSAGES);
 
-    // Convert Date to timestamp for storage
-    const data = {
-      ...message,
-      createdAt: message.createdAt.getTime(),
-      recipientIds: JSON.stringify(message.recipientIds),
-      reactions: message.reactions ? JSON.stringify(message.reactions) : null,
-      metadata: message.metadata ? JSON.stringify(message.metadata) : null,
-      isInvitation: message.isInvitation ? 1 : 0,
-    };
-
-    await this.promisifyRequest(store.put(data));
+    await this.promisifyRequest(store.put(this.serializeMessage(message)));
 
     // Notify observers
     const subject = this.messageSubjects.get(message.convoId);
@@ -201,7 +212,12 @@ export class IndexedDBAdapter implements StorageAdapter {
     const rows = await this.promisifyRequest<unknown[]>(index.getAll(IDBKeyRange.only(convoId)));
     const all = rows
       .map((r) => this.deserializeMessage(r))
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
+      .sort(
+        (a, b) =>
+          (a.causalOrder ?? 0) - (b.causalOrder ?? 0) ||
+          a.createdAt.getTime() - b.createdAt.getTime() ||
+          a.id.localeCompare(b.id),
+      );
     let end = all.length;
     if (cursor) {
       const at = all.findIndex((m) => m.id === cursor);
@@ -214,33 +230,18 @@ export class IndexedDBAdapter implements StorageAdapter {
     id: string,
     updates: Partial<LocalMessage>,
   ): Promise<void> {
-    const store = await this.getStore(STORES.MESSAGES, "readwrite");
-    const existing = await this.promisifyRequest(store.get(id));
-
-    if (!existing) {
+    const existingMessage = await this.getMessage(id);
+    if (!existingMessage) {
       throw new Error(`Message ${id} not found`);
     }
 
-    const updated = {
-      ...existing,
-      ...updates,
-      recipientIds: updates.recipientIds
-        ? JSON.stringify(updates.recipientIds)
-        : existing.recipientIds,
-      reactions: updates.reactions
-        ? JSON.stringify(updates.reactions)
-        : existing.reactions,
-      metadata: updates.metadata
-        ? JSON.stringify(updates.metadata)
-        : existing.metadata,
-    };
-
-    await this.promisifyRequest(store.put(updated));
+    const store = await this.getStore(STORES.MESSAGES, "readwrite");
+    await this.promisifyRequest(store.put(this.serializeMessage({ ...existingMessage, ...updates })));
 
     // Notify observers
-    const subject = this.messageSubjects.get(existing.convoId);
+    const subject = this.messageSubjects.get(existingMessage.convoId);
     if (subject) {
-      const messages = await this.getMessages(existing.convoId);
+      const messages = await this.getMessages(existingMessage.convoId);
       subject.next(messages);
     }
   }
@@ -412,15 +413,7 @@ export class IndexedDBAdapter implements StorageAdapter {
     const store = await this.getStore(STORES.MESSAGES, "readwrite");
 
     for (const message of messages) {
-      const data = {
-        ...message,
-        createdAt: message.createdAt.getTime(),
-        recipientIds: JSON.stringify(message.recipientIds),
-        reactions: message.reactions ? JSON.stringify(message.reactions) : null,
-        metadata: message.metadata ? JSON.stringify(message.metadata) : null,
-        isInvitation: message.isInvitation ? 1 : 0,
-      };
-      await this.promisifyRequest(store.put(data));
+      await this.promisifyRequest(store.put(this.serializeMessage(message)));
     }
 
     // Notify observers for affected conversations
@@ -791,13 +784,13 @@ export class IndexedDBAdapter implements StorageAdapter {
       id: data.id,
       convoId: data.convoId,
       senderId: data.senderId,
-      recipientIds: JSON.parse(data.recipientIds),
-      content: data.content,
-      contentType: data.contentType,
       createdAt: new Date(data.createdAt),
+      causalOrder: data.causalOrder ?? undefined,
       isInvitation: data.isInvitation === 1,
-      reactions: data.reactions ? JSON.parse(data.reactions) : undefined,
-      metadata: data.metadata ? JSON.parse(data.metadata) : undefined,
+      content: contentFromStorage(data.content),
+      reactions: reactionsFromStorage(data.reactions),
+      editedAt: data.editedAt ? new Date(data.editedAt) : undefined,
+      deleted: data.deleted === 1 ? true : undefined,
     };
   }
 

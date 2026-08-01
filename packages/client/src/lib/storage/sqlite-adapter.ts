@@ -11,9 +11,13 @@ import { Observable, Subject } from "rxjs";
 import type { ATSMSCertificateType } from "../types";
 import { type SQLiteDatabase, type StorageAdapter } from "./interface";
 import {
+  contentFromStorage,
+  contentToStorage,
   type ConversationFilter,
   type LocalConversation,
   type LocalMessage,
+  reactionsFromStorage,
+  reactionsToStorage,
 } from "./types";
 
 export class SQLiteAdapter implements StorageAdapter {
@@ -33,16 +37,16 @@ export class SQLiteAdapter implements StorageAdapter {
   private initSchema() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
-        id TEXT PRIMARY KEY,
-        convoId TEXT NOT NULL,
-        senderId TEXT NOT NULL,
-        recipientIds TEXT NOT NULL,
-        content TEXT NOT NULL,
-        contentType TEXT NOT NULL,
+        id TEXT PRIMARY KEY,        -- hex derived message ID (format §6)
+        convoId TEXT NOT NULL,      -- hex 33-byte v2 ConvoId
+        senderId TEXT NOT NULL,     -- seal-layer-authenticated sender DID
+        content TEXT NOT NULL,      -- base64 deterministic-CBOR MessageContent
         createdAt INTEGER NOT NULL,
+        causalOrder INTEGER,        -- DCGKA seq; primary sort key when present
         isInvitation INTEGER DEFAULT 0,
-        reactions TEXT,
-        metadata TEXT,
+        reactions TEXT,             -- projection (apply-class processing)
+        editedAt INTEGER,           -- projection
+        deleted INTEGER DEFAULT 0,  -- projection (retraction tombstone accepted)
         FOREIGN KEY(convoId) REFERENCES conversations(id)
       );
 
@@ -113,8 +117,8 @@ export class SQLiteAdapter implements StorageAdapter {
   async saveMessage(message: LocalMessage): Promise<void> {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO messages (
-        id, convoId, senderId, recipientIds, content, contentType,
-        createdAt, isInvitation, reactions, metadata
+        id, convoId, senderId, content, createdAt, causalOrder,
+        isInvitation, reactions, editedAt, deleted
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
@@ -122,13 +126,13 @@ export class SQLiteAdapter implements StorageAdapter {
       message.id,
       message.convoId,
       message.senderId,
-      JSON.stringify(message.recipientIds),
-      message.content,
-      message.contentType,
+      contentToStorage(message.content),
       message.createdAt.getTime(),
+      message.causalOrder ?? null,
       message.isInvitation ? 1 : 0,
-      message.reactions ? JSON.stringify(message.reactions) : null,
-      message.metadata ? JSON.stringify(message.metadata) : null,
+      reactionsToStorage(message.reactions),
+      message.editedAt ? message.editedAt.getTime() : null,
+      message.deleted ? 1 : 0,
     );
 
     // Notify observers
@@ -157,7 +161,9 @@ export class SQLiteAdapter implements StorageAdapter {
       params.push(cursor);
     }
 
-    query += " ORDER BY createdAt DESC LIMIT ?";
+    // Causal order first (format §6): DCGKA seq when present, sender clock as
+    // the fallback/tiebreak, lexicographic ID as the final tiebreak.
+    query += " ORDER BY causalOrder DESC, createdAt DESC, id DESC LIMIT ?";
     params.push(limit);
 
     const stmt = this.db.prepare(query);
@@ -460,13 +466,13 @@ export class SQLiteAdapter implements StorageAdapter {
       id: row.id,
       convoId: row.convoId,
       senderId: row.senderId,
-      recipientIds: JSON.parse(row.recipientIds),
-      content: row.content,
-      contentType: row.contentType,
       createdAt: new Date(row.createdAt),
+      causalOrder: row.causalOrder ?? undefined,
       isInvitation: row.isInvitation === 1,
-      reactions: row.reactions ? JSON.parse(row.reactions) : undefined,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      content: contentFromStorage(row.content),
+      reactions: reactionsFromStorage(row.reactions),
+      editedAt: row.editedAt ? new Date(row.editedAt) : undefined,
+      deleted: row.deleted === 1 ? true : undefined,
     };
   }
 

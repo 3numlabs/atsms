@@ -28,70 +28,9 @@ export interface ATSMSDecryptedMessage {
   decryptedContent: Uint8Array;
 }
 
-/**
- * Structured message payload (decrypted content)
- * This is the message format "on the wire" after decryption
- */
-export interface ATSMSMessagePayload {
-  version: string;
-  contentType: string; // MIME type, e.g., "atsms/text"
-  id: string;
-  content: string; // JSON-serialized content
-  senderId: string;
-  recipientIds: string[];
-  convoId: string;
-  createdAt: string;
-}
-
-/**
- * Content structure for "atsms/text" messages
- * This is what's inside the JSON-serialized content field
- */
-export interface ATSMSTextContent {
-  text: string;
-  facets?: ATProtoFacet[]; // Optional AT Protocol facets
-}
-
-/**
- * Content structure for "atsms/webrtc" messages
- * Used for WebRTC signaling (establishing audio/video calls)
- */
-export interface ATSMSWebRTCContent {
-  type: "offer" | "answer" | "ice-candidate" | "hangup";
-
-  // SDP for offer/answer
-  sdp?: string;
-
-  // ICE candidate data
-  candidate?: {
-    candidate: string;
-    sdpMid: string | null;
-    sdpMLineIndex: number | null;
-  };
-
-  // Call metadata
-  callId: string; // Unique identifier for this call session
-  mediaTypes?: ("audio" | "video")[]; // What media tracks are offered
-
-  // Optional metadata
-  timestamp?: number; // When this signaling message was created
-}
-
-/**
- * AT Protocol facet (from @atproto/api)
- * For mentions, links, hashtags, etc.
- */
-export interface ATProtoFacet {
-  index: {
-    byteStart: number;
-    byteEnd: number;
-  };
-  features: Array<
-    | { $type: "app.bsky.richtext.facet#mention"; did: string }
-    | { $type: "app.bsky.richtext.facet#link"; uri: string }
-    | { $type: "app.bsky.richtext.facet#tag"; tag: string }
-  >;
-}
+// The application message format (envelope, parts, derived IDs) is v2 CBOR —
+// see src/lib/format/ and docs/message-format.md. Types here are transport-
+// and inbox-level only.
 
 // Transport receipt for tracking message origin and metadata
 // The AT-SMS Inbox Provider adds this to messages for troubleshooting spam

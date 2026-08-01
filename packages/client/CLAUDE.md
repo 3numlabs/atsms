@@ -78,18 +78,25 @@ group ratchet secrets), and the **`device_state`** blob (the prekey ring — adm
 
 ## Clients
 
-The `src/client/*` tools (`atsms-chat.ts`, `atsms.ts`, `api-client.ts`) are **legacy** god-object CLIs — the
-`ATSMSStorageManager` monolith the reshape is dismantling; kept for reference/testing only, not the target
-API. The current thin reference clients are **`atsms-cli/`** (sibling repo, a REPL over `@atsms/client`) and
+The legacy god-object clients (`src/client/*`, `ATSMSClient`, `ATSMSStorageManager`) are **deleted** as of
+the v2 message-format cut-over (2026-07-31); all three reference clients (`atsms-cli`, `atsms-web`,
+`atsms-demo`) run on the v2 client. The current thin reference clients are **`atsms-cli/`** (sibling repo, a
+REPL over `@atsms/client`) and
 **`atsms-web/`** (a browser **debug tool** — its passkey/PRF flow is debug-only, NOT the product identity
 model; the product is a native mobile app).
 
-## Message content structure
+## Message content structure (v2)
 
-`ATSMSMessagePayload` = `{ version, id, contentType, content, senderId, recipientIds, convoId, createdAt }`.
-`content` is a JSON string; `contentType` is a MIME-ish type (`"atsms/text"` → `{ text, facets? }`). Use
-`createTextContent`/`parseTextContent`. New content types add a `contentType` + JSON schema; the crypto/storage
-layers treat `content` as opaque.
+The application message is the **v2 content format** — deterministic CBOR, MIMI-congruent — defined in the
+umbrella [`docs/message-format.md`](../docs/message-format.md) and implemented in `src/lib/format/`:
+`MessageContent` (envelope fields `replaces`/`topicId`/`inReplyTo`/`expires`/`ephemeral`/`fallback` +
+`body: Part[]`), a part-kind registry with handling classes (render/apply/signal), **derived** message IDs
+(sender + convoId + content + salt — never carried), and 33-byte context-tagged conversation IDs. Build
+content with the `format/` constructors (`textPart`, `reactionPart`, `callPart`, …), render via the shared
+`renderModel`/`textOf`/`transcriptMessages` helpers (§5.2 unknown-kind policy), and ingest inbound messages
+through `storage/apply.ts`'s `ingestMessage` (reaction/edit/retraction projections). The crypto/storage
+layers treat the encoded bytes as opaque. The pre-v2 JSON payload (`ATSMSMessagePayload`, `atsms/text`,
+`atsms/webrtc`) is deleted.
 
 ## Branding
 

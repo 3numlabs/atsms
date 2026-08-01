@@ -13,7 +13,7 @@ import { x25519 } from "@noble/curves/ed25519";
 import { describe, expect, test } from "bun:test";
 
 import { Conversation, type LocalKeys, type MemberDescriptor, type Outbound } from "../lib/conversations/index.js";
-import { parseTextContent } from "../lib/messages.js";
+import { createContent, oneShotConvoIdV2, textOf, textPart } from "../lib/format/index.js";
 import { IndexedDBAdapter } from "../lib/storage/indexeddb-adapter.js";
 import type { LocalMessage } from "../lib/storage/types.js";
 
@@ -21,16 +21,23 @@ let dbCounter = 0;
 const newStore = () => new IndexedDBAdapter(`atsms-test-${++dbCounter}`);
 
 let clock = Date.now();
-const msg = (id: string, convoId: string): LocalMessage => ({
-  id,
-  convoId,
-  senderId: "did:plc:a",
-  recipientIds: ["did:plc:b"],
-  content: JSON.stringify({ text: `text-${id}` }),
-  contentType: "atsms/text",
-  createdAt: new Date(++clock), // distinct timestamps — createdAt orders the feed
-  isInvitation: false,
-});
+const testConvoId = oneShotConvoIdV2(["did:plc:a", "did:plc:b"]);
+const msg = (id: string, convoId: string): LocalMessage => {
+  const createdAt = ++clock; // distinct timestamps — createdAt orders the feed
+  return {
+    id,
+    convoId,
+    senderId: "did:plc:a",
+    createdAt: new Date(createdAt),
+    isInvitation: false,
+    content: createContent({
+      convoId: testConvoId,
+      salt: new Uint8Array(16),
+      createdAt,
+      body: [textPart(`text-${id}`)],
+    }),
+  };
+};
 
 describe("IndexedDBAdapter (browser storage layer)", () => {
   test("messages: save/get/getMessages/delete + observer emission", async () => {
@@ -158,8 +165,8 @@ describe("IndexedDBAdapter (browser storage layer)", () => {
     await pipe(await a.send("hello over indexeddb"), wires);
     await pipe(await b.send("works both ways"), wires);
 
-    const bobTexts = (await bob.ctx.storage.getMessages(b.groupId)).map((m) => parseTextContent(m.content).text);
-    const aliceTexts = (await alice.ctx.storage.getMessages(a.groupId)).map((m) => parseTextContent(m.content).text);
+    const bobTexts = (await bob.ctx.storage.getMessages(b.convoId)).map((m) => textOf(m.content));
+    const aliceTexts = (await alice.ctx.storage.getMessages(a.convoId)).map((m) => textOf(m.content));
     expect(bobTexts).toContain("hello over indexeddb");
     expect(aliceTexts).toEqual(expect.arrayContaining(["hello over indexeddb", "works both ways"]));
 
@@ -168,7 +175,7 @@ describe("IndexedDBAdapter (browser storage layer)", () => {
     expect(a2).not.toBeNull();
     wires.set(alice.fp, a2!);
     await pipe(await a2!.send("after refresh"), wires);
-    expect((await bob.ctx.storage.getMessages(b.groupId)).map((m) => parseTextContent(m.content).text)).toContain(
+    expect((await bob.ctx.storage.getMessages(b.convoId)).map((m) => textOf(m.content))).toContain(
       "after refresh",
     );
   });

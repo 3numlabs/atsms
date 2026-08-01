@@ -20,17 +20,20 @@ import {
   bytesToHex,
   CLS_CONTROL,
   CLS_WELCOME,
+  CONTENT_CMS,
+  CONTENT_FRAME,
   type Csprng,
   envelopeMode,
   hexToBytes,
   MODE_ASYM,
   MODE_SYM,
+  openAsym,
   parseFrame,
   payloadFromCbor,
   type PdsClient,
   pickEndpoint,
   resolveInbox,
-  SealLayer,
+  sealAsymTo,
 } from "@atsms/dcgka";
 import { x25519 } from "@noble/curves/ed25519";
 import { type Observable,Subject } from "rxjs";
@@ -41,20 +44,29 @@ import {
   type ConversationContext,
   type MemberDescriptor,
   type Outbound,
+  type SendInput,
 } from "../conversations/index.js";
+import {
+  convoIdFromHex,
+  convoIdToHex,
+  createContent,
+  deriveMessageId,
+  encodeContent,
+  EXT_RECIPIENTS,
+  groupIdOfConvoId,
+  type MessageContent,
+  messageIdToHex,
+  oneShotConvoIdV2,
+  type Part,
+  recipientsExtension,
+  textPart,
+} from "../format/index.js";
 import { capableDevices } from "../identity/capability.js";
 import { ATSMSDeviceIdentity } from "../identity/device-identity.js";
-import { createMessagePayload, createTextContent } from "../messages.js";
-import {
-  oneShotConvoId,
-  oneShotSenderProblem,
-  openOneShot,
-  resolveRecipientCerts,
-  sealOneShot,
-} from "../send/index.js";
+import { oneShotSenderProblem, openOneShot, resolveRecipientCerts, sealOneShot } from "../send/index.js";
+import { ingestMessage } from "../storage/apply.js";
 import type { StorageAdapter } from "../storage/interface.js";
 import type { LocalConversation, LocalMessage } from "../storage/types.js";
-import { payloadToLocalMessage } from "../storage/types.js";
 import type { EnvelopeTransport } from "../transport/envelope-transport.js";
 
 export interface ATSMSConfig {
@@ -69,6 +81,10 @@ export interface ATSMSConfig {
   mailtoAddress?: string;
   /** Dispatcher diagnostics (envelope drops, bootstraps, joins). Default: silent. */
   onEvent?: (kind: string, detail: string) => void;
+  /** Ephemeral (signal-class) messages — call signaling, typing — from any
+   *  conversation (format §8). Never persisted; identify the conversation via
+   *  `content.convoId`. Default: dropped. */
+  onSignal?: (content: MessageContent, senderDid: string) => void;
 }
 
 /** App-facing handle for one conversation: subscribe + send, no crypto. */
@@ -78,8 +94,9 @@ export class ATSMSConversation {
     private readonly router: (outbound: Outbound[], convo: Conversation) => Promise<void>,
   ) {}
 
+  /** The conversation ID: hex of the 33-byte v2 ConvoId (format §8). */
   get id(): string {
-    return this.convo.groupId;
+    return this.convo.convoId;
   }
 
   /** Fully-processed messages (decrypted, verified, deduped, persisted). */
@@ -92,17 +109,18 @@ export class ATSMSConversation {
     return this.convo.members;
   }
 
-  /** Send a text message; sealing + delivery are automatic. If the engine has
+  /** Send a message — plain text or structured v2 content (replies, reactions,
+   *  edits, signaling); sealing + delivery are automatic. If the engine has
    *  no established epoch (e.g. a conversation restored from a snapshot taken
    *  before the first update — an interrupted open), it self-heals: run the
    *  mandatory update, then retry once. */
-  async send(text: string): Promise<void> {
+  async send(input: string | SendInput): Promise<void> {
     try {
-      await this.router(await this.convo.send(text), this.convo);
+      await this.router(await this.convo.send(input), this.convo);
     } catch (err) {
       if (!(err instanceof Error) || !err.message.includes("NoRootKey")) throw err;
       await this.router(await this.convo.update(), this.convo);
-      await this.router(await this.convo.send(text), this.convo);
+      await this.router(await this.convo.send(input), this.convo);
     }
   }
 
@@ -130,6 +148,7 @@ export class ATSMS {
     private readonly pds: PdsClient,
     private readonly rng: Csprng,
     private readonly onEvent: (kind: string, detail: string) => void,
+    private readonly onSignal?: (content: MessageContent, senderDid: string) => void,
   ) {}
 
   /**
@@ -145,6 +164,7 @@ export class ATSMS {
       config.pds,
       config.rng,
       config.onEvent ?? (() => {}),
+      config.onSignal,
     );
 
     await config.identity.ensurePrekeyPublished(config.pds);
@@ -180,6 +200,25 @@ export class ATSMS {
     return this.oneShots.asObservable();
   }
 
+  /**
+   * How a recipient can be reached — the input to the app's DELIBERATE mode
+   * choice (sdk-shape.md Part A: mode selection is deliberate; capability §3:
+   * no silent downgrade). The two surfaces are different products with
+   * different guarantees, so the app picks one, visibly, at thread creation —
+   * never per message, and never as a fallback:
+   *
+   * - `"conversation"` — ≥1 device has a verified prekey: the stateful DCGKA
+   *   surface (forward secrecy, sealed sender, calls) via `open()`.
+   * - `"one-shot"` — published endpoint certs only: the stateless X509
+   *   surface via `send()` (certified-mail-style notices / notifications).
+   * - `"unreachable"` — no published certs; nothing can be delivered.
+   */
+  async reachability(did: string): Promise<"conversation" | "one-shot" | "unreachable"> {
+    if ((await capableDevices(this.pds, did)).length > 0) return "conversation";
+    if ((await resolveRecipientCerts(this.pds, did)).length > 0) return "one-shot";
+    return "unreachable";
+  }
+
   // ── the stateless surface ──────────────────────────────────────────────────
 
   /**
@@ -187,10 +226,17 @@ export class ATSMS {
    * every valid endpoint cert of every recipient — no session, no stored
    * crypto state. Works for any recipient with published certs (DCGKA
    * capability not required); recipients with none are named in the error.
+   *
+   * Transport privacy (format §8): the CMS is sealed into a sealed-sender
+   * envelope (`CONTENT_CMS`) per recipient device that published a prekey;
+   * devices with only an X509 cert receive the bare CMS — the explicit
+   * legacy form, not a sniffed special case.
    */
-  async send(params: { to: string[]; text: string }): Promise<void> {
+  async send(params: { to: string[]; text?: string; parts?: Part[]; fallback?: string }): Promise<void> {
     const recipients = [...new Set(params.to.filter((d) => d !== this.identity.did))];
     if (recipients.length === 0) throw new Error("send: no recipients");
+    const parts = params.parts ?? (params.text !== undefined ? [textPart(params.text)] : null);
+    if (parts === null) throw new Error("send: no content");
 
     const recipientCerts = [];
     const unreachable: string[] = [];
@@ -203,20 +249,40 @@ export class ATSMS {
       throw new Error(`no published endpoint certificates: ${unreachable.join(", ")}`);
     }
 
-    const convoId = await oneShotConvoId([this.identity.did, ...recipients]);
-    const payload = createMessagePayload(
-      this.identity.did,
-      recipients,
-      createTextContent(params.text),
-      "atsms/text",
+    const participants = [this.identity.did, ...recipients];
+    const convoId = oneShotConvoIdV2(participants);
+    const content = createContent({
       convoId,
-    );
-    const bytes = await sealOneShot(payload, await this.identity.endpointCertificate(), recipientCerts);
+      salt: this.rng(16),
+      body: parts,
+      fallback: params.fallback,
+      extensions: new Map([[EXT_RECIPIENTS, recipients]]),
+    });
+    const contentBytes = encodeContent(content);
+    const cms = await sealOneShot(contentBytes, await this.identity.endpointCertificate(), recipientCerts);
 
-    await this.saveOneShotConversation(convoId, [this.identity.did, ...recipients]);
-    await this.storage.saveMessage(payloadToLocalMessage(payload));
+    const convoIdHex = convoIdToHex(convoId);
+    await this.saveOneShotConversation(convoIdHex, participants);
+    await ingestMessage({
+      storage: this.storage,
+      id: messageIdToHex(deriveMessageId(this.identity.did, content, contentBytes)),
+      convoId: convoIdHex,
+      senderId: this.identity.did,
+      content,
+    });
+
     for (const did of recipients) {
-      await this.transport.deliverToDid(did, bytes);
+      // Sealed-sender whenever the recipient has devices we can seal to; the
+      // worker fans every envelope to all of the DID's device inboxes, and
+      // non-target devices fail the AEAD open and drop (multi-device model).
+      const devices = await capableDevices(this.pds, did);
+      if (devices.length > 0) {
+        for (const d of devices) {
+          await this.transport.deliverToDid(did, sealAsymTo(d.prekey.signedPrekey, CONTENT_CMS, cms, this.rng));
+        }
+      } else {
+        await this.transport.deliverToDid(did, cms); // X509-only recipient: bare CMS (legacy form)
+      }
     }
   }
 
@@ -233,8 +299,12 @@ export class ATSMS {
     const participants = [this.identity.did, ...others];
 
     const existing = await this.storage.findConversationByParticipants(participants);
-    if (existing !== null) {
-      const reopened = await this.get(existing.id);
+    // The record's id is the v2 ConvoId hex; only a conversation-context id
+    // (0x02 prefix) maps back to a DCGKA GroupID — a one-shot record with the
+    // same participant set is a different conversation (format §8).
+    const existingGroupId = existing === null ? null : groupIdOfConvoId(convoIdFromHex(existing.id));
+    if (existingGroupId !== null) {
+      const reopened = await this.get(existingGroupId);
       if (reopened !== null) {
         // Reconcile membership with the members' CURRENT device lists: a DID
         // may have published a new device (or re-keyed one) since the group was
@@ -280,8 +350,10 @@ export class ATSMS {
     return handle;
   }
 
-  /** A conversation by GroupID — open handle, or restored from storage. Null if unknown. */
-  async get(groupId: string): Promise<ATSMSConversation | null> {
+  /** A conversation by ID (v2 ConvoId hex, or a bare DCGKA GroupID) — open
+   *  handle, or restored from storage. Null if unknown. */
+  async get(id: string): Promise<ATSMSConversation | null> {
+    const groupId = toGroupId(id);
     const open = this.openConvos.get(groupId);
     if (open !== undefined) return open;
     const convo = await Conversation.restore(this.context(), groupId);
@@ -345,12 +417,13 @@ export class ATSMS {
   }
 
   /** Inbound: one opaque delivery from the transport (throw ⇒ no ack ⇒
-   *  redelivery). Sealed envelopes are strict-CBOR; anything else is offered
-   *  to the X509 one-shot opener (the delivery contract is payload-agnostic,
+   *  redelivery). Sealed envelopes are strict-CBOR and declare their content
+   *  type once opened (frame vs CMS — format §8); bare DER is the X509-only
+   *  legacy form of a one-shot (the delivery contract is payload-agnostic,
    *  inbound-delivery §1). */
   private async dispatch(envelope: Uint8Array): Promise<void> {
     const mode = sealedMode(envelope);
-    if (mode === MODE_ASYM) return this.dispatchBootstrap(envelope);
+    if (mode === MODE_ASYM) return this.dispatchAsym(envelope);
     if (mode === MODE_SYM) {
       // Only a conversation's tag table can recognize it — offer to all; the
       // seal layer dedups (EnvelopeID) and buffers unknown tags briefly.
@@ -363,6 +436,26 @@ export class ATSMS {
     return this.dispatchOneShot(envelope);
   }
 
+  /** Trial-open a sealed-asym envelope with this device's prekey secrets and
+   *  route by the DECLARED content type: a frame bootstraps/joins a
+   *  conversation; a CMS body is a sealed one-shot (format §8). */
+  private async dispatchAsym(envelope: Uint8Array): Promise<void> {
+    for (const sk of this.identity.prekeySecrets) {
+      let opened;
+      try {
+        opened = openAsym(sk, envelope);
+      } catch {
+        continue; // not this secret (or not for us) — try the next
+      }
+      if (opened.contentType === CONTENT_FRAME) return this.dispatchBootstrap(opened.body);
+      if (opened.contentType === CONTENT_CMS) return this.dispatchOneShot(opened.body);
+      this.onEvent("drop-unknown-sealed-type", String(opened.contentType));
+      return;
+    }
+    // Not addressed to us (or a rotated-out generation) — drop + ack.
+    this.onEvent("drop-unopenable", "no prekey secret opens this sealed-asym envelope");
+  }
+
   private async dispatchOneShot(bytes: Uint8Array): Promise<void> {
     let opened;
     try {
@@ -372,23 +465,47 @@ export class ATSMS {
       this.onEvent("drop-unopenable", err instanceof Error ? err.message : String(err));
       return;
     }
-    const problem = await oneShotSenderProblem(this.pds, opened);
+    const senderDid = opened.signer.did;
+    if (senderDid === undefined) {
+      this.onEvent("drop-unverified-sender", "signer certificate carries no DID");
+      return;
+    }
+    const problem = await oneShotSenderProblem(this.pds, opened.signer);
     if (problem !== null) {
       this.onEvent("drop-unverified-sender", problem);
       return;
     }
-    // The convoId must be the deterministic id for the payload's participant
-    // set — a verified sender still cannot inject into an arbitrary thread.
-    const participants = [opened.payload.senderId, ...opened.payload.recipientIds];
-    if (opened.payload.convoId !== (await oneShotConvoId(participants))) {
-      this.onEvent("drop-forged-thread", opened.payload.convoId);
+    let recipients: string[] | null;
+    try {
+      recipients = recipientsExtension(opened.content, EXT_RECIPIENTS);
+    } catch {
+      this.onEvent("drop-bad-recipients", senderDid);
       return;
     }
-    await this.saveOneShotConversation(opened.payload.convoId, participants);
-    const message = payloadToLocalMessage(opened.payload);
-    await this.storage.saveMessage(message);
+    if (recipients === null) {
+      this.onEvent("drop-bad-recipients", senderDid);
+      return;
+    }
+    // The convoId must be the deterministic id for the participant set — a
+    // verified sender still cannot inject into an arbitrary thread (format §8).
+    const participants = [senderDid, ...recipients];
+    const convoIdHex = convoIdToHex(opened.content.convoId);
+    if (convoIdHex !== convoIdToHex(oneShotConvoIdV2(participants))) {
+      this.onEvent("drop-forged-thread", convoIdHex);
+      return;
+    }
+    if (opened.content.ephemeral) return; // one-shots have no signaling surface
+
+    await this.saveOneShotConversation(convoIdHex, participants);
+    const message = await ingestMessage({
+      storage: this.storage,
+      id: messageIdToHex(deriveMessageId(senderDid, opened.content, opened.contentBytes)),
+      convoId: convoIdHex,
+      senderId: senderDid,
+      content: opened.content,
+    });
     this.oneShots.next(message);
-    this.onEvent("one-shot", `${opened.payload.senderId} → ${opened.payload.convoId.slice(0, 8)}…`);
+    this.onEvent("one-shot", `${senderDid} → ${convoIdHex.slice(0, 8)}…`);
   }
 
   private async saveOneShotConversation(convoId: string, participants: string[]): Promise<void> {
@@ -404,15 +521,8 @@ export class ATSMS {
     });
   }
 
-  private async dispatchBootstrap(envelope: Uint8Array): Promise<void> {
-    let frame: Uint8Array;
-    try {
-      frame = SealLayer.openBootstrap(envelope, this.identity.prekeySecrets);
-    } catch (err) {
-      // Not addressed to us (or a rotated-out generation) — drop + ack.
-      this.onEvent("drop-unopenable", err instanceof Error ? err.message : String(err));
-      return;
-    }
+  /** An unsealed bootstrap-class frame (create/welcome/pre-epoch traffic). */
+  private async dispatchBootstrap(frame: Uint8Array): Promise<void> {
     const parsed = parseFrame(frame);
     // A create frame carries a zero groupId placeholder (the GroupID *is* the
     // create frame's id) — normalize so the known-group check works for both.
@@ -471,6 +581,7 @@ export class ATSMS {
       did: this.identity.did,
       prekeySecrets: this.identity.prekeySecrets,
       onEngineEvent: (kind, detail) => this.onEvent(kind, detail),
+      onSignal: this.onSignal,
     };
   }
 
@@ -489,6 +600,13 @@ export class ATSMS {
     this.openConvos.set(convo.groupId, handle);
     return handle;
   }
+}
+
+/** Accept either conversation-id currency: a 66-hex v2 ConvoId (0x02 context
+ *  byte) maps to its DCGKA GroupID; anything else is already a GroupID. */
+function toGroupId(id: string): string {
+  if (id.length === 66 && id.startsWith("02")) return id.slice(2);
+  return id;
 }
 
 /** The sealed-envelope mode of an opaque delivery, or null when the bytes are

@@ -39,7 +39,7 @@ async function ensureInitialized() {
  * @returns Signed content as binary data
  */
 export async function signMessage(
-  message: string,
+  message: string | Uint8Array,
   signerCert: ATSMSEndpointCertificate,
 ): Promise<Uint8Array> {
   await ensureInitialized();
@@ -53,7 +53,7 @@ export async function signMessage(
     const signerPrivateKey = signerCert.privateKeyValue;
 
     // Create the message content
-    const messageBytes = new TextEncoder().encode(message);
+    const messageBytes = typeof message === "string" ? new TextEncoder().encode(message) : message;
     const messageBuffer = messageBytes.buffer.slice(
       messageBytes.byteOffset,
       messageBytes.byteOffset + messageBytes.byteLength,

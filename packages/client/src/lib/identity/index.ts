@@ -7,4 +7,5 @@ export * from "./capability.js";
 export * from "./cert-key.js";
 export * from "./device-identity.js";
 export * from "./pds-client.js";
+export * from "./publish-cert.js";
 export * from "./seed.js";
