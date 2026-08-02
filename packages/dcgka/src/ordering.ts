@@ -396,6 +396,21 @@ export class Session {
     return signFrame(body, this.signing.sk);
   }
 
+  /**
+   * §8 trigger surface: build the repair request for current gaps and queue it
+   * on the outbox so the host's normal seal/route pass delivers it (the session
+   * computes repair data but never schedules — the HOST decides when, per
+   * `T_REPAIR`). Returns false when there is nothing to repair. Responses are
+   * served automatically by `ingestFrame` (CLS_REPAIR) on whichever member
+   * receives the request, and A5 dedup makes duplicate serves harmless.
+   */
+  requestRepair(): boolean {
+    const req = this.buildRepairRequest();
+    if (req === null) return false;
+    this.outbox.push(req);
+    return true;
+  }
+
   /** §8: serve a repair request from retained frames (responses are re-deliveries). */
   serveRepair(requestRaw: Uint8Array): Uint8Array[] {
     const req = parseFrame(requestRaw);

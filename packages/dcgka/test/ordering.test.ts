@@ -185,6 +185,20 @@ describe('ordering-auth Session', () => {
     expect(sb.engine.treeHash()).toBe(sa.engine.treeHash());
   });
 
+  it('§8 trigger surface: requestRepair queues on the outbox; served via ingest', () => {
+    const { sa, sb } = foundSessions();
+    sa.update();
+    sb.ingestFrame(sa.coverage()); // the update is missing → buffered
+    expect(sb.requestRepair()).toBe(true);
+    const [reqFrame, ...rest] = sb.takeOutbox();
+    expect(rest.length).toBe(0);
+    sa.ingestFrame(reqFrame!); // the serving side answers from inside ingest
+    for (const resp of sa.takeOutbox()) sb.ingestFrame(resp);
+    expect(sb.bufferedCount()).toBe(0);
+    expect(sb.engine.treeHash()).toBe(sa.engine.treeHash());
+    expect(sb.requestRepair()).toBe(false); // nothing left to repair
+  });
+
   it('head reconciliation: a member missing ops recovers them from a frontier advert (dgm §8)', () => {
     const { sa, sb, sc } = foundSessions();
     // Alice and Carol advance; Bob is partitioned and misses everything.
