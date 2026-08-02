@@ -413,6 +413,14 @@ export class ATSMS {
     const open = this.openConvos.get(groupId);
     if (open !== undefined) return open;
     const convo = await Conversation.restore(this.context(), groupId);
+    // Re-check after the await: open()/join may have registered the live
+    // session while we restored (storage observers fire on the create's
+    // persist, BEFORE open() registers — a subscriber calling get() lands
+    // exactly here). Registering our snapshot would shadow the live session
+    // with a stale, possibly epochless copy that then eats inbound envelopes
+    // and clobbers the persisted state. The map entry, not the restore, wins.
+    const raced = this.openConvos.get(groupId);
+    if (raced !== undefined) return raced;
     return convo === null ? null : this.register(convo);
   }
 
