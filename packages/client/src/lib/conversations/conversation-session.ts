@@ -166,6 +166,14 @@ export class ConversationSession {
    *  routed via the joiner's public inbox — its `url` is null). */
   async addMember(member: MemberDescriptor): Promise<Outbound[]> {
     const { addOpId } = this.session.add(member.device, member.leafPk, member.signingPk);
+    // Establish the post-add epoch as PART of the add (the add blanked the root)
+    // — the adder's own update, encrypted to resolutions that include the new
+    // leaf. Built BEFORE the welcome so the welcome's op log carries it: the
+    // joiner then derives this epoch directly on replay instead of racing its
+    // own heal against the adder's (which forks the tree — see
+    // concurrent-update-partition; add-flow variant). Mirrors the genesis
+    // "born with an epoch" orchestration.
+    this.session.update();
     this.session.buildWelcome(addOpId);
     return this.drain();
   }
