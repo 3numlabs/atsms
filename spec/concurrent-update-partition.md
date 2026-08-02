@@ -175,6 +175,28 @@ reaches nobody (`if (pk !== undefined)`). Fine for the genesis race (minutes-old
 long-lived groups the host should be able to refresh a member's current prekey from its published
 record. Flagging as a follow-up, not part of this fix.
 
+## 4b. Add-flow variant — the adder must establish the post-add epoch (FIXED 2026-08-01)
+
+Live 3-way testing surfaced a second, worse instance: A+B converge, A adds C, then A's post-add
+send and C's post-join heal race — and the group **permanently forks** (the adder isolated on one
+epoch lineage, the rest on another), not even converging on repeated sends. This is distinct from
+§2/§4: the divergence is in the *tree*, below the seal layer, so 4.1 cannot reconcile it.
+
+Root cause: an `add` blanks the root (beekem-core §10). The current flow built the welcome
+immediately after the add, so its op log ended rootless; the joiner then had to heal, *concurrently*
+with the adder's own post-add heal (triggered by the adder's next send). Two concurrent updates over
+a freshly-changed membership produce different merged trees on different members — a fork that never
+heals. (The synchronous-delivery e2e "add carol" test never caught this because it serializes.)
+
+Fix (`atsms-lib` `ConversationSession.addMember`, orchestration only): **add → update → buildWelcome**.
+The adder establishes the post-add epoch as part of the add (its own update, encrypted to
+resolutions that include the new leaf), and the welcome's op log now carries that update. The joiner
+derives the post-add epoch directly on welcome replay — no heal race — and its own FS heal then lands
+cleanly on top of the shared epoch. This is the same "born with an epoch" orchestration as the
+genesis fix (§4.2), applied to membership changes; the serialized-delivery path already proved the
+machinery. Reproduced + verified in `atsms-lib/src/tests/add-concurrency.test.ts` (a controllable
+buffered hub makes the race deterministic, unlike the synchronous loopback).
+
 ## 5. What this does *not* fix
 
 Groups already partitioned (e.g. the live test's) stay broken: the epochs each side needs were
