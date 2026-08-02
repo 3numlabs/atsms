@@ -109,6 +109,18 @@ export class Conversation {
     return this.session.engine.currentEpoch() !== null;
   }
 
+  /** Frames held in the ordering buffer awaiting missing causal ancestors — a
+   *  persistent non-zero count is the §8 gap signal (lossy relay). */
+  get bufferedFrames(): number {
+    return this.session.bufferedFrames;
+  }
+
+  /** §8: queue + seal a repair request for the current gaps (empty if none) —
+   *  the caller routes the envelopes; members re-serve what they retain. */
+  requestRepair(): Promise<Outbound[]> {
+    return this.session.requestRepair();
+  }
+
   /**
    * The genesis window: this conversation has never derived any epoch (a
    * bootstrapped joiner awaiting the creator's mandatory first update). Distinct

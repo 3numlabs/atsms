@@ -211,6 +211,19 @@ export class ConversationSession {
     await this.persist();
   }
 
+  /** Frames buffered awaiting missing causal ancestors (§8 gap signal). */
+  get bufferedFrames(): number {
+    return this.session.bufferedCount();
+  }
+
+  /** §8 repair trigger: queue a request for the current ordering gaps and seal
+   *  it for delivery (deps are empty, so it seals asym to member prekeys —
+   *  deliverable even mid-divergence). Empty when there is nothing to repair. */
+  async requestRepair(): Promise<Outbound[]> {
+    if (!this.session.requestRepair()) return [];
+    return this.drain();
+  }
+
   /** Forget the conversation (key deletion — FS depends on the store honoring it). */
   async forget(): Promise<void> {
     await this.storage.deleteEngineState(this.groupId);

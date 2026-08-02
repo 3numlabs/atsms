@@ -90,6 +90,13 @@ export interface ATSMSConfig {
    *  Default 4000. Set 0 for a synchronous transport (tests) that has already
    *  delivered the update by send time. */
   genesisWaitMs?: number;
+  /** §8 repair trigger (ordering-auth §8, T_REPAIR): when a conversation's
+   *  ordering buffer has held frames for this long — we are missing causal
+   *  ancestors a lossy relay never delivered — send a sealed repair request to
+   *  the members; any member re-serves the signed frames it retains. Default
+   *  60000. Set 0 to disable (e.g. single-shot tools or tests that drive
+   *  repair manually). */
+  repairAfterMs?: number;
 }
 
 /** Genesis wait (concurrent-update-partition §4.2): how long a joiner with no
@@ -100,6 +107,10 @@ export interface ATSMSConfig {
  *  (tests with synchronous transports never need it). */
 const GENESIS_EPOCH_WAIT_MS = 4000;
 const GENESIS_EPOCH_POLL_MS = 250;
+
+/** §8 T_REPAIR (ordering-auth §8): how long an ordering gap may persist before
+ *  the client asks the members to re-serve the missing frames. */
+const REPAIR_AFTER_MS = 60_000;
 
 /** App-facing handle for one conversation: subscribe + send, no crypto. */
 export class ATSMSConversation {
@@ -174,6 +185,10 @@ export class ATSMS {
   private readonly openConvos = new Map<string, ATSMSConversation>();
   /** Inbound one-shots (verified + persisted), as they arrive. */
   private readonly oneShots = new Subject<LocalMessage>();
+  /** §8 repair trigger state: groupId → when its ordering buffer first went
+   *  (and stayed) non-empty. Cleared the moment the buffer drains. */
+  private readonly gapSince = new Map<string, number>();
+  private repairTimer: ReturnType<typeof setInterval> | null = null;
 
   private constructor(
     readonly identity: ATSMSDeviceIdentity,
@@ -184,6 +199,7 @@ export class ATSMS {
     private readonly onEvent: (kind: string, detail: string) => void,
     private readonly onSignal?: (content: MessageContent, senderDid: string) => void,
     private readonly genesisWaitMs: number = GENESIS_EPOCH_WAIT_MS,
+    private readonly repairAfterMs: number = REPAIR_AFTER_MS,
   ) {}
 
   /**
@@ -201,6 +217,7 @@ export class ATSMS {
       config.onEvent ?? (() => {}),
       config.onSignal,
       config.genesisWaitMs ?? GENESIS_EPOCH_WAIT_MS,
+      config.repairAfterMs ?? REPAIR_AFTER_MS,
     );
 
     await config.identity.ensurePrekeyPublished(config.pds);
@@ -218,11 +235,54 @@ export class ATSMS {
     }
 
     await config.transport.start((envelope) => atsms.dispatch(envelope));
+    atsms.startRepairTimer();
     return atsms;
   }
 
   async close(): Promise<void> {
+    if (this.repairTimer !== null) clearInterval(this.repairTimer);
+    this.repairTimer = null;
     await this.transport.stop();
+  }
+
+  // ── §8 gap repair (ordering-auth §8: the session computes, the host schedules) ──
+
+  /** Poll every open conversation's ordering buffer; a gap that persists past
+   *  `repairAfterMs` (T_REPAIR) triggers a sealed repair request to the members
+   *  — any member re-serves the signed frames it retains, and the buffered
+   *  frames drain when the holes fill. Re-fires every window while a gap
+   *  persists (responses are A5-deduped, so retries are harmless). */
+  private startRepairTimer(): void {
+    if (this.repairAfterMs <= 0) return;
+    this.repairTimer = setInterval(
+      () => void this.repairTick().catch((e) => this.onEvent("repair-error", e instanceof Error ? e.message : String(e))),
+      Math.max(1, Math.floor(this.repairAfterMs / 2)),
+    );
+    // Never keep a process alive just to poll for gaps (CLI-friendliness).
+    (this.repairTimer as { unref?: () => void }).unref?.();
+  }
+
+  private async repairTick(): Promise<void> {
+    const now = Date.now();
+    for (const [groupId, handle] of this.openConvos) {
+      const buffered = handle.inner.bufferedFrames;
+      if (buffered === 0) {
+        this.gapSince.delete(groupId);
+        continue;
+      }
+      const since = this.gapSince.get(groupId);
+      if (since === undefined) {
+        this.gapSince.set(groupId, now);
+        continue;
+      }
+      if (now - since < this.repairAfterMs) continue;
+      this.gapSince.set(groupId, now); // rearm: retry next window if still gapped
+      const outbound = await handle.inner.requestRepair();
+      if (outbound.length > 0) {
+        this.onEvent("repair-requested", `${groupId.slice(0, 10)} buffered=${buffered}`);
+        await this.route(outbound, handle.inner);
+      }
+    }
   }
 
   /** All conversations, reactively (metadata level). */
