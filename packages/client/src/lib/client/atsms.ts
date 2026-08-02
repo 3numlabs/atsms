@@ -347,6 +347,14 @@ export class ATSMS {
         // founded — admit anything missing so it can participate. Its welcome
         // carries the log; traffic before admission stays unreadable to it (FS).
         await this.reconcileDevices(reopened);
+        // Repair a half-built conversation: an open() interrupted by a delivery
+        // failure can leave a persisted group with no epoch, which every later
+        // open() would otherwise reuse forever (permanently unusable). If we
+        // hold no epoch and never have, establish one now.
+        if (reopened.inner.awaitingFirstEpoch) {
+          this.onEvent("repair-missing-epoch", reopened.id);
+          await this.route(await reopened.inner.update(), reopened.inner);
+        }
         return reopened;
       }
     }
@@ -377,12 +385,24 @@ export class ATSMS {
       admins: params.admins ?? [this.identity.did],
     });
     const handle = this.register(conversation);
-    await this.route(outbound, conversation);
+    this.onEvent("open-created", handle.id.slice(0, 10));
 
-    // Advertise our ingress in-band, then the creator's mandatory first update
-    // (healing rule) carries the advert and establishes the first epoch.
+    // Build the group's LOCAL state completely before any delivery: advertise
+    // our ingress in-band, then mint the creator's mandatory first update (the
+    // healing rule) which establishes the first epoch. Delivery is retryable;
+    // local state must never be half-built — a transient relay/network error
+    // between the create and the update used to leave a persisted, registered,
+    // epoch-less conversation that every later open() reused forever.
     if (this.transport.ingressUrl !== null) await conversation.advertiseEndpoint(this.transport.ingressUrl);
-    await this.route(await conversation.update(), conversation);
+    this.onEvent("open-advertised", handle.id.slice(0, 10));
+    const firstUpdate = await conversation.update();
+    this.onEvent("open-epoch-established", `${handle.id.slice(0, 10)} envelopes=${firstUpdate.length}`);
+
+    // Now deliver — create first (recipients bootstrap from it), then the update.
+    await this.route(outbound, conversation);
+    this.onEvent("open-create-delivered", String(outbound.length));
+    await this.route(firstUpdate, conversation);
+    this.onEvent("open-update-delivered", String(firstUpdate.length));
     return handle;
   }
 
