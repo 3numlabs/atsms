@@ -243,4 +243,39 @@ describe('ordering-auth Session', () => {
     sa.ingestFrame(msg);
     expect(heard).toBe('after the storm');
   });
+
+  it('a welcome must not leave a ctrlSeq gap for existing members (add → update → welcome ×2)', () => {
+    // Live-failure regression: the welcome is point-to-point (only the joiner
+    // ever receives it), so it must not occupy a slot in the sender's broadcast
+    // ctrlSeq contiguity chain — otherwise every existing member buffers the
+    // NEXT control frame forever, waiting for a frame that will never arrive.
+    const { sa, sb } = foundSessions();
+    const u0 = sa.update();
+    sb.ingestFrame(u0);
+
+    // Alice runs the live addMember orchestration twice (add → update →
+    // welcome), exactly as ConversationSession.addMember does — one call per
+    // joining device. Bob receives everything EXCEPT the welcomes.
+    for (const name of ['dave', 'erin']) {
+      const pj = partyOf(name);
+      const { frame: addFrame, addOpId } = sa.add(pj.device, pj.leafPk, pj.signingPk);
+      const postAddUpdate = sa.update(); // §4b: adder establishes the post-add epoch
+      sa.buildWelcome(addOpId); // sealed asym to the joiner only — Bob never sees it
+      sb.ingestFrame(addFrame);
+      sb.ingestFrame(postAddUpdate);
+    }
+
+    // Nothing may be stranded in Bob's ordering buffer, and the trees agree.
+    expect(sb.bufferedCount()).toBe(0);
+    expect(sb.engine.treeHash()).toBe(sa.engine.treeHash());
+
+    // And Alice's next message still reaches Bob.
+    let heard = '';
+    const sbAny = sb as unknown as { events: { onAppMessage?: (p: Uint8Array) => void } };
+    sbAny.events.onAppMessage = (p: Uint8Array) => {
+      heard = new TextDecoder().decode(p);
+    };
+    sb.ingestFrame(sa.sendApp(text('still with us, bob?')));
+    expect(heard).toBe('still with us, bob?');
+  });
 });

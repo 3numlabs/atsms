@@ -215,7 +215,14 @@ export class Session {
   buildWelcome(addOpId: Uint8Array): Uint8Array {
     const frames = this.retainedOrder.map((k) => this.retained.get(k)!.raw);
     const welcomeBody = cborEncode([null, frames, [], 1]); // [checkpoint, ops, deliveryMap, profile]
-    return this.buildFrame(CLS_WELCOME, this.nextCtrlSeq(), [addOpId], [addOpId, welcomeBody], new Uint8Array(0));
+    // ctrlSeq null: the welcome is point-to-point (sealed asym to the joiner
+    // only — existing members never receive it), so it must not occupy a slot
+    // in this sender's broadcast ctrlSeq contiguity chain. A numbered welcome
+    // leaves a permanent gap at every existing member: `ready()` buffers all
+    // subsequent control frames forever (live add-flow partition, 2026-08-02).
+    // Like CLS_APP/CLS_REPAIR it still consumes `seq` (order-exempt lane), and
+    // the joiner verifies it by seq via keyForSeq — no contiguity needed.
+    return this.buildFrame(CLS_WELCOME, null, [addOpId], [addOpId, welcomeBody], new Uint8Array(0));
   }
 
   // ── state serialization (host persistence, atsms-integration §2) ────────────
