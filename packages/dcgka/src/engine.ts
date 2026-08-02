@@ -379,9 +379,24 @@ export class Engine {
       reach.add(dk);
       for (const x of this.anc.get(dk) ?? []) reach.add(x);
     }
+    // Update ops in the graph — the only ops that establish (and can blank) an
+    // epoch. Computed once; the concurrency check below scans them per candidate.
+    const updateOps = [...this.ops.values()].filter((o) => o.payload.type === 'update').map((o) => opKey(o.id));
     const epochOps = [...reach].filter((k) => {
       const e = this.epochs.get(k);
-      return e !== undefined && !e.closed;
+      // Only SEALABLE epochs (concurrent-update-partition §4.1): the establishing
+      // update must have NO concurrent sibling update. A merge of two concurrent
+      // updates blanks the root, so NEITHER's epoch is derived by anyone who has
+      // caught up — it is held only by its own author. Sealing a new frame under
+      // such an orphaned epoch strands the frame at every peer (the partition
+      // bug). The epoch stays live for DECRYPTING already-received traffic; it is
+      // merely disqualified as a seal target. A concurrent SIBLING makes an
+      // epoch's op an *ancestor* of the later healing update, so "ancestor of the
+      // heads" is not sufficient — concurrency with another update is the test.
+      // This ports upstream `has_pcs_key`'s "no usable key after a merge"
+      // strictness into seal selection; it differs from the pre-fix behavior ONLY
+      // when an epoch has a concurrent sibling, i.e. only under a blanking merge.
+      return e !== undefined && !e.closed && !this.hasConcurrentUpdate(k, updateOps);
     });
     // Keep the maximal epoch-op(s): not an ancestor of any other reachable epoch.
     const maximal = epochOps.filter(
@@ -389,6 +404,21 @@ export class Engine {
     );
     maximal.sort();
     return maximal[0] ?? null;
+  }
+
+  /**
+   * True iff some update op is concurrent with `opId` (neither is the other's
+   * ancestor). Such a sibling means a merge blanked `opId`'s root, so its epoch
+   * is not group-shared and must not be a seal target (§4.1).
+   */
+  private hasConcurrentUpdate(opId: string, updateOps: string[]): boolean {
+    for (const u of updateOps) {
+      if (u === opId) continue;
+      const uAncestorOfOp = this.anc.get(opId)?.has(u) ?? false;
+      const opAncestorOfU = this.anc.get(u)?.has(opId) ?? false;
+      if (!uAncestorOfOp && !opAncestorOfU) return true; // concurrent
+    }
+    return false;
   }
 
   /**

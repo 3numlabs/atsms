@@ -5,11 +5,14 @@ Found during the first live multi-client test of the v2 message format
 engine/protocol-level — the v2 content format is not implicated. Input for
 the Phase 6 external crypto review; fix ordering TBD.
 
-> **ROOT CAUSE FOUND (2026-08-01):** the three symptoms below are one bug — a merge that blanks
-> the tree root leaves each side holding a private live epoch, and `sealEpochFor` then seals the
-> repair frame under it. Full analysis + proposed fix:
-> [`spec/concurrent-update-partition.md`](spec/concurrent-update-partition.md). The sections below
-> are the original observations, kept as the symptom record.
+> **FIXED (2026-08-01):** the three symptoms below are one bug — a merge that blanks the tree root
+> leaves each side holding a private live epoch, and `sealEpochFor` sealed the repair frame under
+> it. Fixed via the sealable-epoch predicate (4.1) + genesis-wait (4.2) + loud unopenable envelopes
+> (4.3); regression suite `atsms-lib/src/tests/partition.test.ts` (5) green, dcgka unit (117) + fuzz
+> (4) green. Full analysis, fix, and test plan:
+> [`spec/concurrent-update-partition.md`](spec/concurrent-update-partition.md). Existing partitioned
+> conversations are not repairable (recreate them). The sections below are the original symptom
+> record.
 
 ## 1. Concurrent-update epoch divergence (SEVERE)
 

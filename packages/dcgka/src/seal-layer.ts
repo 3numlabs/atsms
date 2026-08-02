@@ -64,9 +64,14 @@ export class SealLayer {
   /** sym envelopes whose tag isn't known yet (epoch not derived) — retried on
    *  refresh, FIFO-dropped past the bound (sealed-sender §11.4, "buffer briefly …
    *  else drop"; also sheds the unopenable sym add-copy a joiner receives of its
-   *  own add). */
-  private pending: Uint8Array[] = [];
+   *  own add). Each carries a retry counter: an envelope that stays unopenable
+   *  across many refreshes is a divergence signal, not a transient (§4.3). */
+  private pending: Array<{ envelope: Uint8Array; tries: number }> = [];
   private static readonly MAX_PENDING = 256;
+  /** Retries after which a still-unopenable sym envelope is reported as a likely
+   *  epoch divergence (concurrent-update-partition §4.3) and dropped — instead
+   *  of the old silent FIFO drop that hid the live partition bug. */
+  private static readonly UNOPENABLE_REPORT_AT = 8;
   private seen = new Set<string>(); // EnvelopeID dedup (§3)
   private encMe: Uint8Array;
 
@@ -75,6 +80,9 @@ export class SealLayer {
     /** This device's live signed-prekey secrets (current + grace) for opening asym (D10). */
     private prekeySecrets: Uint8Array[],
     private rng: Csprng,
+    /** Diagnostics sink — surfaced, never fatal. Persistently-unopenable sym
+     *  traffic reports here (kind `unopenable-envelope`). Default: silent. */
+    private onEvent: (kind: string, detail: string) => void = () => {},
   ) {
     this.encMe = encodeMembership(session.engine.me);
     // Learn prekeys from the create the session already holds.
@@ -135,7 +143,7 @@ export class SealLayer {
     if (this.seen.has(id)) return; // §3 dedup, pre-decryption
     this.seen.add(id);
     if (!this.tryOpen(envelope)) {
-      this.pending.push(envelope);
+      this.pending.push({ envelope, tries: 0 });
       if (this.pending.length > SealLayer.MAX_PENDING) this.pending.shift(); // FIFO drop
     }
     this.refresh(); // an ingest may have derived a new epoch → new tags, retry buffered
@@ -202,9 +210,23 @@ export class SealLayer {
       }
     }
     if (this.pending.length > 0) {
-      const still: Uint8Array[] = [];
-      for (const env of this.pending) if (!this.tryOpen(env)) still.push(env);
-      // Only recurse-refresh if we actually drained something (avoid loops).
+      const still: Array<{ envelope: Uint8Array; tries: number }> = [];
+      for (const p of this.pending) {
+        if (this.tryOpen(p.envelope)) continue; // opened — done
+        p.tries++;
+        if (p.tries >= SealLayer.UNOPENABLE_REPORT_AT) {
+          // Persistently unopenable: the sender sealed under an epoch we never
+          // derived — the concurrent-update partition signature (§4.3). Report
+          // and drop, rather than the old silent buffer-forever/FIFO drop.
+          this.onEvent(
+            'unopenable-envelope',
+            `sym envelope unopened after ${p.tries} refreshes (unknown epoch tag — likely epoch divergence)`,
+          );
+          continue;
+        }
+        still.push(p);
+      }
+      // Only recurse-refresh if we actually drained/dropped something (avoid loops).
       const drained = still.length < this.pending.length;
       this.pending = still;
       if (drained) this.refresh();

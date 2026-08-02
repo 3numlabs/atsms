@@ -2,9 +2,12 @@
 
 # Concurrent-update partition — root cause and proposed fix
 
-> **Status: ANALYSIS + PROPOSAL (2026-08-01) — awaiting approval before implementation.**
-> Supersedes the preliminary hypotheses in [`../KNOWN-ISSUES.md`](../KNOWN-ISSUES.md), which was
-> written mid-investigation. The root cause below is confirmed by a reproducible trace.
+> **Status: ACCEPTED (2026-08-01) — implementing 4.1 + 4.2 + 4.3.** Root cause confirmed by a
+> reproducible trace; fix shape settled after researching `create` vs first-`update` across
+> BeeKEM/Keyhive, the WKHB DCGKA paper, p2panda, and MLS (see §4 grounding). Wire-level create+update
+> fusion was considered and **rejected on security grounds** (it reintroduces the concurrent-update
+> PCS attack BeeKEM's "No secret after merge" property exists to prevent). Supersedes the preliminary
+> hypotheses in [`../KNOWN-ISSUES.md`](../KNOWN-ISSUES.md).
 
 ## 1. What happened live
 
@@ -54,7 +57,7 @@ Step by step:
    and sends into the void; the other side buffers and drops. No timeout, no error, no recovery
    path. Joiner↔joiner traffic is unaffected because those devices did converge on one epoch.
 
-## 3. The violated invariant
+## 3. The violated invariant — and where it lives
 
 > *A frame may only be sealed under an epoch that every recipient can be expected to have derived.*
 
@@ -66,41 +69,95 @@ already exists and is already used for the first update after `create` (where `s
 returns `null` and the frame rides `sealed-asym` to each recipient's prekey); it simply is not
 reached, because a stale epoch is found first.
 
-Note this is not a message-format issue, and not a client issue: the engine, seal layer, and
-transport each behave as specified in isolation. It is a gap between beekem-core's merge semantics
-and sealed-sender §11.4's epoch-selection rule.
+**The bug is in our sealed-sender layer, not in the CGKA.** This is worth stating precisely,
+because it decides the fix (§4). Two facts about upstream BeeKEM (the `beekem` crate, our
+differential-test oracle; and the formal BeeKEM paper, `../BeeKEM.pdf`):
+
+1. **A blank-root-after-merge is expected, benign BeeKEM behavior.** The paper elevates it to a
+   named security property — *"No secret after merge: there is no new group secret defined after
+   the merge of concurrent operations; only an Update can define a group secret"* (BeeKEM paper
+   §4.2). This is exactly what gives BeeKEM post-compromise security under concurrency: the WKHB
+   DCGKA and Causal TreeKEM designs, which *do* define a secret from concurrent updates, have
+   concrete attacks where a compromised member's concurrent update lets the attacker compute the
+   new group secret. BeeKEM closes that class by refusing the secret. Keyless genesis is the same
+   rule at birth (*"there is no group secret defined upon group creation"*, §4.3.2). Upstream
+   recovers from the blanked state trivially — *someone updates again* — and converges.
+
+2. **Upstream's send-gate already treats a post-merge state as unsendable.** `has_pcs_key()` is
+   *stricter* than "has a root key": it also requires a single ops-graph head and `< 2` add heads
+   (`beekem/src/cgka.rs`), so a merged-but-unresolved history cannot send even if a root key
+   technically materialized. Our engine's send-gate matches this — after the merge `currentEpochId`
+   is correctly `null` on both sides (see the trace, `currentEpochId is correctly null on both`).
+
+So the CGKA is behaving exactly as designed and as the oracle specifies. What upstream does *not*
+have is a per-epoch sealed-sender layer: in Keyhive, "update again" reaches everyone and converges.
+**We added sealed sender (§11.4), and its `sealEpochFor` strands the very frame that would repair
+the group** — sealing the healing update under a locally-live-but-orphaned epoch, which our
+transport then silently buffers and acks away. The gap is between beekem-core's merge semantics and
+sealed-sender §11.4's epoch-selection rule; the CGKA is not implicated, and neither is the message
+format.
 
 ## 4. Proposed fix
 
-### 4.1 Primary — a blanking merge makes live epochs unsealable (engine)
+Grounding (research 2026-08-01, `create` vs first-`update` across BeeKEM/DCGKA-paper/p2panda/MLS):
+the create/update split is **not** cosmetic and must not be collapsed at the wire. For a tree-based,
+sequencer-free design — our exact setting — keyless genesis is load-bearing for the "No secret after
+merge" security property (§3). The designs that fuse creation with key establishment are either
+seed-broadcast (DCGKA paper, p2panda — and they *pay* with the concurrent-update PCS attack) or
+sequenced (MLS — no genesis concurrency to reconcile). **A secret-bearing `create` would reintroduce
+the attack class BeeKEM exists to prevent**, and BeeKEM itself deliberately removed exactly that
+(the "separate Cgka construction from update" refactor). Fusion is therefore rejected on security
+grounds, not merely oracle-fidelity. The fix keeps the two-op shape and corrects our own seal layer.
 
-Add a per-epoch `sealable` flag (default `true`):
+### 4.1 Primary — seal-epoch selection must respect "no usable key after merge" (engine)
 
-- When a replay/merge produces a canonical tree with **no root key** (the blanked state), mark
-  every currently-live epoch `sealable = false`. They stay in `epochs` and remain usable for
-  **decrypting** already-received traffic (no forward-secrecy or history regression); they are
-  merely disqualified from sealing new frames.
-- `sealEpochFor` considers only `sealable` epochs. In the partitioned state it therefore returns
-  `null`, and the seal layer's existing `null` branch sends the healing update **`sealed-asym` to
-  each recipient's prekey** — the same bootstrap-class path used after `create`.
-- An epoch derived *after* the merge (from a healing update that everyone can now open) is
-  `sealable` again, and normal `sealed-sym` operation resumes.
+This is **porting upstream's `has_pcs_key` strictness up into `sealEpochFor`**: an epoch orphaned by
+a root-blanking merge is not a usable key, so it must not be a seal target — the same invariant the
+send-gate already enforces, applied to seal-selection.
 
-Recovery then falls out of the existing machinery: A's healing update reaches B, B applies the
-path, derives the same root, both converge on one epoch, traffic flows.
+The rule is a **stateless predicate, not a stored flag**: an epoch is sealable iff its establishing
+`update` op is an **ancestor of every current head**. That is exactly "not orphaned by a concurrent
+sibling update" — if two updates collide, neither is an ancestor of the other's head, so both are
+disqualified; but a *shared parent* epoch that both updates descend from is still an ancestor of all
+heads and stays sealable. `sealEpochFor` filters live epochs through this predicate before choosing
+the maximal one:
 
-Cost: a handful of lines in `engine.ts` (flag + filter + one line in `replay`), no wire change, no
-new op type, no protocol round trip.
+- **Genesis race** (concurrent first-updates, no shared parent): both epochs are heads, neither an
+  ancestor of the other → both unsealable → `sealEpochFor` returns `null` → the seal layer's
+  existing `null` branch sends the healing update **`sealed-asym` to each recipient's prekey** (the
+  same bootstrap-class path used after `create`).
+- **Established-group race** (two members update concurrently on top of a shared epoch `E0`): the
+  two new epochs are unsealable, but `E0`'s op is an ancestor of all heads → `E0` stays sealable →
+  the healing update rides **`sealed-sym` under `E0`**, which everyone still holds. Strictly better
+  than forcing asym, and it is why the rule is a predicate rather than a blanket flag.
+- An epoch derived *after* the merge (from a healing update everyone can now open) becomes an
+  ancestor of the new heads and is sealable again; normal `sealed-sym` operation resumes.
 
-### 4.2 Secondary — break the heal symmetry (client)
+Why it cannot regress the healthy path: in any linear history the returned epoch's op is always an
+ancestor of all heads, so the predicate changes nothing — it differs from the pre-fix behavior
+**only** when an epoch has been made concurrent by a merge. Recovery then falls out of the existing
+machinery, exactly as upstream's "update again" converges: A's healing update reaches B, B applies
+the path, derives the same root, both converge, traffic flows. Cost: one predicate + one filter
+clause in `sealEpochFor` (`engine.ts`). No stored state, no wire change, no new op, no round trip;
+and it moves us *toward* the oracle, not away.
 
-With 4.1, two members healing simultaneously simply produce another concurrent pair and heal again;
-it converges probabilistically but can ping-pong. Make the retry asymmetric: on `NoRootKey`, wait a
-short jittered delay and re-check whether an epoch arrived before minting an update, and/or prefer
-the deterministically-lowest membership key as the healer. Cheap, and it also removes the genesis
-race that started this (a joiner sending immediately after bootstrap).
+### 4.2 Genesis — orchestration fusion, not wire fusion (client)
 
-### 4.3 Secondary — make undecryptable traffic loud and durable (seal layer + transport)
+The genesis race is the common *trigger*: a joiner, bootstrapped from `create` but not yet holding
+the creator's first-update epoch, tries to send, hits `NoRootKey`, and self-heals with its own
+update — concurrently with the creator's mandatory update. That is the collision.
+
+The correct fix mirrors BeeKEM's **own** API-layer discipline (it establishes the first key eagerly
+in `Document::generate` — create → add → update, emitted together — and lazily in
+`new_app_secret_for`): the creator's first update is *part of creating the group*, so a joiner that
+has membership but no epoch should **wait** for it rather than reflexively heal. Concretely: on
+`NoRootKey` at a member that has never held any epoch, wait a bounded, jittered interval for the
+creator's update to arrive before minting a self-heal; self-heal only if it never comes (creator
+vanished). This removes the trigger with a client-only change and zero oracle divergence. (For
+established-group concurrency — two members healing at once after an add/remove — 4.1 is what makes
+it converge rather than partition; the wait only addresses genesis.)
+
+### 4.3 Make undecryptable traffic loud and durable (seal layer + transport)
 
 - Emit a security event when a sym envelope survives the buffer window unopened ("unknown epoch tag
   from a member") instead of silently FIFO-dropping. This alone would have made the live bug a
@@ -125,16 +182,39 @@ never derived and cannot be reconstructed. There is no repair for existing poiso
 recreate them. A general "I cannot read your traffic, re-bootstrap me" repair protocol is the
 proper long-term answer and remains open work for the identity/recovery phase.
 
-## 6. Test plan
+## 6. Test plan — DONE (`atsms-lib/src/tests/partition.test.ts`)
 
-1. **Regression (the trace above):** two members, concurrent genesis updates, cross-deliver, heal,
-   assert bidirectional delivery. Currently fails; must pass. (Repro exists.)
-2. **N-way:** creator + 3 joiners, all joiners self-heal concurrently — assert convergence to a
-   single epoch and full-mesh delivery.
-3. **No regression in the linear case:** assert the healthy path still seals `sealed-sym` under the
-   parent epoch (i.e. 4.1 does not push everything onto the asym path — a metadata/size regression
-   if it did).
-4. **Decryption of pre-merge traffic:** messages sent before the merge must remain readable after
-   epochs are marked unsealable.
-5. Re-run the full dcgka + atsms-lib suites, then a live two-client smoke reproducing the original
-   race deliberately (joiner sends immediately on bootstrap).
+All five pass; they exercise the real sealed path (`deliverEnvelope` → seal layer → `sealEpochFor`),
+which is where the bug lived. The engine unit suite (117) and the convergence fuzz (4, real timeout)
+stay green, confirming the predicate changes behavior only under a blanking merge.
+
+1. **Regression (the trace above):** two members, concurrent genesis updates, cross-deliver, heal —
+   asserts bidirectional delivery. Was the confirmed failure; now converges. The heal seals
+   `sealed-asym` (verified via `envelopeMode`), reaches the peer, both derive one epoch.
+2. **N-way:** creator + 3 joiners all self-heal concurrently — asserts convergence to a single epoch
+   (all engines report the same `currentEpoch`) and full-mesh delivery.
+3. **No regression in the linear case:** asserts a healthy app send still seals `sealed-sym`
+   (`envelopeMode === MODE_SYM`) under the established epoch — 4.1 does not push traffic onto asym.
+4. **Decryption of pre-merge traffic:** a message sealed under `E0` and delivered *after* a merge
+   orphaned `E0` still opens — an orphaned epoch stays decryptable, only unsealable.
+5. **Loud unopenable (§4.3):** foreign sym traffic a member cannot open surfaces
+   `unopenable-envelope` after the retry threshold instead of buffering silently.
+
+Still open: a live two-client smoke deliberately reproducing the original race (joiner sends
+immediately on bootstrap) — to run against the deployed worker.
+
+### Implementation landed
+
+- **4.1** `packages/dcgka/src/engine.ts` — `sealEpochFor` filters live epochs through
+  `hasConcurrentUpdate` (an epoch is sealable iff its establishing update has no concurrent sibling).
+  Stateless; no wire change. *(Note: an earlier "ancestor of all heads" predicate was wrong — a
+  merged sibling makes an orphaned epoch an ancestor of the later heal — corrected to the
+  concurrency test.)*
+- **4.2** `atsms-lib` `ATSMSConversation.send` — on `NoRootKey` at genesis
+  (`Conversation.awaitingFirstEpoch`), waits `genesisWaitMs` (default 4000; `ATSMSConfig` field, 0
+  for synchronous tests) for the creator's update before self-healing.
+- **4.3** `packages/dcgka/src/seal-layer.ts` — per-envelope retry counter; emits `unopenable-envelope`
+  via a new `onEvent` sink (wired through `ConversationDeps.onEvent` → the client `onEvent`) after
+  `UNOPENABLE_REPORT_AT` refreshes. The **durable** half (transport must not ack an envelope it never
+  opened) is deferred — with 4.1 the healing update rides fresh asym envelopes, so recovery no longer
+  depends on redelivering the buffered sym copy; tracked as a transport follow-up.
