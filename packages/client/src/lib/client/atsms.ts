@@ -85,13 +85,28 @@ export interface ATSMSConfig {
    *  conversation (format §8). Never persisted; identify the conversation via
    *  `content.convoId`. Default: dropped. */
   onSignal?: (content: MessageContent, senderDid: string) => void;
+  /** Genesis-wait window in ms (concurrent-update-partition §4.2): a joiner with
+   *  no epoch waits this long for the creator's first update before self-healing.
+   *  Default 4000. Set 0 for a synchronous transport (tests) that has already
+   *  delivered the update by send time. */
+  genesisWaitMs?: number;
 }
+
+/** Genesis wait (concurrent-update-partition §4.2): how long a joiner with no
+ *  epoch waits for the creator's mandatory first update before self-healing,
+ *  and how often it re-checks. The exact values are not load-bearing — §4.1
+ *  makes the self-heal fallback converge either way; the wait only prefers the
+ *  clean shared-epoch path in the common genesis case. Zero disables the wait
+ *  (tests with synchronous transports never need it). */
+const GENESIS_EPOCH_WAIT_MS = 4000;
+const GENESIS_EPOCH_POLL_MS = 250;
 
 /** App-facing handle for one conversation: subscribe + send, no crypto. */
 export class ATSMSConversation {
   constructor(
     private readonly convo: Conversation,
     private readonly router: (outbound: Outbound[], convo: Conversation) => Promise<void>,
+    private readonly genesisWaitMs: number = GENESIS_EPOCH_WAIT_MS,
   ) {}
 
   /** The conversation ID: hex of the 33-byte v2 ConvoId (format §8). */
@@ -110,17 +125,36 @@ export class ATSMSConversation {
   }
 
   /** Send a message — plain text or structured v2 content (replies, reactions,
-   *  edits, signaling); sealing + delivery are automatic. If the engine has
-   *  no established epoch (e.g. a conversation restored from a snapshot taken
-   *  before the first update — an interrupted open), it self-heals: run the
-   *  mandatory update, then retry once. */
+   *  edits, signaling); sealing + delivery are automatic.
+   *
+   *  If the engine has no usable epoch (`NoRootKey`): at GENESIS — a joiner
+   *  bootstrapped from `create` that has never held an epoch — the creator's
+   *  mandatory first update is in flight, so wait briefly for the transport to
+   *  deliver it (deriving the shared epoch) rather than self-heal into a
+   *  concurrent update that would need repair (concurrent-update-partition §4.2).
+   *  Self-heal only if it never arrives, or immediately for an already-
+   *  established group that is momentarily rootless (§4.1 converges that path). */
   async send(input: string | SendInput): Promise<void> {
     try {
       await this.router(await this.convo.send(input), this.convo);
     } catch (err) {
       if (!(err instanceof Error) || !err.message.includes("NoRootKey")) throw err;
-      await this.router(await this.convo.update(), this.convo);
+      if (this.convo.awaitingFirstEpoch && this.genesisWaitMs > 0) {
+        await this.awaitFirstEpoch();
+      }
+      if (!this.convo.hasSendableEpoch) {
+        await this.router(await this.convo.update(), this.convo);
+      }
       await this.router(await this.convo.send(input), this.convo);
+    }
+  }
+
+  /** Poll (letting the transport's inbound dispatch run) until the creator's
+   *  update lands or the bounded genesis window elapses. */
+  private async awaitFirstEpoch(): Promise<void> {
+    const deadline = Date.now() + this.genesisWaitMs;
+    while (Date.now() < deadline && this.convo.awaitingFirstEpoch) {
+      await new Promise((resolve) => setTimeout(resolve, GENESIS_EPOCH_POLL_MS));
     }
   }
 
@@ -149,6 +183,7 @@ export class ATSMS {
     private readonly rng: Csprng,
     private readonly onEvent: (kind: string, detail: string) => void,
     private readonly onSignal?: (content: MessageContent, senderDid: string) => void,
+    private readonly genesisWaitMs: number = GENESIS_EPOCH_WAIT_MS,
   ) {}
 
   /**
@@ -165,6 +200,7 @@ export class ATSMS {
       config.rng,
       config.onEvent ?? (() => {}),
       config.onSignal,
+      config.genesisWaitMs ?? GENESIS_EPOCH_WAIT_MS,
     );
 
     await config.identity.ensurePrekeyPublished(config.pds);
@@ -580,6 +616,7 @@ export class ATSMS {
       device: this.identity.device,
       did: this.identity.did,
       prekeySecrets: this.identity.prekeySecrets,
+      onEvent: (kind, detail) => this.onEvent(kind, detail),
       onEngineEvent: (kind, detail) => this.onEvent(kind, detail),
       onSignal: this.onSignal,
     };
@@ -596,7 +633,7 @@ export class ATSMS {
   }
 
   private register(convo: Conversation): ATSMSConversation {
-    const handle = new ATSMSConversation(convo, (out, c) => this.route(out, c));
+    const handle = new ATSMSConversation(convo, (out, c) => this.route(out, c), this.genesisWaitMs);
     this.openConvos.set(convo.groupId, handle);
     return handle;
   }

@@ -104,6 +104,22 @@ export class Conversation {
     return out;
   }
 
+  /** A usable epoch exists — `send()` will not throw `NoRootKey`. */
+  get hasSendableEpoch(): boolean {
+    return this.session.engine.currentEpoch() !== null;
+  }
+
+  /**
+   * The genesis window: this conversation has never derived any epoch (a
+   * bootstrapped joiner awaiting the creator's mandatory first update). Distinct
+   * from an established group that is momentarily rootless after a merge — there,
+   * live-but-orphaned epochs exist and the client heals immediately
+   * (concurrent-update-partition §4.2; §4.1 makes that path converge).
+   */
+  get awaitingFirstEpoch(): boolean {
+    return this.session.engine.currentEpoch() === null && this.session.engine.liveEpochs().length === 0;
+  }
+
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
   /** Found a conversation. `members` includes this device first (the creator). */

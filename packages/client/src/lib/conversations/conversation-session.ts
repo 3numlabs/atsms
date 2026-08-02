@@ -58,6 +58,9 @@ export interface ConversationDeps {
   /** This device's live signed-prekey secrets (current + grace, D4) — what the
    *  seal layer trial-opens inbound `sealed-asym` envelopes with. */
   prekeySecrets: Uint8Array[];
+  /** Seal-layer diagnostics (e.g. persistently-unopenable envelopes,
+   *  concurrent-update-partition §4.3). Surfaced, never fatal. */
+  onEvent?: (kind: string, detail: string) => void;
 }
 
 export class ConversationSession {
@@ -208,7 +211,7 @@ export class ConversationSession {
   // ── internals ───────────────────────────────────────────────────────────────
 
   private static wrap(session: Session, deps: ConversationDeps): ConversationSession {
-    const seal = new SealLayer(session, deps.prekeySecrets, deps.rng);
+    const seal = new SealLayer(session, deps.prekeySecrets, deps.rng, deps.onEvent);
     return new ConversationSession(bytesToHex(session.engine.groupId), session, seal, deps.storage);
   }
 
