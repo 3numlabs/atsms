@@ -240,7 +240,14 @@ export class Conversation {
 
   /** Add a member device (its welcome rides among the returned envelopes). */
   async addMember(member: MemberDescriptor): Promise<Outbound[]> {
-    const outbound = await this.session.addMember(member);
+    return this.addMembers([member]);
+  }
+
+  /** Batched add (add-member-flow §6): every device in ONE round — K adds,
+   *  one post-add epoch, K welcomes. */
+  async addMembers(members: MemberDescriptor[]): Promise<Outbound[]> {
+    if (members.length === 0) return [];
+    const outbound = await this.session.addMembers(members);
     await this.saveConversationRecord();
     return outbound;
   }

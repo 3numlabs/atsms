@@ -10,6 +10,7 @@ import { expect, test } from "bun:test";
 
 import { ATSMS } from "../lib/client/atsms.js";
 import type { ATSMSMetric } from "../lib/client/metrics.js";
+import { textOf } from "../lib/format/index.js";
 import { ATSMSDeviceIdentity } from "../lib/identity/device-identity.js";
 import { SQLiteAdapter } from "../lib/storage/sqlite-adapter.js";
 import type { EnvelopeTransport } from "../lib/transport/envelope-transport.js";
@@ -173,4 +174,45 @@ test("addMember emits a span with rounds/envelopes; no sink means no wrapping", 
   expect(addSpan!.target).toBe(carol.did);
   expect(addSpan!.detail).toMatchObject({ devices: 1, rounds: 1 });
   expect(addSpan!.detail!.envelopes as number).toBeGreaterThan(0);
+});
+
+test("batched add: a multi-device DID joins in ONE round and everyone converges", async () => {
+  const hub = new Hub();
+  const pds = new SharedPds();
+  const samples: ATSMSMetric[] = [];
+  const alice = await client(hub, pds, 1, "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa", (m) => samples.push(m));
+  const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb");
+  // Carol has TWO devices (same DID, distinct certs/prekeys) — the live /add
+  // shape that used to run one add→update→welcome round per device
+  // (recorded: rounds=4, deliver 7.1s of an 8.3s op).
+  const carol1 = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc");
+  const carol2 = await client(hub, pds, 4, "did:plc:cccccccccccccccccccccccc");
+
+  const convo = await alice.atsms.open({ members: [bob.did] });
+  await hub.flush();
+  await convo.send("yo");
+  await hub.flush();
+
+  await alice.atsms.addMember(convo.id, carol1.did);
+  await hub.flush();
+
+  const addSpan = samples.find((m) => m.kind === "op" && m.name === "addMember");
+  expect(addSpan!.detail).toMatchObject({ devices: 2, added: 2, rounds: 1 });
+
+  // The existing member AND both new devices all see post-add traffic.
+  await convo.send("welcome carols");
+  await hub.flush();
+  const texts = async (c: { storage: (typeof alice)["storage"] }) =>
+    (await c.storage.getMessages(convo.id)).map((m) => textOf(m.content));
+  expect(await texts(bob)).toEqual(["yo", "welcome carols"]);
+  expect(await texts(carol1)).toContain("welcome carols");
+  expect(await texts(carol2)).toContain("welcome carols");
+
+  // And a newcomer can speak to everyone.
+  const c2Convo = await carol2.atsms.get(convo.id);
+  await c2Convo!.send("both here");
+  await hub.flush();
+  expect(await texts(alice)).toEqual(["yo", "welcome carols", "both here"]);
+  expect(await texts(bob)).toEqual(["yo", "welcome carols", "both here"]);
+  expect(await texts(carol1)).toContain("both here");
 });

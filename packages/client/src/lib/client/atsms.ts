@@ -542,18 +542,21 @@ export class ATSMS {
     const capabilities = await Promise.all(
       others.map(async (did) => [did, capableFromSnapshot(await this.peers.ensureFresh(did))] as const),
     );
+    // Every missing device across every member DID joins in ONE batched round.
+    const missing: MemberDescriptor[] = [];
     for (const [did, devices] of capabilities) {
       for (const d of devices) {
         if (present.has(d.fingerprint)) continue;
         this.onEvent("device-added", `${did} device ${d.fingerprint.slice(0, 12)}… → ${handle.id.slice(0, 8)}…`);
-        const outbound = await handle.inner.addMember({
+        missing.push({
           device: { did, fingerprint: hexToBytes(d.fingerprint) },
           leafPk: d.leafPk,
           signingPk: d.signingPk,
         });
-        await this.route(outbound, handle.inner);
       }
     }
+    if (missing.length === 0) return;
+    await this.route(await handle.inner.addMembers(missing), handle.inner);
   }
 
   /** Add a DID to a conversation (every capable device of it). */
@@ -565,22 +568,20 @@ export class ATSMS {
     if (devices.length === 0) throw new Error(`not DCGKA-capable (no verified prekey): ${did}`);
     trace.mark("discovery");
     const present = handle.inner.memberDevices;
-    let rounds = 0;
-    let envelopes = 0;
-    for (const d of devices) {
-      if (present.has(d.fingerprint)) continue; // already a member
-      const outbound = await handle.inner.addMember({
+    // ONE batched round for every missing device (add-member-flow §6): K adds
+    // → one post-add epoch → K welcomes, sealed and routed together.
+    const missing = devices.filter((d) => !present.has(d.fingerprint));
+    const outbound = await handle.inner.addMembers(
+      missing.map((d) => ({
         device: { did, fingerprint: hexToBytes(d.fingerprint) },
         leafPk: d.leafPk,
         signingPk: d.signingPk,
-      });
-      trace.mark("seal");
-      await this.route(outbound, handle.inner);
-      trace.mark("deliver");
-      rounds++;
-      envelopes += outbound.length;
-    }
-    trace.end({ devices: devices.length, rounds, envelopes });
+      })),
+    );
+    trace.mark("seal");
+    await this.route(outbound, handle.inner);
+    trace.mark("deliver");
+    trace.end({ devices: devices.length, added: missing.length, rounds: missing.length > 0 ? 1 : 0, envelopes: outbound.length });
   }
 
   // ── auto-routing ───────────────────────────────────────────────────────────

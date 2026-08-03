@@ -165,16 +165,27 @@ export class ConversationSession {
   /** Add a device. The joiner's welcome is among the returned envelopes (asym,
    *  routed via the joiner's public inbox — its `url` is null). */
   async addMember(member: MemberDescriptor): Promise<Outbound[]> {
-    const { addOpId } = this.session.add(member.device, member.leafPk, member.signingPk);
-    // Establish the post-add epoch as PART of the add (the add blanked the root)
-    // — the adder's own update, encrypted to resolutions that include the new
-    // leaf. Built BEFORE the welcome so the welcome's op log carries it: the
-    // joiner then derives this epoch directly on replay instead of racing its
-    // own heal against the adder's (which forks the tree — see
-    // concurrent-update-partition; add-flow variant). Mirrors the genesis
-    // "born with an epoch" orchestration.
+    return this.addMembers([member]);
+  }
+
+  /**
+   * Batched add (add-member-flow §6): K adds, then ONE update, then K
+   * welcomes — a single sealed round instead of K add→update→welcome rounds
+   * (which minted K epochs and dominated live /add latency; the recorded
+   * span was rounds=4, deliver 7.1 s of an 8.3 s op).
+   *
+   * The §4b invariant generalizes: the post-add epoch is established AFTER
+   * every add (its path secrets cover all the new leaves) and BEFORE any
+   * welcome, so each welcome's op log carries all K adds plus the
+   * epoch-establishing update — every joiner derives the epoch on replay
+   * instead of racing a heal, and existing members walk ONE epoch step.
+   * Mirrors the genesis "born with an epoch" orchestration.
+   */
+  async addMembers(members: MemberDescriptor[]): Promise<Outbound[]> {
+    if (members.length === 0) return [];
+    const addOpIds = members.map((m) => this.session.add(m.device, m.leafPk, m.signingPk).addOpId);
     this.session.update();
-    this.session.buildWelcome(addOpId);
+    for (const addOpId of addOpIds) this.session.buildWelcome(addOpId);
     return this.drain();
   }
 
