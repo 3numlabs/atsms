@@ -75,7 +75,7 @@ Per envelope, in a **sequential** `for`-await loop (BUILT hotspot):
 | D1 | If the recipient device advertised an in-band endpoint (`ext.endpoint`, sealed-sender §12): direct POST | 1 × POST | The *endpoint* is already known in-band — no lookup. POST itself: no |
 | D2 | Else `deliverToDid`: resolve the recipient DID's `at.atsms.inbox` record | **1 × XRPC per envelope — currently UNCACHED** | Yes — ~60 s TTL. The record is a per-DID singleton (last-writer-wins), so short TTL + invalidate-on-delivery-failure preserves semantics. **This is the single largest waste**: every envelope to the same DID re-fetches the same record |
 | D3 | POST `{envelope}` → relay ingress `/inbox/{did}` | 1 × POST | No (the actual delivery) |
-| D4 | **Relay-side, per ingress POST**: `getActiveClientCertificates(did)` → PLC resolve + `listRecords(x509)` to fan one copy per device DO | 2 × HTTPS *on the relay*, **currently uncached** | Yes — relay MAY cache the device list per DID for minutes; staleness only delays fan-out to a brand-new device, which §8 repair / reconcile covers |
+| D4 | **Relay-side, per ingress POST**: `getActiveClientCertificates(did)` → PLC resolve + `listRecords(x509)` to fan one copy per device DO | 2 × HTTPS *on the relay* — **CACHED (BUILT 2026-08-03)**: isolate memory + per-colo Cache API, TTL 300 s (negative 30 s); fan-out DO writes concurrent; `Server-Timing` exposes lookup/fanout. Measured: cold POST 924 ms (lookup 525) → warm 88–104 ms (lookup 0) | Staleness only delays fan-out to a brand-new device, which §8 repair / reconcile covers |
 
 Ordering constraint on parallelizing D: envelopes to the **same recipient device** SHOULD stay FIFO
 (the ordering buffer + §8 repair absorb violations, but in-order is free goodwill); envelopes to
@@ -123,7 +123,7 @@ match the prior per-device loop: a crash mid-batch is healed by `reconcileDevice
    Removes ~40 redundant XRPC fetches from the live datapoint.
 2. **D — parallelize route()**: FIFO per recipient device, concurrent across recipients.
 3. **B2 — parallelize prekey fetches** (K round trips → 1 RTT).
-4. **D4 — relay-side device-list cache** (minutes TTL) — separate repo (atsms-worker).
+4. **D4 — relay-side device-list cache** — BUILT 2026-08-03 (see D4 row; atsms-worker).
 5. **§6 batched add** — BUILT 2026-08-03 (one round per addMember call).
 
 Items 1–4 change *when* data is fetched, never *what* is trusted: every cached artifact is either
