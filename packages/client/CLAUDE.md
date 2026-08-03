@@ -85,6 +85,17 @@ REPL over `@atsms/client`) and
 **`atsms-web/`** (a browser **debug tool** — its passkey/PRF flow is debug-only, NOT the product identity
 model; the product is a native mobile app).
 
+## Known limitation — lost-prekey / lost-state device (SDK-level, unfixed)
+
+If a device loses its local storage (cleared IndexedDB/SQLite, browser eviction, fresh profile) but keeps
+its identity key (e.g. passkey-recovered), it keeps the same **fingerprint** but loses its **prekey ring**
+(`device_state`) and **conversation sessions** (`engine_state`). A `create`/`welcome` a peer sealed to the
+old published prekey can no longer be opened: the dispatcher logs `drop-unopenable`, the transport acks +
+deletes, and the device is silently "invited but unjoinable." `reconcileDevices` does NOT heal it — same
+fingerprint means the group thinks it's a healthy member and never re-keys it. The real fix is a
+device-recovery / re-enrollment flow ("I lost my state — remove + re-admit me"), tracked for the identity
+phase. (First seen live 2026-07-27; write-up moved here from atsms-web at its EOL.)
+
 ## Message content structure (v2)
 
 The application message is the **v2 content format** — deterministic CBOR, MIMI-congruent — defined in the
