@@ -96,6 +96,7 @@ export class SealLayer {
    */
   drainSealed(): Outbound[] {
     const out: Outbound[] = [];
+    // (the table is rebuilt at the end — a local op may have changed membership)
     for (const raw of this.session.takeOutbox()) {
       const frame = parseFrame(raw);
       if (frame.body.cls === CLS_CONTROL) {
@@ -134,6 +135,12 @@ export class SealLayer {
         }
       }
     }
+    // Local ops change what we should ACCEPT: after a remove, the removed
+    // member's receive tags must go immediately. Previously only `deliver()`
+    // refreshed, so the REMOVER kept a stale table and went on accepting the
+    // removed member's traffic while everyone else (who learned by delivery)
+    // correctly ignored it — the live asymmetry seen 2026-08-03.
+    this.refresh();
     return out;
   }
 

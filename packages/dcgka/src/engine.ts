@@ -493,6 +493,17 @@ export class Engine {
     return [...this.dgm.members.values()];
   }
 
+  /** Is this DEVICE a current member (any admission)? — the A6 gate's
+   *  predicate. Device identity, not membership identity: a re-added device
+   *  has a different `admittedBy`, and either admission makes it a member. */
+  isMemberDevice(device: DeviceID): boolean {
+    const fp = bytesToHex(device.fingerprint);
+    for (const m of this.dgm.members.values()) {
+      if (m.device.did === device.did && bytesToHex(m.device.fingerprint) === fp) return true;
+    }
+    return false;
+  }
+
   admins(): Set<string> {
     return new Set(this.dgm.admins);
   }

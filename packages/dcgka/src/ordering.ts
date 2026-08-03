@@ -548,6 +548,21 @@ export class Session {
         this.engine.ingest(op);
         this.learnFromControl(frame, payload);
       } else if (frame.body.cls === CLS_APP) {
+        // A6 membership gating (ordering-auth §1): application content from a
+        // device that is not a current member IN OUR VIEW is never accepted.
+        // This is the receive half of strong remove — a removed member never
+        // learns it was removed (the remove is not sealed to it) and keeps
+        // sending; those frames must not enter the conversation, whatever
+        // epoch they were sealed under and whichever envelopes we can still
+        // open. Not a security event: a member sending concurrently with its
+        // own removal, or a view that has not yet processed an add, are both
+        // normal — the drop IS the enforcement. (Before this gate the frame
+        // usually died at decryption instead, which is why the REMOVER — with
+        // a live epoch and a stale tag table — could still accept it.)
+        if (!this.engine.isMemberDevice(frame.body.sender.device)) {
+          this.events.onDropped?.('app-from-non-member', frame.id);
+          return;
+        }
         const [generation, ct] = frame.body.payload as [number, Uint8Array];
         const msg: AppMessage = {
           epochId: frame.body.deps[0] ?? new Uint8Array(32),

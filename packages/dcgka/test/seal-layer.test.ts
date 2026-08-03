@@ -238,6 +238,95 @@ describe('SealLayer in-band delivery-endpoint advertisement (§12)', () => {
     expect(toBob, 'app envelope addressed to bob').toBeDefined();
     expect(toBob!.url).toBe(urlB);
   });
+
+  it('a REMOVED member cannot inject: no one accepts its post-removal traffic (strong remove)', () => {
+    // Live failure 2026-08-03: after A removed C, C sent a message — the REMOVER
+    // still displayed it (stale receive tag table + no membership gate on app
+    // frames), while the third member correctly saw nothing. Strong remove must
+    // hold on the RECEIVE path too, symmetrically.
+    const wire = new Wire();
+    const pa = party('alice');
+    const pb = party('bob');
+    const pc = party('carol');
+    const fpOf = (p: Party) => blakeHex(p.device.fingerprint);
+
+    const aliceSession = Session.createGroup(
+      [pa, pb, pc].map((p) => ({ device: p.device, leafPk: p.leafPk, signingPk: p.signingPk })),
+      [pa.device.did],
+      pa.signingSk,
+      pa.sks,
+      pa.rng,
+    );
+    const alice = new SealLayer(aliceSession, [pa.leafSk], pa.rng);
+    wire.send(alice.drainSealed());
+    const bootstrap = (p: Party): SealLayer => {
+      const env = wire.take(fpOf(p))[0]!;
+      const s2 = Session.fromFrames([SealLayer.openBootstrap(env, [p.leafSk])], p.device, p.signingSk, p.sks, p.rng);
+      return new SealLayer(s2, [p.leafSk], p.rng);
+    };
+    const bob = bootstrap(pb);
+    const carol = bootstrap(pc);
+
+    const rec: Record<string, string[]> = { alice: [], bob: [], carol: [] };
+    const sink = (who: string) => (p: Uint8Array) => rec[who]!.push(new TextDecoder().decode(p));
+    for (const [who, l] of [['alice', alice], ['bob', bob], ['carol', carol]] as const) {
+      (l.session as unknown as { events: { onAppMessage?: (p: Uint8Array) => void } }).events.onAppMessage =
+        sink(who);
+    }
+    const layers: Record<string, SealLayer> = { [fpOf(pa)]: alice, [fpOf(pb)]: bob, [fpOf(pc)]: carol };
+    const deliverAll = (): void => {
+      for (let i = 0; i < 8; i++) {
+        for (const [fp, l] of Object.entries(layers)) {
+          for (const env of wire.take(fp)) l.deliver(env);
+          wire.send(l.drainSealed());
+        }
+      }
+    };
+
+    aliceSession.update();
+    wire.send(alice.drainSealed());
+    deliverAll();
+    aliceSession.sendApp(text('everyone is here'));
+    wire.send(alice.drainSealed());
+    deliverAll();
+    expect(rec.carol).toContain('everyone is here');
+
+    // Carol speaks too — so every member's RECEIVE tag table holds an entry
+    // for (current epoch, carol). This is the live precondition: the remover
+    // has been conversing with the member it is about to remove.
+    carol.session.sendApp(text('carol here'));
+    wire.send(carol.drainSealed());
+    deliverAll();
+    expect(rec.alice).toContain('carol here');
+    expect(rec.bob).toContain('carol here');
+
+    // Alice removes Carol (+ the healing update, as the client batches it).
+    const carolMembership = aliceSession.engine.members().find((m) => m.device.did === 'did:carol')!;
+    aliceSession.remove(carolMembership);
+    aliceSession.update();
+    wire.send(alice.drainSealed());
+    deliverAll();
+    expect(aliceSession.engine.members().some((m) => m.device.did === 'did:carol')).toBe(false);
+    expect(bob.session.engine.members().some((m) => m.device.did === 'did:carol')).toBe(false);
+
+    // Carol — unaware she was removed — speaks. Her seal layer still fans to
+    // her stale membership view, so envelopes DO reach both members.
+    carol.session.sendApp(text('hey again'));
+    const carolOut = carol.drainSealed();
+    expect(carolOut.length).toBeGreaterThan(0); // she really did send
+    wire.send(carolOut);
+    deliverAll();
+
+    // Neither remaining member may accept it — including the REMOVER.
+    expect(rec.alice, 'the remover must not accept a removed member message').not.toContain('hey again');
+    expect(rec.bob, 'other members must not accept it either').not.toContain('hey again');
+
+    // And the group keeps working between the remaining members.
+    aliceSession.sendApp(text('carry on'));
+    wire.send(alice.drainSealed());
+    deliverAll();
+    expect(rec.bob).toContain('carry on');
+  });
 });
 
 function blakeHex(b: Uint8Array): string {
