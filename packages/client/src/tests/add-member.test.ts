@@ -214,3 +214,46 @@ test("removeMember: strong remove — the removed member reads nothing after; ot
   // Non-admin removal is rejected by the engine (dgm §4).
   await expect(bob.atsms.removeMember(convo.id, alice.did)).rejects.toThrow(/Unauthorized/);
 }, 20000);
+
+test("a removed member's later messages are rejected by everyone — including the remover", async () => {
+  // Live failure 2026-08-03: after aib0b removed chaosmokey, chaosmokey (who
+  // never learns it was removed — the remove is not sealed to it) sent a
+  // message. The REMOVER displayed it; the third member correctly did not.
+  // Two causes, both fixed in dcgka: the remover's receive tag table was not
+  // rebuilt after its own local op, and app frames had no membership gate.
+  const hub = new Hub();
+  const pds = new SharedPds();
+  const alice = await client(hub, pds, 1, "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa");
+  const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb");
+  const carol = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc");
+
+  const convo = await alice.atsms.open({ members: [bob.did, carol.did] });
+  await hub.flush();
+  // Everyone speaks first — this is what populates each member's receive tag
+  // table with entries for the member about to be removed (the live shape).
+  await convo.send("alice here");
+  await hub.flush();
+  const carolConvo = await carol.atsms.get(convo.id);
+  await carolConvo!.send("carol here");
+  await hub.flush();
+  const bobConvo = await bob.atsms.get(convo.id);
+  await bobConvo!.send("bob here");
+  await hub.flush();
+  expect(await texts(alice, convo.id)).toEqual(["alice here", "carol here", "bob here"]);
+
+  await alice.atsms.removeMember(convo.id, carol.did);
+  await hub.flush();
+
+  // Carol's client is unaware and keeps talking — her envelopes DO arrive.
+  await carolConvo!.send("hey again");
+  await hub.flush();
+
+  const after = ["alice here", "carol here", "bob here"];
+  expect(await texts(alice, convo.id), "the remover must not accept it").toEqual(after);
+  expect(await texts(bob, convo.id), "nor any other member").toEqual(after);
+
+  // The group keeps working between the remaining members.
+  await convo.send("carry on");
+  await hub.flush();
+  expect(await texts(bob, convo.id)).toEqual([...after, "carry on"]);
+}, 20000);
