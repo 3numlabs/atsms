@@ -4,3 +4,4 @@
  */
 
 export * from "./atsms.js";
+export * from "./metrics.js";

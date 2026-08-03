@@ -62,6 +62,7 @@ import {
   textPart,
 } from "../format/index.js";
 import { loadEndpointCertificate, type ATSMSEndpointCertificate } from "../certificates/index.js";
+import { instrumentPds, instrumentTransport, span, type ATSMSMetric, type MetricSink } from "./metrics.js";
 import { ATSMSDeviceIdentity } from "../identity/device-identity.js";
 import { ATSMSPeers, capableFromSnapshot, peerKeyBytes, type PeerSnapshot } from "../identity/peers.js";
 import { oneShotSenderProblem, openOneShot, sealOneShot } from "../send/index.js";
@@ -104,6 +105,11 @@ export interface ATSMSConfig {
    *  semantics — useful for tests that mutate records and expect immediate
    *  visibility). Explicit `peers.refresh()` always bypasses the window. */
   peerMaxAgeMs?: number;
+  /** Structured timing samples (profiling): PDS reads/writes, transport
+   *  posts, and operation spans with phase breakdowns. On-device only — the
+   *  sink decides where samples go (the reference CLI appends JSONL under
+   *  its profile dir). Default: none collected. */
+  onMetric?: (m: ATSMSMetric) => void;
 }
 
 /** Genesis wait (concurrent-update-partition §4.2): how long a joiner with no
@@ -211,6 +217,7 @@ export class ATSMS {
     private readonly genesisWaitMs: number = GENESIS_EPOCH_WAIT_MS,
     private readonly repairAfterMs: number = REPAIR_AFTER_MS,
     peerMaxAgeMs?: number,
+    private readonly onMetric: MetricSink = () => {},
   ) {
     this.peers = new ATSMSPeers(pds, storage, onEvent, peerMaxAgeMs);
   }
@@ -221,26 +228,31 @@ export class ATSMS {
    * persisted conversation, and start receiving.
    */
   static async create(config: ATSMSConfig): Promise<ATSMS> {
+    // With a metric sink configured, both network seams are timed — every
+    // client gets measurement without wiring anything but the sink.
+    const pds = config.onMetric ? instrumentPds(config.pds, config.onMetric) : config.pds;
+    const transport = config.onMetric ? instrumentTransport(config.transport, config.onMetric) : config.transport;
     const atsms = new ATSMS(
       config.identity,
       config.storage,
-      config.transport,
-      config.pds,
+      transport,
+      pds,
       config.rng,
       config.onEvent ?? (() => {}),
       config.onSignal,
       config.genesisWaitMs ?? GENESIS_EPOCH_WAIT_MS,
       config.repairAfterMs ?? REPAIR_AFTER_MS,
       config.peerMaxAgeMs,
+      config.onMetric,
     );
 
-    await config.identity.ensurePrekeyPublished(config.pds);
+    await config.identity.ensurePrekeyPublished(pds);
     if (config.mailtoAddress !== undefined) {
       const endpoints = [
         ...(config.transport.ingressUrl !== null ? [{ uri: config.transport.ingressUrl }] : []),
         { uri: config.mailtoAddress },
       ];
-      await config.identity.publishInbox(config.pds, endpoints);
+      await config.identity.publishInbox(pds, endpoints);
     }
 
     for (const groupId of await config.storage.listEngineStateIds()) {
@@ -248,7 +260,7 @@ export class ATSMS {
       if (convo !== null) atsms.register(convo);
     }
 
-    await config.transport.start((envelope) => atsms.dispatch(envelope));
+    await transport.start((envelope) => atsms.dispatch(envelope));
     atsms.startRepairTimer();
     return atsms;
   }
@@ -345,6 +357,7 @@ export class ATSMS {
     if (recipients.length === 0) throw new Error("send: no recipients");
     const parts = params.parts ?? (params.text !== undefined ? [textPart(params.text)] : null);
     if (parts === null) throw new Error("send: no content");
+    const trace = span(this.onMetric, "send.oneShot", recipients.join(","));
 
     // Directory read-through (parallel across recipients): certs parse from
     // the snapshot's PEMs — no per-send listRecords pass.
@@ -363,6 +376,7 @@ export class ATSMS {
     if (unreachable.length > 0) {
       throw new Error(`no published endpoint certificates: ${unreachable.join(", ")}`);
     }
+    trace.mark("discovery");
 
     const participants = [this.identity.did, ...recipients];
     const convoId = oneShotConvoIdV2(participants);
@@ -385,6 +399,7 @@ export class ATSMS {
       senderId: this.identity.did,
       content,
     });
+    trace.mark("seal");
 
     // Recipients are independent — deliver concurrently, FIFO per recipient.
     await Promise.all(
@@ -404,6 +419,8 @@ export class ATSMS {
         }
       }),
     );
+    trace.mark("deliver");
+    trace.end({ recipients: recipients.length, certs: recipientCerts.length });
   }
 
   // ── the stateful surface ───────────────────────────────────────────────────
@@ -443,6 +460,7 @@ export class ATSMS {
       }
     }
 
+    const trace = span(this.onMetric, "open", others.join(","));
     const descriptors: MemberDescriptor[] = [this.identity.descriptor];
     const incapable: string[] = [];
     // Directory read-through, parallel across members — a warm open does no
@@ -466,6 +484,7 @@ export class ATSMS {
     if (incapable.length > 0) {
       throw new Error(`not DCGKA-capable (no verified prekey): ${incapable.join(", ")}`);
     }
+    trace.mark("discovery");
 
     const { conversation, outbound } = await Conversation.open(this.context(), {
       keys: this.identity.localKeys,
@@ -485,12 +504,15 @@ export class ATSMS {
     this.onEvent("open-advertised", handle.id.slice(0, 10));
     const firstUpdate = await conversation.update();
     this.onEvent("open-epoch-established", `${handle.id.slice(0, 10)} envelopes=${firstUpdate.length}`);
+    trace.mark("seal");
 
     // Now deliver — create first (recipients bootstrap from it), then the update.
     await this.route(outbound, conversation);
     this.onEvent("open-create-delivered", String(outbound.length));
     await this.route(firstUpdate, conversation);
     this.onEvent("open-update-delivered", String(firstUpdate.length));
+    trace.mark("deliver");
+    trace.end({ members: others.length, devices: descriptors.length - 1, envelopes: outbound.length + firstUpdate.length });
     return handle;
   }
 
@@ -538,9 +560,13 @@ export class ATSMS {
   async addMember(groupId: string, did: string): Promise<void> {
     const handle = await this.get(groupId);
     if (handle === null) throw new Error(`unknown conversation ${groupId}`);
+    const trace = span(this.onMetric, "addMember", did);
     const devices = capableFromSnapshot(await this.peers.ensureFresh(did));
     if (devices.length === 0) throw new Error(`not DCGKA-capable (no verified prekey): ${did}`);
+    trace.mark("discovery");
     const present = handle.inner.memberDevices;
+    let rounds = 0;
+    let envelopes = 0;
     for (const d of devices) {
       if (present.has(d.fingerprint)) continue; // already a member
       const outbound = await handle.inner.addMember({
@@ -548,8 +574,13 @@ export class ATSMS {
         leafPk: d.leafPk,
         signingPk: d.signingPk,
       });
+      trace.mark("seal");
       await this.route(outbound, handle.inner);
+      trace.mark("deliver");
+      rounds++;
+      envelopes += outbound.length;
     }
+    trace.end({ devices: devices.length, rounds, envelopes });
   }
 
   // ── auto-routing ───────────────────────────────────────────────────────────
