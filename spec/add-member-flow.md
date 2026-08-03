@@ -113,7 +113,9 @@ member DIDs the same way). The §4b invariant ("the joiner derives the post-add 
 holds: every welcome's log contains all K adds and the single epoch-establishing update. Effects:
 K epochs → 1; frames 3K → 2K+1; every existing member processes K+1 control ops instead of 3K; one
 delivery round instead of K. Measured before/after (metrics.jsonl op spans, K=4 devices M=4 members):
-`rounds=4, deliver 7.1 s of an 8.3 s op` → expected ~1 round ≈ 1.8 s. Partial-failure semantics
+`rounds=4, deliver 7.1 s of an 8.3 s op` → **measured post-change: 2.07 s total, rounds=1,
+deliver 1.6 s, 39 envelopes (5 frames × 7 recipients + 4 welcomes), POST p50 549→184 ms** (with the
+D4 relay cache; the residual p90 tail is the once-per-TTL cold lookup per recipient DID). Partial-failure semantics
 match the prior per-device loop: a crash mid-batch is healed by `reconcileDevices` on next open
 (it admits any capable device not yet in the group).
 
