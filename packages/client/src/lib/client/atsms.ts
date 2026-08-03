@@ -61,9 +61,10 @@ import {
   recipientsExtension,
   textPart,
 } from "../format/index.js";
-import { capableDevices } from "../identity/capability.js";
+import { loadEndpointCertificate, type ATSMSEndpointCertificate } from "../certificates/index.js";
 import { ATSMSDeviceIdentity } from "../identity/device-identity.js";
-import { oneShotSenderProblem, openOneShot, resolveRecipientCerts, sealOneShot } from "../send/index.js";
+import { ATSMSPeers, capableFromSnapshot, peerKeyBytes, type PeerSnapshot } from "../identity/peers.js";
+import { oneShotSenderProblem, openOneShot, sealOneShot } from "../send/index.js";
 import { ingestMessage } from "../storage/apply.js";
 import type { StorageAdapter } from "../storage/interface.js";
 import type { LocalConversation, LocalMessage } from "../storage/types.js";
@@ -97,6 +98,12 @@ export interface ATSMSConfig {
    *  60000. Set 0 to disable (e.g. single-shot tools or tests that drive
    *  repair manually). */
   repairAfterMs?: number;
+  /** Peer-directory freshness window (sdk-shape.md `peers`): operations serve
+   *  the local snapshot when younger than this, else revalidate. Default
+   *  15 min. 0 = revalidate on every operation read (the pre-directory
+   *  semantics — useful for tests that mutate records and expect immediate
+   *  visibility). Explicit `peers.refresh()` always bypasses the window. */
+  peerMaxAgeMs?: number;
 }
 
 /** Genesis wait (concurrent-update-partition §4.2): how long a joiner with no
@@ -189,6 +196,9 @@ export class ATSMS {
    *  (and stayed) non-empty. Cleared the moment the buffer drains. */
   private readonly gapSince = new Map<string, number>();
   private repairTimer: ReturnType<typeof setInterval> | null = null;
+  /** The local peer directory (sdk-shape.md: the third noun) — operations
+   *  read it; refreshes happen off the user's critical path. */
+  readonly peers: ATSMSPeers;
 
   private constructor(
     readonly identity: ATSMSDeviceIdentity,
@@ -200,7 +210,10 @@ export class ATSMS {
     private readonly onSignal?: (content: MessageContent, senderDid: string) => void,
     private readonly genesisWaitMs: number = GENESIS_EPOCH_WAIT_MS,
     private readonly repairAfterMs: number = REPAIR_AFTER_MS,
-  ) {}
+    peerMaxAgeMs?: number,
+  ) {
+    this.peers = new ATSMSPeers(pds, storage, onEvent, peerMaxAgeMs);
+  }
 
   /**
    * Wire up a client: publish this device's prekey bundle (rotating if due) and
@@ -218,6 +231,7 @@ export class ATSMS {
       config.onSignal,
       config.genesisWaitMs ?? GENESIS_EPOCH_WAIT_MS,
       config.repairAfterMs ?? REPAIR_AFTER_MS,
+      config.peerMaxAgeMs,
     );
 
     await config.identity.ensurePrekeyPublished(config.pds);
@@ -310,9 +324,7 @@ export class ATSMS {
    * - `"unreachable"` — no published certs; nothing can be delivered.
    */
   async reachability(did: string): Promise<"conversation" | "one-shot" | "unreachable"> {
-    if ((await capableDevices(this.pds, did)).length > 0) return "conversation";
-    if ((await resolveRecipientCerts(this.pds, did)).length > 0) return "one-shot";
-    return "unreachable";
+    return (await this.peers.ensureFresh(did)).reachability;
   }
 
   // ── the stateless surface ──────────────────────────────────────────────────
@@ -334,10 +346,17 @@ export class ATSMS {
     const parts = params.parts ?? (params.text !== undefined ? [textPart(params.text)] : null);
     if (parts === null) throw new Error("send: no content");
 
-    const recipientCerts = [];
+    // Directory read-through (parallel across recipients): certs parse from
+    // the snapshot's PEMs — no per-send listRecords pass.
+    const snapshots = new Map<string, PeerSnapshot>(
+      await Promise.all(
+        recipients.map(async (did): Promise<[string, PeerSnapshot]> => [did, await this.peers.ensureFresh(did)]),
+      ),
+    );
+    const recipientCerts: ATSMSEndpointCertificate[] = [];
     const unreachable: string[] = [];
     for (const did of recipients) {
-      const certs = await resolveRecipientCerts(this.pds, did);
+      const certs = validCertsOf(snapshots.get(did)!);
       if (certs.length === 0) unreachable.push(did);
       else recipientCerts.push(...certs);
     }
@@ -367,19 +386,24 @@ export class ATSMS {
       content,
     });
 
-    for (const did of recipients) {
-      // Sealed-sender whenever the recipient has devices we can seal to; the
-      // worker fans every envelope to all of the DID's device inboxes, and
-      // non-target devices fail the AEAD open and drop (multi-device model).
-      const devices = await capableDevices(this.pds, did);
-      if (devices.length > 0) {
-        for (const d of devices) {
-          await this.transport.deliverToDid(did, sealAsymTo(d.prekey.signedPrekey, CONTENT_CMS, cms, this.rng));
+    // Recipients are independent — deliver concurrently, FIFO per recipient.
+    await Promise.all(
+      recipients.map(async (did) => {
+        // Sealed-sender whenever the recipient has devices we can seal to; the
+        // worker fans every envelope to all of the DID's device inboxes, and
+        // non-target devices fail the AEAD open and drop (multi-device model).
+        const sealable = snapshots
+          .get(did)!
+          .devices.filter((d) => d.capable && d.signedPrekeyB64 !== undefined);
+        if (sealable.length > 0) {
+          for (const d of sealable) {
+            await this.deliverByDid(did, sealAsymTo(peerKeyBytes(d.signedPrekeyB64!), CONTENT_CMS, cms, this.rng));
+          }
+        } else {
+          await this.deliverByDid(did, cms); // X509-only recipient: bare CMS (legacy form)
         }
-      } else {
-        await this.transport.deliverToDid(did, cms); // X509-only recipient: bare CMS (legacy form)
-      }
-    }
+      }),
+    );
   }
 
   // ── the stateful surface ───────────────────────────────────────────────────
@@ -421,8 +445,12 @@ export class ATSMS {
 
     const descriptors: MemberDescriptor[] = [this.identity.descriptor];
     const incapable: string[] = [];
-    for (const did of others) {
-      const devices = await capableDevices(this.pds, did);
+    // Directory read-through, parallel across members — a warm open does no
+    // discovery fetches at all.
+    const capabilities = await Promise.all(
+      others.map(async (did) => [did, capableFromSnapshot(await this.peers.ensureFresh(did))] as const),
+    );
+    for (const [did, devices] of capabilities) {
       if (devices.length === 0) {
         incapable.push(did);
         continue;
@@ -430,8 +458,8 @@ export class ATSMS {
       for (const d of devices) {
         descriptors.push({
           device: { did, fingerprint: hexToBytes(d.fingerprint) },
-          leafPk: d.prekey.signedPrekey,
-          signingPk: d.prekey.signingPk,
+          leafPk: d.leafPk,
+          signingPk: d.signingPk,
         });
       }
     }
@@ -488,14 +516,18 @@ export class ATSMS {
    *  yet in the group (device enrollment / re-key catch-up). */
   private async reconcileDevices(handle: ATSMSConversation): Promise<void> {
     const present = handle.inner.memberDevices;
-    for (const did of handle.members.filter((d) => d !== this.identity.did)) {
-      for (const d of await capableDevices(this.pds, did)) {
+    const others = handle.members.filter((d) => d !== this.identity.did);
+    const capabilities = await Promise.all(
+      others.map(async (did) => [did, capableFromSnapshot(await this.peers.ensureFresh(did))] as const),
+    );
+    for (const [did, devices] of capabilities) {
+      for (const d of devices) {
         if (present.has(d.fingerprint)) continue;
         this.onEvent("device-added", `${did} device ${d.fingerprint.slice(0, 12)}… → ${handle.id.slice(0, 8)}…`);
         const outbound = await handle.inner.addMember({
           device: { did, fingerprint: hexToBytes(d.fingerprint) },
-          leafPk: d.prekey.signedPrekey,
-          signingPk: d.prekey.signingPk,
+          leafPk: d.leafPk,
+          signingPk: d.signingPk,
         });
         await this.route(outbound, handle.inner);
       }
@@ -506,15 +538,15 @@ export class ATSMS {
   async addMember(groupId: string, did: string): Promise<void> {
     const handle = await this.get(groupId);
     if (handle === null) throw new Error(`unknown conversation ${groupId}`);
-    const devices = await capableDevices(this.pds, did);
+    const devices = capableFromSnapshot(await this.peers.ensureFresh(did));
     if (devices.length === 0) throw new Error(`not DCGKA-capable (no verified prekey): ${did}`);
     const present = handle.inner.memberDevices;
     for (const d of devices) {
       if (present.has(d.fingerprint)) continue; // already a member
       const outbound = await handle.inner.addMember({
         device: { did, fingerprint: hexToBytes(d.fingerprint) },
-        leafPk: d.prekey.signedPrekey,
-        signingPk: d.prekey.signingPk,
+        leafPk: d.leafPk,
+        signingPk: d.signingPk,
       });
       await this.route(outbound, handle.inner);
     }
@@ -529,14 +561,50 @@ export class ATSMS {
    *  recipients; the worker fans a copy to our own inbox, which we drop). */
   private async route(outbound: Outbound[], convo: Conversation): Promise<void> {
     const devices = convo.memberDevices;
+    // Different recipients are independent — deliver concurrently. Envelopes
+    // to the SAME recipient device keep their order (FIFO per lane; the
+    // ordering buffer + §8 repair absorb violations, but in-order is free).
+    const lanes = new Map<string, Outbound[]>();
     for (const o of outbound) {
-      if (o.url !== null) {
-        await this.transport.deliverToUrl(o.url, o.envelope);
-        continue;
+      let lane = lanes.get(o.to);
+      if (lane === undefined) lanes.set(o.to, (lane = []));
+      lane.push(o);
+    }
+    await Promise.all(
+      [...lanes.values()].map(async (lane) => {
+        for (const o of lane) {
+          if (o.url !== null) {
+            await this.transport.deliverToUrl(o.url, o.envelope);
+            continue;
+          }
+          const did = devices.get(o.to);
+          if (did === undefined) continue; // not a known member device — unroutable
+          await this.deliverByDid(did, o.envelope);
+        }
+      }),
+    );
+  }
+
+  /** DID-addressed delivery through the peer directory: the snapshot's https
+   *  ingress when it has one (a failure invalidates the snapshot and retries
+   *  once on fresh data — the self-healing contract), else the transport's own
+   *  resolver (which owns the mailto-only error). */
+  private async deliverByDid(did: string, envelope: Uint8Array): Promise<void> {
+    const url = await this.peers.inboxUrl(did).catch(() => null);
+    if (url === null) {
+      await this.transport.deliverToDid(did, envelope);
+      return;
+    }
+    try {
+      await this.transport.deliverToUrl(url, envelope);
+    } catch {
+      await this.peers.invalidate(did);
+      const fresh = await this.peers.inboxUrl(did).catch(() => null);
+      if (fresh === null) {
+        await this.transport.deliverToDid(did, envelope);
+        return;
       }
-      const did = devices.get(o.to);
-      if (did === undefined) continue; // not a known member device — unroutable
-      await this.transport.deliverToDid(did, o.envelope);
+      await this.transport.deliverToUrl(fresh, envelope);
     }
   }
 
@@ -747,6 +815,20 @@ function sealedMode(bytes: Uint8Array): number | null {
 
 /** Back an `EnvelopeTransport`'s inbox resolution with the PDS record
  *  (inbound-delivery §3): the highest-preference `https:` endpoint, or null. */
+/** Parse the snapshot's cert PEMs into valid endpoint certs — local, no network. */
+function validCertsOf(snap: PeerSnapshot): ATSMSEndpointCertificate[] {
+  const certs: ATSMSEndpointCertificate[] = [];
+  for (const d of snap.devices) {
+    try {
+      const cert = loadEndpointCertificate(d.certificatePEM);
+      if (cert.isValid()) certs.push(cert);
+    } catch {
+      // unparseable snapshot entry — not a device
+    }
+  }
+  return certs;
+}
+
 export function inboxUrlResolver(pds: PdsClient): (did: string) => Promise<string | null> {
   return async (did) => {
     const r = await resolveInbox(pds, did);

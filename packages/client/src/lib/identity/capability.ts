@@ -25,6 +25,10 @@ export interface DeviceCapability {
   prekey?: PrekeyRecord;
   /** Why the device is not capable (e.g. "not-found", "bad-signature", "expired", "unparseable-cert"). */
   reason?: string;
+  /** The device's endpoint-certificate PEM (the x509 record body) — kept so
+   *  callers (the peer directory, one-shot cert selection) need no second
+   *  listRecords pass. */
+  certificatePEM: string;
 }
 
 /**
@@ -38,28 +42,29 @@ export async function resolveDeviceCapabilities(
   now: number = Date.now(),
 ): Promise<DeviceCapability[]> {
   const certRecords = await pds.listRecords(did, COLLECTION_X509);
-  const out: DeviceCapability[] = [];
-  for (const rec of certRecords) {
-    const pem = (rec.value as { certificate?: unknown }).certificate;
-    if (typeof pem !== "string") continue;
+  // Devices are independent — evaluate them concurrently (one prekey fetch
+  // each; the sequential form made an N-device DID cost N round trips).
+  const results = await Promise.all(
+    certRecords.map(async (rec): Promise<DeviceCapability | null> => {
+      const pem = (rec.value as { certificate?: unknown }).certificate;
+      if (typeof pem !== "string") return null;
 
-    let fingerprint: string;
-    let identityPub: Uint8Array;
-    try {
-      identityPub = await identityPublicKeyFromCert(pem);
-      fingerprint = await deviceFingerprintFromCert(pem);
-    } catch {
-      continue; // unparseable cert — not a routable device
-    }
+      let fingerprint: string;
+      let identityPub: Uint8Array;
+      try {
+        identityPub = await identityPublicKeyFromCert(pem);
+        fingerprint = await deviceFingerprintFromCert(pem);
+      } catch {
+        return null; // unparseable cert — not a routable device
+      }
 
-    const r = await resolvePrekey(pds, did, fingerprint, identityPub, now);
-    out.push(
-      r.ok
-        ? { fingerprint, capable: true, prekey: r.record }
-        : { fingerprint, capable: false, reason: r.reason },
-    );
-  }
-  return out;
+      const r = await resolvePrekey(pds, did, fingerprint, identityPub, now);
+      return r.ok
+        ? { fingerprint, capable: true, prekey: r.record, certificatePEM: pem }
+        : { fingerprint, capable: false, reason: r.reason, certificatePEM: pem };
+    }),
+  );
+  return results.filter((d): d is DeviceCapability => d !== null);
 }
 
 /** True iff at least one of `did`'s devices is DCGKA-capable. */
