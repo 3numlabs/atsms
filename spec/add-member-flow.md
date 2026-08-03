@@ -107,13 +107,15 @@ round trips ≈ 4–13 s** for one `/add`. Adding multiple *users* is the same l
 their devices — cost is linear in total device count with the same per-device constants, plus the K²
 recipient-growth term.
 
-**PROPOSED batched shape** (protocol-visible, needs its own change + regression pass): for one
-`addMember` call covering K devices — mint **K adds, then ONE update, then K welcomes**. The §4b
-invariant ("the joiner derives the post-add epoch on replay") holds: every welcome's log contains all
-K adds and the single epoch-establishing update. Effects: K epochs → 1; frames 3K → 2K+1; every
-existing member processes K+1 control ops instead of 3K; envelope count drops the same way. Partial-
-failure semantics must match today's resumability: a crash mid-batch is healed by `reconcileDevices`
-on next open (it admits any capable device not yet in the group), same as today.
+**Batched shape (BUILT 2026-08-03)**: one `addMember` call covering K devices mints **K adds, then
+ONE update, then K welcomes** (`ConversationSession.addMembers`; `reconcileDevices` batches across
+member DIDs the same way). The §4b invariant ("the joiner derives the post-add epoch on replay")
+holds: every welcome's log contains all K adds and the single epoch-establishing update. Effects:
+K epochs → 1; frames 3K → 2K+1; every existing member processes K+1 control ops instead of 3K; one
+delivery round instead of K. Measured before/after (metrics.jsonl op spans, K=4 devices M=4 members):
+`rounds=4, deliver 7.1 s of an 8.3 s op` → expected ~1 round ≈ 1.8 s. Partial-failure semantics
+match the prior per-device loop: a crash mid-batch is healed by `reconcileDevices` on next open
+(it admits any capable device not yet in the group).
 
 ## 7. Cacheability summary (the client-side fix list, impact order)
 
@@ -122,7 +124,7 @@ on next open (it admits any capable device not yet in the group), same as today.
 2. **D — parallelize route()**: FIFO per recipient device, concurrent across recipients.
 3. **B2 — parallelize prekey fetches** (K round trips → 1 RTT).
 4. **D4 — relay-side device-list cache** (minutes TTL) — separate repo (atsms-worker).
-5. **§6 batched add** — the only item that changes protocol-visible behavior; do last, separately.
+5. **§6 batched add** — BUILT 2026-08-03 (one round per addMember call).
 
 Items 1–4 change *when* data is fetched, never *what* is trusted: every cached artifact is either
 self-authenticating (certs, prekeys verify against the cert identity key) or fails loudly and
