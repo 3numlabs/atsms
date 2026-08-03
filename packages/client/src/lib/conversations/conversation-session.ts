@@ -189,9 +189,25 @@ export class ConversationSession {
     return this.drain();
   }
 
-  /** Remove a member. */
+  /** Remove a member (single device). */
   async removeMember(membership: Membership): Promise<Outbound[]> {
-    this.session.remove(membership);
+    return this.removeMembers([membership]);
+  }
+
+  /**
+   * Batched remove (mirrors addMembers): K removes, then ONE healing update,
+   * one sealed round. Each remove blanks the root (strong remove — no secret
+   * survives a resolution change), so the remover establishes the post-remove
+   * epoch immediately; its path secrets exclude every removed leaf, which IS
+   * the strong-remove guarantee. The removed devices receive nothing (the
+   * seal pass fans to post-op membership) — they simply stop being able to
+   * decrypt. A removal notification for the removed device's UX is a later,
+   * deliberate feature, not an accident to reintroduce here.
+   */
+  async removeMembers(memberships: Membership[]): Promise<Outbound[]> {
+    if (memberships.length === 0) return [];
+    for (const m of memberships) this.session.remove(m);
+    this.session.update();
     return this.drain();
   }
 

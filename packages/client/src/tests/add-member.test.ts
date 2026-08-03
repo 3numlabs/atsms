@@ -172,3 +172,45 @@ test("consecutive adds keep the existing member receiving (welcome is point-to-p
   expect(await texts(carol, convo.id)).toContain("hi all");
   expect(await texts(dave, convo.id)).toContain("hi all");
 }, 20000);
+
+test("removeMember: strong remove — the removed member reads nothing after; others converge", async () => {
+  const hub = new Hub();
+  const pds = new SharedPds();
+  const alice = await client(hub, pds, 1, "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa");
+  const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb");
+  const carol = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc");
+
+  const convo = await alice.atsms.open({ members: [bob.did, carol.did] });
+  await hub.flush();
+  await convo.send("hello all three");
+  await hub.flush();
+  expect(await texts(carol, convo.id)).toEqual(["hello all three"]);
+
+  // Alice (admin) removes Carol — one batched round (removes + healing update).
+  await alice.atsms.removeMember(convo.id, carol.did);
+  await hub.flush();
+
+  // Rosters shrink everywhere — including on Bob, who only RECEIVED the ops.
+  expect(convo.members.sort()).toEqual([alice.did, bob.did].sort());
+  const bobConvo = await bob.atsms.get(convo.id);
+  expect(bobConvo!.members.sort()).toEqual([alice.did, bob.did].sort());
+  expect((await bob.storage.getConversation(convo.id))!.participantIds.sort()).toEqual(
+    [alice.did, bob.did].sort(),
+  );
+
+  // Post-remove traffic: Bob converges, Carol reads NOTHING new (strong remove).
+  await convo.send("carol is gone");
+  await hub.flush();
+  await bobConvo!.send("copy that");
+  await hub.flush();
+  expect(await texts(alice, convo.id)).toEqual(["hello all three", "carol is gone", "copy that"]);
+  expect(await texts(bob, convo.id)).toEqual(["hello all three", "carol is gone", "copy that"]);
+  expect(await texts(carol, convo.id)).toEqual(["hello all three"]);
+
+  // Guards: a non-member and self are rejected loudly.
+  await expect(alice.atsms.removeMember(convo.id, carol.did)).rejects.toThrow(/not a member/);
+  await expect(alice.atsms.removeMember(convo.id, alice.did)).rejects.toThrow(/leave\(\)/);
+
+  // Non-admin removal is rejected by the engine (dgm §4).
+  await expect(bob.atsms.removeMember(convo.id, alice.did)).rejects.toThrow(/Unauthorized/);
+}, 20000);

@@ -584,6 +584,32 @@ export class ATSMS {
     trace.end({ devices: devices.length, added: missing.length, rounds: missing.length > 0 ? 1 : 0, envelopes: outbound.length });
   }
 
+  /**
+   * Remove a DID from a conversation — every device of it, in ONE batched
+   * round (K removes + the healing update; strong remove, dgm §4: the engine
+   * rejects a non-admin cross-DID removal). The removed devices receive
+   * nothing and simply stop decrypting; a removal notification for their UX
+   * is a later, deliberate feature. This is also the cure for the stale-
+   * device PCS hole (ordering-auth §9 / dgm §7 eviction) and the lost-state
+   * device recovery flow ("remove + re-add me").
+   */
+  async removeMember(groupId: string, did: string): Promise<void> {
+    if (did === this.identity.did) {
+      throw new Error("removeMember: cannot remove self — leave() is a separate (not yet built) flow");
+    }
+    const handle = await this.get(groupId);
+    if (handle === null) throw new Error(`unknown conversation ${groupId}`);
+    const memberships = handle.inner.membershipsOf(did);
+    if (memberships.length === 0) throw new Error(`${did} is not a member of this conversation`);
+    const trace = span(this.onMetric, "removeMember", did);
+    const outbound = await handle.inner.removeMembers(memberships);
+    trace.mark("seal");
+    await this.route(outbound, handle.inner);
+    trace.mark("deliver");
+    trace.end({ devices: memberships.length, envelopes: outbound.length });
+    this.onEvent("member-removed", `${did} (${memberships.length} devices) from ${handle.id.slice(0, 10)}`);
+  }
+
   // ── auto-routing ───────────────────────────────────────────────────────────
 
   /** Outbound: in-band advertised URL first, else the DID's public inbox. The

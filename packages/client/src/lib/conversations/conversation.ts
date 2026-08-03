@@ -12,7 +12,7 @@
  * point the store's `observeMessages` stream fires.
  */
 
-import { bytesToHex, type DeviceID, type SessionEvents } from "@atsms/dcgka";
+import { bytesToHex, type DeviceID, type Membership, type SessionEvents } from "@atsms/dcgka";
 import { Observable } from "rxjs";
 
 import {
@@ -102,6 +102,11 @@ export class Conversation {
     const out = new Map<string, string>();
     for (const m of this.session.engine.members()) out.set(bytesToHex(m.device.fingerprint), m.device.did);
     return out;
+  }
+
+  /** Every membership (device + admission) of one DID — removal currency. */
+  membershipsOf(did: string): Membership[] {
+    return this.session.engine.members().filter((m: Membership) => m.device.did === did);
   }
 
   /** A usable epoch exists — `send()` will not throw `NoRootKey`. */
@@ -252,10 +257,24 @@ export class Conversation {
     return outbound;
   }
 
+  /** Batched remove (strong remove, dgm §4 — cross-DID removal needs admin;
+   *  the engine enforces it): every membership in ONE round + healing update. */
+  async removeMembers(memberships: Membership[]): Promise<Outbound[]> {
+    if (memberships.length === 0) return [];
+    const outbound = await this.session.removeMembers(memberships);
+    await this.saveConversationRecord();
+    return outbound;
+  }
+
   /** Deliver an inbound sealed envelope (a decrypted message lands in
    *  `messages$`); returns any triggered repair envelopes. */
   async deliverEnvelope(envelope: Uint8Array): Promise<Outbound[]> {
-    return this.session.deliver(envelope);
+    const before = this.members.join(",");
+    const outbound = await this.session.deliver(envelope);
+    // A delivered control frame may have changed membership (remote add or
+    // remove) — keep the stored roster in sync for every member's UI.
+    if (this.members.join(",") !== before) await this.saveConversationRecord();
+    return outbound;
   }
 
   /** Ingest an already-unsealed frame (dispatcher bootstrap path). */
