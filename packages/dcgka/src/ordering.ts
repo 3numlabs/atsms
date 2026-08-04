@@ -89,6 +89,9 @@ export class Session {
   private endpointDirty = false;
   /** device fingerprint hex → last-writer-wins {url, seq} learned from peers' ext. */
   private peerEndpoints = new Map<string, { url: string; seq: number }>();
+  /** device fingerprint hex → app frames dropped from that non-member, driving
+   *  the removal re-notice cadence (a device that keeps talking never got it). */
+  private nonMemberDrops = new Map<string, number>();
 
   private constructor(
     engine: Engine,
@@ -359,6 +362,119 @@ export class Session {
     }
   }
 
+  /**
+   * Self-healing removal notice: a device still sending app frames at us has
+   * not processed its own removal (its notice was lost, or it was offline past
+   * mailbox retention). Re-queue the removal op — the seal pass addresses it to
+   * the removed device as well as the members, and A5 dedup makes the members'
+   * copies free. Cadence, not a timer (the session never schedules): the first
+   * drop, then every eighth — enough to converge, bounded under a flood.
+   */
+  private renotifyRemoved(device: DeviceID): void {
+    const fp = bytesToHex(device.fingerprint);
+    const n = (this.nonMemberDrops.get(fp) ?? 0) + 1;
+    this.nonMemberDrops.set(fp, n);
+    if (n !== 1 && n % 8 !== 0) return;
+    const raw = this.removeFrameFor(device);
+    if (raw !== null) this.outbox.push(raw);
+  }
+
+  /** Memberships we have removed and still hold the removal op for — the seal
+   *  layer keeps identification-only receive tags for these so a device that
+   *  never got its notice can be recognized (and re-notified) without its
+   *  content ever being accepted. Bounded by frame retention. */
+  removedMemberships(): Membership[] {
+    const out: Membership[] = [];
+    for (const idHex of this.retainedOrder) {
+      const meta = this.retained.get(idHex);
+      if (meta === undefined) continue;
+      const frame = parseFrame(meta.raw);
+      if (frame.body.cls !== CLS_CONTROL) continue;
+      try {
+        const payload = payloadFromCbor(frame.body.payload, frame.body.sender.device.fingerprint);
+        if (payload.type === 'remove' && !this.engine.isMemberDevice(payload.membership.device)) {
+          out.push(payload.membership);
+        }
+      } catch {
+        /* not a decodable control payload — skip */
+      }
+    }
+    return out;
+  }
+
+  /** Re-queue the removal op for a device still talking to us (§ self-heal).
+   *  Public for the seal layer, which recognizes such traffic by its
+   *  identification-only tags. */
+  renotifyRemovedDevice(device: DeviceID): void {
+    this.renotifyRemoved(device);
+  }
+
+  /** The retained removal frame that removed `device`, if we still hold it. */
+  private removeFrameFor(device: DeviceID): Uint8Array | null {
+    for (const idHex of this.retainedOrder) {
+      const meta = this.retained.get(idHex);
+      if (meta === undefined) continue;
+      const frame = parseFrame(meta.raw);
+      if (frame.body.cls !== CLS_CONTROL) continue;
+      try {
+        const payload = payloadFromCbor(frame.body.payload, frame.body.sender.device.fingerprint);
+        if (
+          payload.type === 'remove' &&
+          payload.membership.device.did === device.did &&
+          bytesEqual(payload.membership.device.fingerprint, device.fingerprint)
+        ) {
+          return meta.raw;
+        }
+      } catch {
+        /* not a decodable control payload — skip */
+      }
+    }
+    return null;
+  }
+
+  /** Am I still a member in my own view? False once I process my own removal
+   *  (the removal op is sealed to me — sealed-sender: the removed device is a
+   *  recipient of the frame that removes it). A client MUST stop sending. */
+  amMember(): boolean {
+    return this.engine.isMemberDevice(this.engine.me.device);
+  }
+
+  /**
+   * Membership history in causal order, derived from the retained frame log —
+   * who admitted/removed whom. Frames carry no wall clock (deliberate), so the
+   * order is causal, not temporal; a UI wanting timestamps must record its own
+   * observation time. Bounded by retention (covered-by-all / 30 d).
+   */
+  membershipLog(): Array<{
+    opId: string;
+    type: 'create' | 'add' | 'remove';
+    actor: DeviceID;
+    devices: DeviceID[];
+  }> {
+    const out: Array<{ opId: string; type: 'create' | 'add' | 'remove'; actor: DeviceID; devices: DeviceID[] }> = [];
+    for (const idHex of this.retainedOrder) {
+      const meta = this.retained.get(idHex);
+      if (meta === undefined) continue;
+      const frame = parseFrame(meta.raw);
+      if (frame.body.cls !== CLS_CONTROL) continue;
+      let payload: OpPayload;
+      try {
+        payload = payloadFromCbor(frame.body.payload, frame.body.sender.device.fingerprint);
+      } catch {
+        continue;
+      }
+      const actor = frame.body.sender.device;
+      if (payload.type === 'create') {
+        out.push({ opId: idHex, type: 'create', actor, devices: payload.initialDevices.map((d) => d.device) });
+      } else if (payload.type === 'add') {
+        out.push({ opId: idHex, type: 'add', actor, devices: [payload.device] });
+      } else if (payload.type === 'remove') {
+        out.push({ opId: idHex, type: 'remove', actor, devices: [payload.membership.device] });
+      }
+    }
+    return out;
+  }
+
   /** §8: repair request covering current gaps (unresolved deps + ctrlSeq holes). */
   buildRepairRequest(): Uint8Array | null {
     const missingIds: Uint8Array[] = [];
@@ -561,6 +677,7 @@ export class Session {
         // a live epoch and a stale tag table — could still accept it.)
         if (!this.engine.isMemberDevice(frame.body.sender.device)) {
           this.events.onDropped?.('app-from-non-member', frame.id);
+          this.renotifyRemoved(frame.body.sender.device);
           return;
         }
         const [generation, ct] = frame.body.payload as [number, Uint8Array];

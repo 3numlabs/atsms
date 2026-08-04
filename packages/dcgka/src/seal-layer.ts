@@ -25,7 +25,7 @@ import {
   CLS_WELCOME,
   parseFrame,
 } from './frames.js';
-import { encodeMembership, membershipKey, type Membership } from './ids.js';
+import { encodeMembership, membershipKey, type DeviceID, type Membership } from './ids.js';
 import type { Csprng } from './keyhive.js';
 import {
   CONTENT_FRAME,
@@ -57,6 +57,15 @@ export interface Outbound {
 
 export class SealLayer {
   private tags = new TagTable();
+  /**
+   * Identification-only tags for devices we have REMOVED. Kept separate from
+   * `tags` on purpose: a hit here never yields content to the session — it
+   * only tells us "a device that does not know it was removed is still
+   * talking", so we can re-send its removal notice (the notice is one
+   * best-effort envelope; a device offline past mailbox retention misses it).
+   * Removing this table costs nothing but that self-healing.
+   */
+  private removedTags = new TagTable();
   /** device fingerprint hex → signed-prekey pub (from create/add leaf keys). */
   private prekeys = new Map<string, Uint8Array>();
   /** add-op id hex → the joiner's device fingerprint (for welcome routing). */
@@ -121,6 +130,17 @@ export class SealLayer {
       // by processing this frame). Null ⇒ no epoch precedes it (first update after
       // create) ⇒ fall to asym (bootstrap-class, §1) to each recipient's prekey.
       const recipients = this.session.engine.members().filter((m) => !sameFp(m, this.session.engine.me));
+      // A removed device is no longer a member, so the fan-out above excludes
+      // it — meaning it would never learn it was removed and would go on
+      // talking into a group that ignores it (live UX complaint 2026-08-03).
+      // Deliberate decision: the removal op IS sealed to the devices it
+      // removes, under the PARENT epoch they still hold. It tells them nothing
+      // they did not already know (they were members; the op names them), and
+      // it is what every mainstream messenger does. They cannot derive the
+      // post-remove epoch, so this is their last readable frame.
+      for (const removed of removedBy(frame)) {
+        if (!recipients.some((m) => sameFp(m, removed))) recipients.push(removed);
+      }
       const epochId = this.session.engine.sealEpochFor(frame.body.deps);
       const envKey = epochId === null ? null : this.session.engine.epochEnvKey(epochId, this.encMe);
       for (const r of recipients) {
@@ -176,7 +196,19 @@ export class SealLayer {
     if (mode === MODE_SYM) {
       parseSymEnvelope(envelope); // validate shape
       const opened = this.tags.open(envelope);
-      if (opened === null) return false; // unknown tag — epoch not derived yet
+      if (opened === null) {
+        // Not addressed to us by a member. Is it a device we removed that
+        // never learned? Then consume it — content discarded, never ingested —
+        // and re-send its removal notice.
+        const fromRemoved = this.removedTags.open(envelope);
+        if (fromRemoved !== null) {
+          const meta = fromRemoved.meta as { device: DeviceID };
+          this.onEvent('traffic-from-removed-device', bytesToHex(meta.device.fingerprint).slice(0, 12));
+          this.session.renotifyRemovedDevice(meta.device);
+          return true;
+        }
+        return false; // unknown tag — epoch not derived yet
+      }
       if (opened.plaintext.contentType === CONTENT_FRAME) this.ingest(opened.plaintext.body);
       return true;
     }
@@ -208,6 +240,13 @@ export class SealLayer {
   private refresh(): void {
     const eng = this.session.engine;
     this.tags = new TagTable();
+    this.removedTags = new TagTable();
+    for (const epochId of eng.liveEpochs()) {
+      for (const gone of this.session.removedMemberships()) {
+        const envKey = eng.epochEnvKey(epochId, encodeMembership(gone));
+        if (envKey !== null) this.removedTags.install(envKey, this.encMe, { device: gone.device });
+      }
+    }
     const meFp = eng.me.device.fingerprint;
     for (const epochId of eng.liveEpochs()) {
       for (const s of eng.members()) {
@@ -255,4 +294,15 @@ export class SealLayer {
 
 function sameFp(a: Membership, b: Membership): boolean {
   return bytesToHex(a.device.fingerprint) === bytesToHex(b.device.fingerprint);
+}
+
+/** The memberships a control frame removes (empty for every other frame). */
+function removedBy(frame: ReturnType<typeof parseFrame>): Membership[] {
+  if (frame.body.cls !== CLS_CONTROL) return [];
+  try {
+    const payload = payloadFromCbor(frame.body.payload, frame.body.sender.device.fingerprint);
+    return payload.type === 'remove' ? [payload.membership] : [];
+  } catch {
+    return [];
+  }
 }
