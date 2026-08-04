@@ -67,6 +67,12 @@ export class ATSMSPeers {
     private readonly maxAgeMs: number = PEER_MAX_AGE_MS,
   ) {}
 
+  /** The configured freshness window — callers that want something tighter
+   *  must clamp against it, never widen it. */
+  get maxAge(): number {
+    return this.maxAgeMs;
+  }
+
   /** The locally-held snapshot — zero network. Null when never fetched. */
   async get(did: string): Promise<PeerSnapshot | null> {
     const bytes = await this.storage.loadDeviceState(KEY_PREFIX + did);

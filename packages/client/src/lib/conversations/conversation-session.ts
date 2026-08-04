@@ -348,13 +348,27 @@ function admissionOf(
   if (frame.body.cls === CLS_WELCOME) {
     // A welcome wraps the retained frame log; the admitting add is inside it.
     // Welcome body = cbor([checkpoint, frames, deliveryMap, profile]) (A4).
-    const [, bodyBytes] = frame.body.payload as [Uint8Array, Uint8Array];
+    //
+    // Use the add op the welcome NAMES, not the first one that mentions this
+    // device: a re-added device appears twice in the log (its original add and
+    // the new one), and the earlier admission pins key material a device that
+    // has since re-keyed no longer holds — the welcome would be dropped and
+    // the re-add would silently do nothing (live 2026-08-03).
+    const [addOpId, bodyBytes] = frame.body.payload as [Uint8Array, Uint8Array];
     const frames = (cborDecode(bodyBytes) as [unknown, Uint8Array[], unknown, number])[1];
+    const wanted = bytesToHex(addOpId);
+    for (const inner of frames) {
+      if (bytesToHex(parseFrame(inner).id) !== wanted) continue;
+      return admissionOf(inner, device);
+    }
+    // The named op is missing (older sender, or a pruned log): fall back to the
+    // LAST admission for this device — the most recent one is the live pin.
+    let latest: { leafPk: Uint8Array; signingPk: Uint8Array } | null = null;
     for (const inner of frames) {
       const found = admissionOf(inner, device);
-      if (found !== null) return found;
+      if (found !== null) latest = found;
     }
-    return null;
+    return latest;
   }
   if (frame.body.cls !== CLS_CONTROL) return null;
   const payload = payloadFromCbor(frame.body.payload, frame.body.sender.device.fingerprint);

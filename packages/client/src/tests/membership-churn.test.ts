@@ -292,3 +292,82 @@ test("churn: a removed member's devices can be re-added and talk again", async (
   }
   expect(relay.largestEnvelope).toBeLessThan(64 * 1024);
 }, 60000);
+
+test("churn: a device that re-keyed since the directory snapshot is still re-addable", async () => {
+  // Live 2026-08-03: aib0b was removed, its browser storage was cleared (same
+  // passkey ⇒ same cert and fingerprint, but a FRESH prekey ring, republishing
+  // its prekey), and the re-add sealed its welcome to the prekey the adder had
+  // cached minutes earlier. The device could not open it and sat there saying
+  // "you were removed" while everyone else saw it re-added.
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+
+  // Alice's directory tolerates staleness — the production default.
+  const { cert: aCert, privateKey: aKey } = await generateTestEndpointCertificate(AL, "1.example", "atsms.email");
+  const aStorage = new SQLiteAdapter(new Wrap() as never);
+  const aRng = rngOf(1);
+  const aPds = pds.forDid(AL);
+  const aIdentity = await ATSMSDeviceIdentity.load({
+    did: AL, certificatePEM: aCert, privateKeyPEM: aKey, storage: aStorage, rng: aRng,
+  });
+  await aPds.putRecord("at.atsms.x509", aIdentity.fingerprint, { $type: "at.atsms.x509", certificate: aCert });
+  const aEvents: string[] = [];
+  const alice: Device = {
+    label: "alice", did: AL, storage: aStorage, events: aEvents,
+    atsms: await ATSMS.create({
+      identity: aIdentity, storage: aStorage, transport: relay.transportFor(AL), pds: aPds, rng: aRng,
+      onEvent: (k, d) => aEvents.push(`${k}: ${d}`), genesisWaitMs: 0,
+      peerMaxAgeMs: 15 * 60 * 1000,
+    }),
+  };
+
+  // Bob: ONE identity (cert + key), two successive storages — the wipe.
+  const { cert: bCert, privateKey: bKey } = await generateTestEndpointCertificate(BO, "2.example", "atsms.email");
+  const bPds = pds.forDid(BO);
+  const bootBob = async (seed: number, label: string): Promise<Device> => {
+    const storage = new SQLiteAdapter(new Wrap() as never);
+    const rng = rngOf(seed);
+    const identity = await ATSMSDeviceIdentity.load({
+      did: BO, certificatePEM: bCert, privateKeyPEM: bKey, storage, rng,
+    });
+    await bPds.putRecord("at.atsms.x509", identity.fingerprint, { $type: "at.atsms.x509", certificate: bCert });
+    const events: string[] = [];
+    const atsms = await ATSMS.create({
+      identity, storage, transport: relay.transportFor(BO), pds: bPds, rng,
+      onEvent: (k, d) => events.push(`${k}: ${d}`), genesisWaitMs: 0, peerMaxAgeMs: 0,
+    });
+    return { label, did: BO, storage, atsms, events };
+  };
+
+  const bob = await bootBob(2, "bob");
+  const convo = await alice.atsms.open({ members: [BO] });
+  await relay.flush();
+  await assertDelivery(relay, convo.id, alice, [bob], [], "before");
+
+  await alice.atsms.removeMember(convo.id, BO);
+  await relay.flush();
+  expect((await bob.atsms.get(convo.id))!.amMember).toBe(false);
+  await bob.atsms.close();
+
+  // The wipe: same cert and fingerprint, brand-new prekey ring, republished.
+  // Alice's warm snapshot still holds the PREVIOUS prekey for this device.
+  const bob2 = await bootBob(99, "bob(rekeyed)");
+  await relay.flush();
+
+  // Re-add. Admission material must be refetched despite the warm snapshot.
+  await alice.atsms.addMember(convo.id, BO);
+  await relay.flush();
+
+  // Diagnostic on failure: what did the re-keyed device actually see?
+  const seen = bob2.events.join(" | ");
+  expect(
+    bob2.events.some((e) => e.startsWith("re-admission-failed")),
+    `a failed re-admission must never be silent — events: ${seen}`,
+  ).toBe(false);
+  expect((await bob2.atsms.get(convo.id)) !== null, `bob2 has no conversation — events: ${seen}`).toBe(true);
+  expect((await bob2.atsms.get(convo.id))?.amMember, "the re-keyed device rejoined").toBe(true);
+  await assertDelivery(relay, convo.id, alice, [bob2], [], "after re-add of a re-keyed device");
+  await assertDelivery(relay, convo.id, bob2, [alice], [], "the re-keyed device speaks");
+}, 60000);

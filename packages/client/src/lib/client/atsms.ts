@@ -129,6 +129,20 @@ const REPAIR_AFTER_MS = 60_000;
  *  believe we belong to, before surfacing a soft "possibly removed". */
 const UNOPENABLE_SUSPECT_REMOVED = 3;
 
+/**
+ * Freshness for OPPORTUNISTIC admission (reconcileDevices, which runs on every
+ * reopen): tight enough that a re-keyed device is picked up quickly, loose
+ * enough to keep a warm reopen free of discovery fetches.
+ *
+ * A DELIBERATE admission — open() or addMember() — does not use a window at
+ * all: it refetches. Sealing a welcome to a superseded prekey is undecryptable
+ * by design, so the joiner drops it and the add silently does nothing (live
+ * 2026-08-03: a device whose storage had been wiped, republishing its prekey
+ * under the same cert, was re-added against a cached snapshot and never
+ * rejoined). One fetch is the right price for an operation a user asked for.
+ */
+const ADMISSION_MAX_AGE_MS = 30_000;
+
 /** App-facing handle for one conversation: subscribe + send, no crypto. */
 export class ATSMSConversation {
   constructor(
@@ -498,8 +512,9 @@ export class ATSMS {
     const incapable: string[] = [];
     // Directory read-through, parallel across members — a warm open does no
     // discovery fetches at all.
+    // Founding a conversation is a deliberate admission: fetch, never cache.
     const capabilities = await Promise.all(
-      others.map(async (did) => [did, capableFromSnapshot(await this.peers.ensureFresh(did))] as const),
+      others.map(async (did) => [did, capableFromSnapshot(await this.peers.refresh(did))] as const),
     );
     for (const [did, devices] of capabilities) {
       if (devices.length === 0) {
@@ -572,8 +587,12 @@ export class ATSMS {
   private async reconcileDevices(handle: ATSMSConversation): Promise<void> {
     const present = handle.inner.memberDevices;
     const others = handle.members.filter((d) => d !== this.identity.did);
+    // Opportunistic admission: tighter than the directory's window, but never
+    // looser than what the client configured (a client asking for 0 means it
+    // wants no staleness at all).
+    const window = Math.min(this.peers.maxAge, ADMISSION_MAX_AGE_MS);
     const capabilities = await Promise.all(
-      others.map(async (did) => [did, capableFromSnapshot(await this.peers.ensureFresh(did))] as const),
+      others.map(async (did) => [did, capableFromSnapshot(await this.peers.ensureFresh(did, window))] as const),
     );
     // Every missing device across every member DID joins in ONE batched round.
     const missing: MemberDescriptor[] = [];
@@ -597,7 +616,8 @@ export class ATSMS {
     const handle = await this.get(groupId);
     if (handle === null) throw new Error(`unknown conversation ${groupId}`);
     const trace = span(this.onMetric, "addMember", did);
-    const devices = capableFromSnapshot(await this.peers.ensureFresh(did));
+    // Deliberate admission: fetch this DID's current keys, never the cache.
+    const devices = capableFromSnapshot(await this.peers.refresh(did));
     if (devices.length === 0) throw new Error(`not DCGKA-capable (no verified prekey): ${did}`);
     trace.mark("discovery");
     const present = handle.inner.memberDevices;
@@ -830,7 +850,11 @@ export class ATSMS {
         if (!handle.inner.amMember) {
           const keys = this.admissionKeys(frame);
           if (keys === null) {
-            this.onEvent("drop-admission-keys", `re-admission welcome for group ${groupId}`);
+            // We were re-added, but against key material we no longer hold —
+            // the adder's view of our prekey was stale, or this device re-keyed
+            // (or lost its ring). Nothing here can fix it: say so plainly so
+            // the UI can ask to be re-added rather than sit silently removed.
+            this.onEvent("re-admission-failed", `${handle.id} (keys no longer held — ask to be added again)`);
             return;
           }
           const { conversation, outbound } = await Conversation.join(this.context(), { keys, welcomeFrame: frame });
