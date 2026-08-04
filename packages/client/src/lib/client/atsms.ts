@@ -134,18 +134,12 @@ const UNOPENABLE_SUSPECT_REMOVED = 3;
 const SUSPECT_REMOVED_QUIET_MS = 5 * 60 * 1000;
 
 /**
- * Freshness for OPPORTUNISTIC admission (reconcileDevices, which runs on every
- * reopen): tight enough that a re-keyed device is picked up quickly, loose
- * enough to keep a warm reopen free of discovery fetches.
- *
- * A DELIBERATE admission — open() or addMember() — does not use a window at
- * all: it refetches. Sealing a welcome to a superseded prekey is undecryptable
- * by design, so the joiner drops it and the add silently does nothing (live
- * 2026-08-03: a device whose storage had been wiped, republishing its prekey
- * under the same cert, was re-added against a cached snapshot and never
- * rejoined). One fetch is the right price for an operation a user asked for.
+ * Admission material is always fetched, never served from the directory
+ * window: sealing a welcome to a superseded prekey is undecryptable by
+ * design, so the add silently does nothing (live 2026-08-03). One fetch is
+ * the right price for an operation a person asked for. Routing and
+ * reachability keep the directory's speed; admission does not use it.
  */
-const ADMISSION_MAX_AGE_MS = 30_000;
 
 /** App-facing handle for one conversation: subscribe + send, no crypto. */
 export class ATSMSConversation {
@@ -542,11 +536,10 @@ export class ATSMS {
     if (existingGroupId !== null) {
       const reopened = await this.get(existingGroupId);
       if (reopened !== null) {
-        // Reconcile membership with the members' CURRENT device lists: a DID
-        // may have published a new device (or re-keyed one) since the group was
-        // founded — admit anything missing so it can participate. Its welcome
-        // carries the log; traffic before admission stays unreadable to it (FS).
-        await this.reconcileDevices(reopened);
+        // No device reconciliation here. A member's new device is admitted by
+        // an explicit act from one of THEIR devices (enrolDevice) — not as a
+        // side effect of someone else reopening a conversation, which only
+        // ever worked when that someone happened to be an admin.
         // Repair a half-built conversation: an open() interrupted by a delivery
         // failure can leave a persisted group with no epoch, which every later
         // open() would otherwise reuse forever (permanently unusable). If we
@@ -652,31 +645,72 @@ export class ATSMS {
 
   /** Admit every capable device of the conversation's member DIDs that is not
    *  yet in the group (device enrollment / re-key catch-up). */
-  private async reconcileDevices(handle: ATSMSConversation): Promise<void> {
-    const present = handle.inner.memberDevices;
-    const others = handle.members.filter((d) => d !== this.identity.did);
-    // Opportunistic admission: tighter than the directory's window, but never
-    // looser than what the client configured (a client asking for 0 means it
-    // wants no staleness at all).
-    const window = Math.min(this.peers.maxAge, ADMISSION_MAX_AGE_MS);
-    const capabilities = await Promise.all(
-      others.map(async (did) => [did, capableFromSnapshot(await this.peers.ensureFresh(did, window))] as const),
-    );
-    // Every missing device across every member DID joins in ONE batched round.
-    const missing: MemberDescriptor[] = [];
-    for (const [did, devices] of capabilities) {
-      for (const d of devices) {
-        if (present.has(d.fingerprint)) continue;
-        this.onEvent("device-added", `${did} device ${d.fingerprint.slice(0, 12)}… → ${handle.id.slice(0, 8)}…`);
-        missing.push({
-          device: { did, fingerprint: hexToBytes(d.fingerprint) },
-          leafPk: d.leafPk,
-          signingPk: d.signingPk,
-        });
+  /**
+   * My own DID's devices, and which of my conversations each is missing from.
+   * One directory read (my own DID) — nobody else's device list is consulted.
+   */
+  async myDevices(): Promise<
+    Array<{ fingerprint: string; isThisDevice: boolean; capable: boolean; reason?: string; missingFrom: string[] }>
+  > {
+    const snapshot = await this.peers.refresh(this.identity.did);
+    const mine = [...this.openConvos.values()].filter((h) => h.amMember);
+    return snapshot.devices.map((d) => ({
+      fingerprint: d.fingerprint,
+      isThisDevice: d.fingerprint === this.identity.fingerprint,
+      capable: d.capable,
+      ...(d.reason !== undefined ? { reason: d.reason } : {}),
+      missingFrom: mine.filter((h) => !h.inner.memberDevices.has(d.fingerprint)).map((h) => h.id),
+    }));
+  }
+
+  /**
+   * Enrol one of MY devices into every conversation I am in that lacks it —
+   * how a newly installed device joins the conversations it cannot discover
+   * for itself (it holds no conversation list, and a non-member cannot author
+   * the op that would admit it, so an existing device must act).
+   *
+   * Same-DID admission, so no admin is involved (dgm §4). Deliberately
+   * user-initiated: device discovery trusts the DID's PDS, so silently
+   * admitting whatever appears there would turn an account compromise into
+   * access to every conversation. A person decides; the client never guesses.
+   */
+  async enrolDevice(
+    fingerprint: string,
+  ): Promise<{ enrolled: string[]; skipped: Array<{ convoId: string; reason: string }> }> {
+    if (fingerprint === this.identity.fingerprint) {
+      throw new Error("enrolDevice: this device is already the one doing the enrolling");
+    }
+    const snapshot = await this.peers.refresh(this.identity.did);
+    const device = snapshot.devices.find((d) => d.fingerprint === fingerprint);
+    if (device === undefined) throw new Error(`enrolDevice: ${fingerprint.slice(0, 12)}… is not a device of this account`);
+    if (!device.capable || device.signedPrekeyB64 === undefined || device.signingPkB64 === undefined) {
+      throw new Error(`enrolDevice: ${fingerprint.slice(0, 12)}… has no verified prekey (${device.reason ?? "not capable"})`);
+    }
+    const descriptor: MemberDescriptor = {
+      device: { did: this.identity.did, fingerprint: hexToBytes(fingerprint) },
+      leafPk: peerKeyBytes(device.signedPrekeyB64),
+      signingPk: peerKeyBytes(device.signingPkB64),
+    };
+
+    const trace = span(this.onMetric, "enrolDevice", fingerprint.slice(0, 12));
+    const enrolled: string[] = [];
+    const skipped: Array<{ convoId: string; reason: string }> = [];
+    for (const handle of [...this.openConvos.values()]) {
+      if (!handle.amMember) {
+        skipped.push({ convoId: handle.id, reason: "not a member" });
+        continue;
+      }
+      if (handle.inner.memberDevices.has(fingerprint)) continue; // already there
+      try {
+        await this.route(await handle.inner.addMembers([descriptor]), handle.inner);
+        enrolled.push(handle.id);
+        this.onEvent("device-enrolled", `${fingerprint.slice(0, 12)}… → ${handle.id.slice(0, 10)}`);
+      } catch (err) {
+        skipped.push({ convoId: handle.id, reason: err instanceof Error ? err.message : String(err) });
       }
     }
-    if (missing.length === 0) return;
-    await this.route(await handle.inner.addMembers(missing), handle.inner);
+    trace.end({ enrolled: enrolled.length, skipped: skipped.length });
+    return { enrolled, skipped };
   }
 
   /** Add a DID to a conversation (every capable device of it). */
