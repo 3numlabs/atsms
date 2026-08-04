@@ -282,7 +282,8 @@ export class SealLayer {
           // and drop, rather than the old silent buffer-forever/FIFO drop.
           this.onEvent(
             'unopenable-envelope',
-            `sym envelope unopened after ${p.tries} refreshes (unknown epoch tag — likely epoch divergence)`,
+            `sym envelope unopened after ${p.tries} refreshes (unknown epoch tag: traffic sealed under an epoch ` +
+              `we do not hold — a peer mid-heal, an envelope left over from earlier churn, or genuine divergence)`,
           );
           continue;
         }
