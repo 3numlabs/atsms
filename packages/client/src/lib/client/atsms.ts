@@ -142,10 +142,19 @@ const SUSPECT_REMOVED_QUIET_MS = 5 * 60 * 1000;
  */
 
 /** App-facing handle for one conversation: subscribe + send, no crypto. */
+/** What a conversation handle needs from its client (implemented by ATSMS). */
+interface ConversationOps {
+  addMemberTo(handle: ATSMSConversation, did: string): Promise<void>;
+  removeMemberFrom(handle: ATSMSConversation, did: string): Promise<void>;
+  grantAdminIn(handle: ATSMSConversation, did: string): Promise<void>;
+  leaveConversation(handle: ATSMSConversation): Promise<void>;
+}
+
 export class ATSMSConversation {
   constructor(
     private readonly convo: Conversation,
     private readonly router: (outbound: Outbound[], convo: Conversation) => Promise<void>,
+    private readonly ops: ConversationOps,
     private readonly genesisWaitMs: number = GENESIS_EPOCH_WAIT_MS,
   ) {}
 
@@ -250,9 +259,68 @@ export class ATSMSConversation {
     await this.router(await this.convo.update(), this.convo);
   }
 
+  /** Add a DID (every capable device of it) — groups only; a DM is its two
+   *  people, so adding starts a new group instead. */
+  addMember(did: string): Promise<void> {
+    return this.ops.addMemberTo(this, did);
+  }
+
+  /** Remove a DID (every device of it). Cross-DID removal requires admin. */
+  removeMember(did: string): Promise<void> {
+    return this.ops.removeMemberFrom(this, did);
+  }
+
+  /** Grant admin — the succession step a sole admin must take before leaving. */
+  grantAdmin(did: string): Promise<void> {
+    return this.ops.grantAdminIn(this, did);
+  }
+
+  /** Leave: my devices are removed and the remaining members heal on their
+   *  next send. Refuses if I am the sole admin with others still here. */
+  leave(): Promise<void> {
+    return this.ops.leaveConversation(this);
+  }
+
   /** @internal the wrapped conversation (dispatcher use). */
   get inner(): Conversation {
     return this.convo;
+  }
+}
+
+/**
+ * `atsms.conversations` — the stateful surface (sdk-shape.md Part A).
+ *
+ * Two verbs, because there are two different acts. A DM conceptually always
+ * exists: you do not create the conversation with someone, you open it, and
+ * asking twice gives you the same one. A group is something you make — it has
+ * an author, a name, and two groups with identical membership are different
+ * conversations. `open()` used to be both, which is how "reuse by members"
+ * quietly handed back a group that had shrunk to two as "your DM".
+ */
+export class ATSMSConversations {
+  /** @internal */
+  constructor(private readonly client: ATSMS) {}
+
+  /** The DM with `did` — created on first use, the same one every time after
+   *  (exactly one DM per pair). Its two people are fixed for its lifetime. */
+  with(did: string): Promise<ATSMSConversation> {
+    return this.client.openDirect(did);
+  }
+
+  /** A NEW group. The same people may share any number of them, so this never
+   *  reuses; reopen a specific one with `get(id)`. */
+  createGroup(params: { members: string[]; title?: string; admins?: string[] }): Promise<ATSMSConversation> {
+    return this.client.createGroupConversation(params);
+  }
+
+  /** A conversation by ID (v2 ConvoId hex, or a bare GroupID). Null if unknown. */
+  get(id: string): Promise<ATSMSConversation | null> {
+    return this.client.getConversation(id);
+  }
+
+  /** Every conversation, reactively (metadata level). */
+  get all$(): Observable<LocalConversation[]> {
+    return this.client.conversationRecords$;
   }
 }
 
@@ -270,6 +338,9 @@ export class ATSMS {
   /** The local peer directory (sdk-shape.md: the third noun) — operations
    *  read it; refreshes happen off the user's critical path. */
   readonly peers: ATSMSPeers;
+  /** The stateful surface: `conversations.with(did)`, `.createGroup({…})`,
+   *  `.get(id)`, `.all$`. */
+  readonly conversations: ATSMSConversations;
 
   private constructor(
     readonly identity: ATSMSDeviceIdentity,
@@ -285,6 +356,7 @@ export class ATSMS {
     private readonly onMetric: MetricSink = () => {},
   ) {
     this.peers = new ATSMSPeers(pds, storage, onEvent, peerMaxAgeMs);
+    this.conversations = new ATSMSConversations(this);
   }
 
   /**
@@ -393,8 +465,8 @@ export class ATSMS {
     }
   }
 
-  /** All conversations, reactively (metadata level). */
-  get conversations$(): Observable<LocalConversation[]> {
+  /** @internal — reached through `conversations.all$`. */
+  get conversationRecords$(): Observable<LocalConversation[]> {
     return this.storage.observeConversations();
   }
 
@@ -513,28 +585,56 @@ export class ATSMS {
    * never silently downgraded (capability §3); one-shots to them can use the
    * stateless X509 baseline instead.
    */
-  async open(params: { members: string[]; admins?: string[]; kind?: "dm" | "group" }): Promise<ATSMSConversation> {
+  /** @internal — `conversations.with(did)`. */
+  async openDirect(did: string): Promise<ATSMSConversation> {
+    if (did === this.identity.did) throw new Error("conversations.with: that is you");
+    return this.openConversation([did], "dm", undefined);
+  }
+
+  /** @internal — `conversations.createGroup({…})`. */
+  async createGroupConversation(params: {
+    members: string[];
+    title?: string;
+    admins?: string[];
+  }): Promise<ATSMSConversation> {
+    const others = [...new Set(params.members.filter((d) => d !== this.identity.did))];
+    if (others.length === 0) throw new Error("conversations.createGroup: no members");
+    const handle = await this.openConversation(others, "group", params.admins);
+    if (params.title !== undefined && params.title.trim() !== "") {
+      const record = await this.storage.getConversation(handle.id);
+      if (record !== null) {
+        await this.storage.saveConversation({
+          ...record,
+          metadata: { ...record.metadata, title: params.title.trim() },
+        });
+      }
+    }
+    return handle;
+  }
+
+  private async openConversation(
+    members: string[],
+    kind: "dm" | "group",
+    admins: string[] | undefined,
+  ): Promise<ATSMSConversation> {
+    const params = { members, admins };
     const others = [...new Set(params.members.filter((d) => d !== this.identity.did))];
     const participants = [this.identity.did, ...others];
     if (others.length === 0) throw new Error("open: no members");
-    // One other person defaults to a DM; several to a group. `kind` overrides
-    // it — a two-person GROUP is a legitimate thing, distinct from the DM with
-    // that same person, and only the caller knows which was meant.
-    const kind: "dm" | "group" = params.kind ?? (others.length === 1 ? "dm" : "group");
     if (kind === "dm" && others.length !== 1) {
-      throw new Error("open: a DM is exactly two people — pass kind:'group' for more");
+      throw new Error("a DM is exactly two people — use conversations.createGroup for more");
     }
 
     // Reuse is for DMs ONLY: there is exactly one DM per pair, while the same
     // people may share any number of groups. Reopening a specific group is
-    // `get(convoId)`, not `open()`.
+    // `conversations.get(id)`.
     const existing = kind === "dm" ? await this.findDirectConversation(others[0]!) : null;
     // The record's id is the v2 ConvoId hex; only a conversation-context id
     // (0x02 prefix) maps back to a DCGKA GroupID — a one-shot record with the
     // same participant set is a different conversation (format §8).
     const existingGroupId = existing === null ? null : groupIdOfConvoId(convoIdFromHex(existing.id));
     if (existingGroupId !== null) {
-      const reopened = await this.get(existingGroupId);
+      const reopened = await this.getConversation(existingGroupId);
       if (reopened !== null) {
         // No device reconciliation here. A member's new device is admitted by
         // an explicit act from one of THEIR devices (enrolDevice) — not as a
@@ -625,9 +725,8 @@ export class ATSMS {
     return null;
   }
 
-  /** A conversation by ID (v2 ConvoId hex, or a bare DCGKA GroupID) — open
-   *  handle, or restored from storage. Null if unknown. */
-  async get(id: string): Promise<ATSMSConversation | null> {
+  /** @internal — `conversations.get(id)`. */
+  async getConversation(id: string): Promise<ATSMSConversation | null> {
     const groupId = toGroupId(id);
     const open = this.openConvos.get(groupId);
     if (open !== undefined) return open;
@@ -714,9 +813,8 @@ export class ATSMS {
   }
 
   /** Add a DID to a conversation (every capable device of it). */
-  async addMember(groupId: string, did: string): Promise<void> {
-    const handle = await this.get(groupId);
-    if (handle === null) throw new Error(`unknown conversation ${groupId}`);
+  /** @internal — `convo.addMember(did)`. */
+  async addMemberTo(handle: ATSMSConversation, did: string): Promise<void> {
     if (handle.kind === "dm") {
       throw new Error(
         "DirectConversation: a DM stays these two people — open a group with everyone instead",
@@ -753,12 +851,11 @@ export class ATSMS {
    * device PCS hole (ordering-auth §9 / dgm §7 eviction) and the lost-state
    * device recovery flow ("remove + re-add me").
    */
-  async removeMember(groupId: string, did: string): Promise<void> {
+  /** @internal — `convo.removeMember(did)`. */
+  async removeMemberFrom(handle: ATSMSConversation, did: string): Promise<void> {
     if (did === this.identity.did) {
-      throw new Error("removeMember: cannot remove self — leave() is a separate (not yet built) flow");
+      throw new Error("removeMember: cannot remove yourself — use leave()");
     }
-    const handle = await this.get(groupId);
-    if (handle === null) throw new Error(`unknown conversation ${groupId}`);
     const memberships = handle.inner.membershipsOf(did);
     if (memberships.length === 0) throw new Error(`${did} is not a member of this conversation`);
     const trace = span(this.onMetric, "removeMember", did);
@@ -772,9 +869,8 @@ export class ATSMS {
 
   /** Grant admin to a DID in a conversation (admin-only, dgm §4) — how a sole
    *  admin appoints the successor that `leave()` requires. */
-  async grantAdmin(groupId: string, did: string): Promise<void> {
-    const handle = await this.get(groupId);
-    if (handle === null) throw new Error(`unknown conversation ${groupId}`);
+  /** @internal — `convo.grantAdmin(did)`. */
+  async grantAdminIn(handle: ATSMSConversation, did: string): Promise<void> {
     await this.route(await handle.inner.grantAdmin(did), handle.inner);
     this.onEvent("admin-granted", `${did} in ${handle.id.slice(0, 10)}`);
   }
@@ -789,9 +885,8 @@ export class ATSMS {
    * (`grantAdmin`). As the LAST member there is nobody to tell and nothing to
    * heal, so it is recorded locally with no ops.
    */
-  async leave(groupId: string): Promise<void> {
-    const handle = await this.get(groupId);
-    if (handle === null) throw new Error(`unknown conversation ${groupId}`);
+  /** @internal — `convo.leave()`. */
+  async leaveConversation(handle: ATSMSConversation): Promise<void> {
     if (!handle.inner.amMember) return; // already out — idempotent
     const trace = span(this.onMetric, "leave", handle.id);
     try {
@@ -1076,7 +1171,7 @@ export class ATSMS {
   }
 
   private register(convo: Conversation): ATSMSConversation {
-    const handle = new ATSMSConversation(convo, (out, c) => this.route(out, c), this.genesisWaitMs);
+    const handle = new ATSMSConversation(convo, (out, c) => this.route(out, c), this, this.genesisWaitMs);
     this.openConvos.set(convo.groupId, handle);
     return handle;
   }

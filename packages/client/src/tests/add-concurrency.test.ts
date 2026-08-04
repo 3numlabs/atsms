@@ -138,14 +138,14 @@ describe("add a member under concurrency (live 3-way repro)", () => {
     const b = await client(hub, pds, 2, "did:plc:b");
     const c = await client(hub, pds, 3, "did:plc:c");
 
-    const convo = await a.atsms.open({ members: [b.did], kind: "group" });
+    const convo = await a.atsms.conversations.createGroup({ members: [b.did] });
     await hub.flush();
     await convo.send("yo");
     await hub.flush();
     expect(await texts(b, convo.id)).toContain("yo");
 
     // Add C, then let everything settle BEFORE anyone sends (serialized).
-    await a.atsms.addMember(convo.id, c.did);
+    await convo.addMember(c.did);
     await hub.flush();
     await convo.send("three way");
     await hub.flush();
@@ -160,21 +160,21 @@ describe("add a member under concurrency (live 3-way repro)", () => {
     const b = await client(hub, pds, 12, "did:plc:b");
     const c = await client(hub, pds, 13, "did:plc:c");
 
-    const convo = await a.atsms.open({ members: [b.did], kind: "group" });
+    const convo = await a.atsms.conversations.createGroup({ members: [b.did] });
     await hub.flush();
     await convo.send("yo");
     await hub.flush();
 
     // A adds C: add→B and welcome→C are now queued (not yet delivered).
-    await a.atsms.addMember(convo.id, c.did);
+    await convo.addMember(c.did);
     // A sends immediately — self-heals (root blanked by add) BEFORE C's join is
     // delivered: A's heal and C's coming join-heal will be concurrent.
-    await a.atsms.get(convo.id).then((h) => h!.send("three way"));
+    await a.atsms.conversations.get(convo.id).then((h) => h!.send("three way"));
     // Now let the whole storm settle.
     await hub.flush();
 
     // C sends after joining.
-    const ch = await c.atsms.get(convo.id);
+    const ch = await c.atsms.conversations.get(convo.id);
     expect(ch).not.toBeNull();
     await ch!.send("hey from c");
     await hub.flush();

@@ -160,11 +160,11 @@ test("warm operations do zero discovery fetches; snapshots persist and observe()
   expect(afterCold).toBeGreaterThan(0);
 
   // Warm: open + message exchange do ZERO further discovery reads.
-  const convo = await alice.atsms.open({ members: [bob.did] });
+  const convo = await alice.atsms.conversations.with(bob.did);
   await hub.flush();
   await convo.send("yo");
   await hub.flush();
-  const bobConvo = await bob.atsms.get(convo.id);
+  const bobConvo = await bob.atsms.conversations.get(convo.id);
   await bobConvo!.send("yoko");
   await hub.flush();
   expect(await texts(alice, convo.id)).toEqual(["yo", "yoko"]);
@@ -192,7 +192,7 @@ test("delivery failure invalidates the snapshot and retries on fresh data", asyn
   const alice = await client(hub, pds, 1, "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa");
   const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb");
 
-  const convo = await alice.atsms.open({ members: [bob.did] });
+  const convo = await alice.atsms.conversations.with(bob.did);
   await hub.flush();
   await convo.send("yo");
   await hub.flush();

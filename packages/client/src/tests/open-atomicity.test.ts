@@ -86,7 +86,7 @@ test("a delivery failure during open() leaves usable local state, and reopen rep
   const atsms = await ATSMS.create({ identity, storage, transport, pds: pds.forDid("did:plc:a"), rng, genesisWaitMs: 0 });
 
   // open() fails at delivery — but the epoch must already be established locally.
-  await expect(atsms.open({ members: ["did:plc:b"] })).rejects.toThrow();
+  await expect(atsms.conversations.with("did:plc:b")).rejects.toThrow();
   const groupId = (await storage.listEngineStateIds())[0]!;
   const blob: any = cborDecode((await storage.loadEngineState(groupId))!);
   expect(blob[6]).toBeGreaterThan(1); // ctrlSeq > 1 ⇒ the update was minted, not just the create
@@ -94,7 +94,7 @@ test("a delivery failure during open() leaves usable local state, and reopen rep
   // Reopening once delivery works returns a USABLE conversation (not the old
   // permanently-epochless one).
   failDelivery = false;
-  const handle = await atsms.open({ members: ["did:plc:b"] });
+  const handle = await atsms.conversations.with("did:plc:b");
   expect(handle.inner.hasSendableEpoch).toBe(true);
   await handle.send("works now"); // must not throw
 });

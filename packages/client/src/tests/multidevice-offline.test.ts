@@ -147,7 +147,7 @@ describe("peer with an OFFLINE second device", () => {
     const b2 = await client(hub, pds, 203, "did:plc:bob", false);
 
     // A opens knowing only Bob's DID → discovery pulls in BOTH bob devices.
-    const convo = await a.atsms.open({ members: [b1.did] });
+    const convo = await a.atsms.conversations.with(b1.did);
     await hub.flush();
     await convo.send("yo");
     await hub.flush();
@@ -157,7 +157,7 @@ describe("peer with an OFFLINE second device", () => {
     expect(await texts(b2, convo.id)).not.toContain("yo");
 
     // The reply direction — the exact live failure.
-    const b1h = await b1.atsms.get(convo.id);
+    const b1h = await b1.atsms.conversations.get(convo.id);
     expect(b1h).not.toBeNull();
     await b1h!.send("yo back");
     await hub.flush();
@@ -173,14 +173,14 @@ describe("peer with an OFFLINE second device", () => {
     const b2 = await client(hub, pds, 213, "did:plc:bob", true);
     const b3 = await client(hub, pds, 214, "did:plc:bob", true);
 
-    const convo = await a.atsms.open({ members: [b1.did] });
+    const convo = await a.atsms.conversations.with(b1.did);
     await hub.flush();
     await convo.send("yo");
     await hub.flush();
     for (const b of [b1, b2, b3]) expect(await texts(b, convo.id)).toContain("yo");
 
     // A reply from one device must reach A (and, ideally, the sibling devices).
-    const h = await b1.atsms.get(convo.id);
+    const h = await b1.atsms.conversations.get(convo.id);
     await h!.send("yo back");
     await hub.flush();
     expect(await texts(a, convo.id)).toContain("yo back");

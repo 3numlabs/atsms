@@ -159,7 +159,7 @@ async function assertGroupState(
 ): Promise<void> {
   const expected = [...new Set(expectedMemberDids)].sort();
   for (const d of all) {
-    const convo = await d.atsms.get(convoId);
+    const convo = await d.atsms.conversations.get(convoId);
     if (convo === null) continue; // never joined — nothing to assert
     const isMember = expected.includes(d.did);
 
@@ -186,7 +186,7 @@ async function assertDelivery(
   excluded: Device[],
   text: string,
 ): Promise<void> {
-  const convo = await speaker.atsms.get(convoId);
+  const convo = await speaker.atsms.conversations.get(convoId);
   await convo!.send(text);
   await relay.flush();
   for (const m of members) {
@@ -215,7 +215,7 @@ test("churn: add, re-add and remove a multi-device DID repeatedly", async () => 
   const all = [alice, bob, ...carols];
 
   // ── open a 2-party conversation ───────────────────────────────────────────
-  const convo = await alice.atsms.open({ members: [bob.did], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did] });
   await relay.flush();
   await assertGroupState(convo.id, all, [AL, BO], "after open");
   await assertDelivery(relay, convo.id, alice, [alice, bob], carols, "m1 hello bob");
@@ -223,20 +223,20 @@ test("churn: add, re-add and remove a multi-device DID repeatedly", async () => 
   // Three churn rounds: each adds Carol (3 devices), talks, removes her, talks.
   for (let round = 1; round <= 3; round++) {
     // ── add ────────────────────────────────────────────────────────────────
-    await alice.atsms.addMember(convo.id, CA);
+    await convo.addMember(CA);
     await relay.flush();
     await assertGroupState(convo.id, all, [AL, BO, CA], `round ${round} after add`);
 
     // Every Carol device joined — not just the first.
     for (const c of carols) {
-      expect((await c.atsms.get(convo.id))?.amMember, `round ${round}: ${c.label} joined`).toBe(true);
+      expect((await c.atsms.conversations.get(convo.id))?.amMember, `round ${round}: ${c.label} joined`).toBe(true);
     }
     // Everyone hears everyone, in both directions.
     await assertDelivery(relay, convo.id, alice, [bob, carol1, carol2, carol3], [], `r${round} from alice`);
     await assertDelivery(relay, convo.id, carol2, [alice, bob, carol1, carol3], [], `r${round} from carol2`);
 
     // ── remove ─────────────────────────────────────────────────────────────
-    await alice.atsms.removeMember(convo.id, CA);
+    await convo.removeMember(CA);
     await relay.flush();
     await assertGroupState(convo.id, all, [AL, BO], `round ${round} after remove`);
 
@@ -246,7 +246,7 @@ test("churn: add, re-add and remove a multi-device DID repeatedly", async () => 
         c.events.some((e) => e.startsWith("removed-from-conversation")),
         `round ${round}: ${c.label} was told it was removed`,
       ).toBe(true);
-      const convoC = (await c.atsms.get(convo.id)) as ATSMSConversation;
+      const convoC = (await c.atsms.conversations.get(convo.id)) as ATSMSConversation;
       await expect(convoC.send("i should not be able to")).rejects.toThrow(/no longer a member/);
       c.events.length = 0; // reset for the next round's assertion
     }
@@ -271,16 +271,16 @@ test("churn: a removed member's devices can be re-added and talk again", async (
   const bob1 = await device(relay, pds, 2, BO, "bob/1");
   const bob2 = await device(relay, pds, 3, BO, "bob/2");
 
-  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [BO] });
   await relay.flush();
   await assertDelivery(relay, convo.id, alice, [bob1, bob2], [], "before removal");
 
-  await alice.atsms.removeMember(convo.id, BO);
+  await convo.removeMember(BO);
   await relay.flush();
   await assertGroupState(convo.id, [alice, bob1, bob2], [AL], "after removing bob");
 
   // Re-add: the welcome must still fit, and BOTH devices must come back.
-  await alice.atsms.addMember(convo.id, BO);
+  await convo.addMember(BO);
   await relay.flush();
   await assertGroupState(convo.id, [alice, bob1, bob2], [AL, BO], "after re-adding bob");
   await assertDelivery(relay, convo.id, alice, [bob1, bob2], [], "after re-add");
@@ -342,13 +342,13 @@ test("churn: a device that re-keyed since the directory snapshot is still re-add
   };
 
   const bob = await bootBob(2, "bob");
-  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [BO] });
   await relay.flush();
   await assertDelivery(relay, convo.id, alice, [bob], [], "before");
 
-  await alice.atsms.removeMember(convo.id, BO);
+  await convo.removeMember(BO);
   await relay.flush();
-  expect((await bob.atsms.get(convo.id))!.amMember).toBe(false);
+  expect((await bob.atsms.conversations.get(convo.id))!.amMember).toBe(false);
   await bob.atsms.close();
 
   // The wipe: same cert and fingerprint, brand-new prekey ring, republished.
@@ -357,7 +357,7 @@ test("churn: a device that re-keyed since the directory snapshot is still re-add
   await relay.flush();
 
   // Re-add. Admission material must be refetched despite the warm snapshot.
-  await alice.atsms.addMember(convo.id, BO);
+  await convo.addMember(BO);
   await relay.flush();
 
   // Diagnostic on failure: what did the re-keyed device actually see?
@@ -366,8 +366,8 @@ test("churn: a device that re-keyed since the directory snapshot is still re-add
     bob2.events.some((e) => e.startsWith("re-admission-failed")),
     `a failed re-admission must never be silent — events: ${seen}`,
   ).toBe(false);
-  expect((await bob2.atsms.get(convo.id)) !== null, `bob2 has no conversation — events: ${seen}`).toBe(true);
-  expect((await bob2.atsms.get(convo.id))?.amMember, "the re-keyed device rejoined").toBe(true);
+  expect((await bob2.atsms.conversations.get(convo.id)) !== null, `bob2 has no conversation — events: ${seen}`).toBe(true);
+  expect((await bob2.atsms.conversations.get(convo.id))?.amMember, "the re-keyed device rejoined").toBe(true);
   await assertDelivery(relay, convo.id, alice, [bob2], [], "after re-add of a re-keyed device");
   await assertDelivery(relay, convo.id, bob2, [alice], [], "the re-keyed device speaks");
 }, 60000);
@@ -385,18 +385,18 @@ test("leave: the leaver goes quiet, the group heals lazily, and the story is 'le
   const carol2 = await device(relay, pds, 4, CA, "carol/2");
   const all = [alice, bob, carol1, carol2];
 
-  const convo = await alice.atsms.open({ members: [BO, CA] });
+  const convo = await alice.atsms.conversations.createGroup({ members: [BO, CA] });
   await relay.flush();
   await assertDelivery(relay, convo.id, alice, [bob, carol1, carol2], [], "before leaving");
 
   // Carol leaves from ONE of her devices. She is not an admin — leaving needs
   // no permission (same-DID removal is never admin-gated).
-  await carol1.atsms.leave(convo.id);
+  await (await carol1.atsms.conversations.get(convo.id))!.leave();
   await relay.flush();
 
   await assertGroupState(convo.id, all, [AL, BO], "after carol left");
   for (const c of [carol1, carol2]) {
-    const convoC = await c.atsms.get(convo.id);
+    const convoC = await c.atsms.conversations.get(convo.id);
     expect(convoC!.departure, `${c.label} knows it LEFT, not that it was removed`).toBe("left");
     expect((await c.storage.getConversation(convo.id))!.metadata?.left, `${c.label} record.left`).toBe(true);
     await expect(convoC!.send("still here?")).rejects.toThrow(/you left/);
@@ -420,32 +420,32 @@ test("leave: a sole admin must appoint a successor first", async () => {
   const alice = await device(relay, pds, 1, AL, "alice"); // creator ⇒ sole admin
   const bob = await device(relay, pds, 2, BO, "bob");
 
-  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [BO] });
   await relay.flush();
 
-  const aliceConvo = await alice.atsms.get(convo.id);
+  const aliceConvo = await alice.atsms.conversations.get(convo.id);
   expect(aliceConvo!.wouldStrandGroup, "a UI should offer succession first").toBe(true);
-  await expect(alice.atsms.leave(convo.id)).rejects.toThrow(/LastAdmin/);
+  await expect(aliceConvo!.leave()).rejects.toThrow(/LastAdmin/);
   expect(aliceConvo!.amMember, "a refused leave changes nothing").toBe(true);
 
   // Appoint Bob, then leaving is allowed and Bob can still run the group.
-  await alice.atsms.grantAdmin(convo.id, BO);
+  await aliceConvo!.grantAdmin(BO);
   await relay.flush();
   expect(aliceConvo!.wouldStrandGroup).toBe(false);
-  await alice.atsms.leave(convo.id);
+  await convo.leave();
   await relay.flush();
 
   expect(aliceConvo!.departure).toBe("left");
-  const bobConvo = await bob.atsms.get(convo.id);
+  const bobConvo = await bob.atsms.conversations.get(convo.id);
   expect(bobConvo!.amMember).toBe(true);
   expect(bobConvo!.members).toEqual([BO]);
 
   // The successor's admin rights are real: he can still add someone.
   const CA = "did:plc:cccccccccccccccccccccccc";
   const carol = await device(relay, pds, 3, CA, "carol");
-  await bob.atsms.addMember(convo.id, CA);
+  await bobConvo!.addMember(CA);
   await relay.flush();
-  expect((await carol.atsms.get(convo.id))?.amMember, "the successor could still add").toBe(true);
+  expect((await carol.atsms.conversations.get(convo.id))?.amMember, "the successor could still add").toBe(true);
 }, 60000);
 
 test("leave: the last member out is a local act, and a leaver can be re-added", async () => {
@@ -456,19 +456,19 @@ test("leave: the last member out is a local act, and a leaver can be re-added", 
   const alice = await device(relay, pds, 1, AL, "alice");
   const bob = await device(relay, pds, 2, BO, "bob");
 
-  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [BO] });
   await relay.flush();
   await assertDelivery(relay, convo.id, alice, [bob], [], "before bob leaves");
 
   // Bob leaves, then Alice invites him back: re-admission after a LEAVE is the
   // same path as after a removal, and it must clear the left/removed story.
-  await bob.atsms.leave(convo.id);
+  await (await bob.atsms.conversations.get(convo.id))!.leave();
   await relay.flush();
-  expect((await bob.atsms.get(convo.id))!.departure).toBe("left");
+  expect((await bob.atsms.conversations.get(convo.id))!.departure).toBe("left");
 
-  await alice.atsms.addMember(convo.id, BO);
+  await convo.addMember(BO);
   await relay.flush();
-  const bobConvo = await bob.atsms.get(convo.id);
+  const bobConvo = await bob.atsms.conversations.get(convo.id);
   expect(bobConvo!.amMember, "the leaver came back").toBe(true);
   expect(bobConvo!.departure).toBe(null);
   const record = await bob.storage.getConversation(convo.id);
@@ -477,11 +477,11 @@ test("leave: the last member out is a local act, and a leaver can be re-added", 
   await assertDelivery(relay, convo.id, bob, [alice], [], "the returning member speaks");
 
   // Now Alice is alone: leaving is recorded locally, with no ops on the wire.
-  await alice.atsms.removeMember(convo.id, BO);
+  await convo.removeMember(BO);
   await relay.flush();
   const before = relay.largestEnvelope;
-  await alice.atsms.leave(convo.id);
-  const aliceConvo = await alice.atsms.get(convo.id);
+  await convo.leave();
+  const aliceConvo = await alice.atsms.conversations.get(convo.id);
   expect(aliceConvo!.departure, "last one out still reads as 'left'").toBe("left");
   expect((await alice.storage.getConversation(convo.id))!.metadata?.left).toBe(true);
   expect(relay.largestEnvelope, "nothing was sent — there was nobody to tell").toBe(before);
@@ -500,7 +500,7 @@ test("a healthy member is never told it might have been removed (C-fallback fals
   const alice = await device(relay, pds, 1, AL, "alice");
   const bob = await device(relay, pds, 2, BO, "bob");
 
-  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [BO] });
   await relay.flush();
   await assertDelivery(relay, convo.id, bob, [alice], [], "healthy traffic");
 
@@ -512,7 +512,7 @@ test("a healthy member is never told it might have been removed (C-fallback fals
   }
   await relay.flush();
 
-  const aliceConvo = await alice.atsms.get(convo.id);
+  const aliceConvo = await alice.atsms.conversations.get(convo.id);
   expect(aliceConvo!.inner.unopenableCount, "the junk really did fail to open").toBeGreaterThan(0);
   // Give the health tick several chances to jump to conclusions.
   await new Promise((r) => setTimeout(r, 400));
@@ -537,17 +537,17 @@ test("DM vs group: kind is fixed at creation, and each rule holds", async () => 
   const carol = await device(relay, pds, 3, CA, "carol");
 
   // R1: exactly one DM per pair — opening it again returns the same one.
-  const dm = await alice.atsms.open({ members: [BO] });
+  const dm = await alice.atsms.conversations.with(BO);
   await relay.flush();
   expect(dm.kind).toBe("dm");
-  const dmAgain = await alice.atsms.open({ members: [BO] });
+  const dmAgain = await alice.atsms.conversations.with(BO);
   expect(dmAgain.id, "the DM with Bob is a single conversation").toBe(dm.id);
   // …and both sides agree on the kind, because it rides in the create op.
-  expect((await bob.atsms.get(dm.id))!.kind).toBe("dm");
+  expect((await bob.atsms.conversations.get(dm.id))!.kind).toBe("dm");
 
   // R2: you cannot add to a DM — a group with all three is the way.
-  await expect(alice.atsms.addMember(dm.id, CA)).rejects.toThrow(/DirectConversation/);
-  const group = await alice.atsms.open({ members: [BO, CA], kind: "group" });
+  await expect((await alice.atsms.conversations.get(dm.id))!.addMember(CA)).rejects.toThrow(/DirectConversation/);
+  const group = await alice.atsms.conversations.createGroup({ members: [BO, CA] });
   await relay.flush();
   expect(group.kind).toBe("group");
   expect(group.id, "the group is a NEW conversation, not the DM grown").not.toBe(dm.id);
@@ -555,21 +555,21 @@ test("DM vs group: kind is fixed at creation, and each rule holds", async () => 
   await assertDelivery(relay, dm.id, alice, [bob], [], "the DM still works");
 
   // R3: the same people may share any number of groups.
-  const group2 = await alice.atsms.open({ members: [BO, CA], kind: "group" });
+  const group2 = await alice.atsms.conversations.createGroup({ members: [BO, CA] });
   await relay.flush();
   expect(group2.id, "a second group with the same members is its own conversation").not.toBe(group.id);
 
   // R4: a group that shrinks to two is still a group — it keeps its member
   // panel, its name, and the ability to change membership.
-  await alice.atsms.removeMember(group.id, CA);
+  await (await alice.atsms.conversations.get(group.id))!.removeMember(CA);
   await relay.flush();
   expect(group.members.length).toBe(2);
   expect(group.kind, "still a group at two members").toBe("group");
   expect((await alice.storage.getConversation(group.id))!.metadata?.kind).toBe("group");
-  await expect(alice.atsms.addMember(group.id, CA)).resolves.toBeUndefined();
+  await expect((await alice.atsms.conversations.get(group.id))!.addMember(CA)).resolves.toBeUndefined();
   await relay.flush();
 
   // …and it is still NOT the DM with Bob: opening that returns the DM.
-  const dmStill = await alice.atsms.open({ members: [BO] });
+  const dmStill = await alice.atsms.conversations.with(BO);
   expect(dmStill.id).toBe(dm.id);
 }, 60000);

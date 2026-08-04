@@ -29,11 +29,14 @@ dcgka source); runtime (bun) still runs dcgka source.
 ## Architecture — the two surfaces + their modules
 
 The target API (built, mostly): `ATSMS.create({ identity, storage, transport, pds, rng })` →
-`atsms.send({to, payload})` (stateless) and `atsms.conversations` / `atsms.open({members})` (stateful).
+`atsms.send({to, payload})` (stateless) and the stateful surface `atsms.conversations.with(did)` /
+`.createGroup({members, title})` / `.get(id)` / `.all$`, with membership verbs on the handle
+(`convo.addMember/removeMember/grantAdmin/leave`). Two open-verbs on purpose: a DM always exists
+(idempotent per pair), a group is created (any number with the same people).
 
 | Module (`src/lib/`) | Role |
 |---|---|
-| **`client/`** | `ATSMS` — the top-level client: `create()` wiring, inbound envelope **dispatch**, outbound **auto-routing**. `send({to,text})` (stateless one-shots), `open({members})` + `get()` (conversations), `received$`, `conversations$`. |
+| **`client/`** | `ATSMS` — the top-level client: `create()` wiring, inbound envelope **dispatch**, outbound **auto-routing**. `send({to,text})` (stateless one-shots), `conversations.with/createGroup/get/all$`, `peers`, `myDevices()`/`enrolDevice()`, `received$`. |
 | **`conversations/`** | Stateful DCGKA surface. `Conversation` (app-facing: `messages$`, `send`, `addMember`, `deliverEnvelope`) wraps `ConversationSession` (sealed + persisted: wraps a `@atsms/dcgka` `Session` + `SealLayer`; every op returns per-recipient `Outbound {to,url,envelope}`; engine state persisted via `Session.serialize()`). |
 | **`send/`** | Stateless **X509 baseline** one-shots: sign-then-encrypt (`sealOneShot`/`openOneShot` over the salvaged `prepareMessageForSending` + `decryptAndVerifyMessageSignature`), deterministic `oneShotConvoId`, `oneShotSenderProblem` (signer cert must resolve under the claimed DID). Reaches recipients who are NOT DCGKA-capable. |
 | **`identity/`** | `ATSMSPdsClient` (implements dcgka's `PdsClient` over an `@atproto/api` `Agent`; did:web + did:plc), `ATSMSDeviceIdentity` (cert → `DeviceID`/fingerprint + the `PrekeyManager` ring, persisted as a `device_state` blob), capability discovery (`resolveDeviceCapabilities`/`selectGroupPath`), `cert-key` bridge (`deviceFingerprintFromCert/…FromKey`, `identityScalarFromKey`), `seed` (PRF-seed derivation — **debug only**, see below). |

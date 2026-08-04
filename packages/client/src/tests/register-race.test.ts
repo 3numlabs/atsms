@@ -160,13 +160,13 @@ test("a conversations$-driven get() during open() must not shadow the live sessi
   // The reference CLI's live feed, verbatim: eagerly grab a handle for every
   // conversation the storage observer reports. This is the racing call.
   const handles: unknown[] = [];
-  creator.atsms.conversations$.subscribe((convos) => {
+  creator.atsms.conversations.all$.subscribe((convos) => {
     void (async () => {
-      for (const c of convos) handles.push(await creator.atsms.get(c.id));
+      for (const c of convos) handles.push(await creator.atsms.conversations.get(c.id));
     })();
   });
 
-  const convo = await creator.atsms.open({ members: [responder.did] });
+  const convo = await creator.atsms.conversations.with(responder.did);
   await hub.settle();
   await convo.send("yo");
   await hub.settle();
@@ -174,7 +174,7 @@ test("a conversations$-driven get() during open() must not shadow the live sessi
   // The responder bootstrapped and sees the message.
   const rConvos = await responder.storage.getConversations();
   expect(rConvos.length).toBe(1);
-  const rHandle = await responder.atsms.get(rConvos[0]!.id);
+  const rHandle = await responder.atsms.conversations.get(rConvos[0]!.id);
   expect((await responder.storage.getMessages(rConvos[0]!.id)).map((m) => textOf(m.content))).toContain("yo");
 
   // The reply must reach the creator (pre-fix: dispatched to the zombie,
@@ -189,6 +189,6 @@ test("a conversations$-driven get() during open() must not shadow the live sessi
   // And the persisted engine state must still hold the established epoch
   // (pre-fix: the zombie's persist clobbered it back to the create-only,
   // epochless snapshot).
-  const reloaded = await creator.atsms.get(convo.id);
+  const reloaded = await creator.atsms.conversations.get(convo.id);
   expect(reloaded!.inner.awaitingFirstEpoch).toBe(false);
 }, 15000);

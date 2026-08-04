@@ -156,7 +156,7 @@ async function addWithDroppedAddFrame(repairAfterMs: number) {
   const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb", repairAfterMs);
   const carol = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc", repairAfterMs);
 
-  const convo = await alice.atsms.open({ members: [bob.did], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did] });
   await hub.flush();
   await convo.send("yo");
   await hub.flush();
@@ -164,7 +164,7 @@ async function addWithDroppedAddFrame(repairAfterMs: number) {
   // The relay loses the next envelope to Bob: the ADD of Carol's device. The
   // post-add update then reaches Bob, opens, and buffers on the missing dep.
   hub.dropNext.set(bob.did, 1);
-  await alice.atsms.addMember(convo.id, carol.did);
+  await convo.addMember(carol.did);
   await hub.flush();
   await convo.send("welcome carol");
   await hub.flush();
@@ -175,7 +175,7 @@ test("a dropped add frame heals via a §8 repair request", async () => {
   const { hub, alice, bob, carol, convo } = await addWithDroppedAddFrame(120);
   expect(hub.dropped).toBe(1);
   expect(await texts(bob, convo.id)).toEqual(["yo"]); // stalled pre-repair
-  const bobConvo = await bob.atsms.get(convo.id);
+  const bobConvo = await bob.atsms.conversations.get(convo.id);
   expect(bobConvo!.inner.bufferedFrames).toBeGreaterThan(0);
 
   // The §8 trigger fires (gap persisted past repairAfterMs), the sealed repair
@@ -206,7 +206,7 @@ test("repair disabled (repairAfterMs 0): the gap never heals — the control", a
   await sleep(500); // longer than the positive test's repair window
   await hub.flush();
   expect(await texts(bob, convo.id)).toEqual(["yo"]); // still stalled
-  const bobConvo = await bob.atsms.get(convo.id);
+  const bobConvo = await bob.atsms.conversations.get(convo.id);
   expect(bobConvo!.inner.bufferedFrames).toBeGreaterThan(0);
 
   await alice.atsms.close();

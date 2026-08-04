@@ -133,7 +133,7 @@ test("with a sink: seams emit timing samples, operations emit phase spans", asyn
   const alice = await client(hub, pds, 1, "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa", (m) => samples.push(m));
   const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb");
 
-  const convo = await alice.atsms.open({ members: [bob.did], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did] });
   await hub.flush();
   await convo.send("yo");
   await hub.flush();
@@ -164,9 +164,9 @@ test("addMember emits a span with rounds/envelopes; no sink means no wrapping", 
   const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb"); // no sink — must not throw anywhere
   const carol = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc");
 
-  const convo = await alice.atsms.open({ members: [bob.did], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did] });
   await hub.flush();
-  await alice.atsms.addMember(convo.id, carol.did);
+  await convo.addMember(carol.did);
   await hub.flush();
 
   const addSpan = samples.find((m) => m.kind === "op" && m.name === "addMember");
@@ -188,12 +188,12 @@ test("batched add: a multi-device DID joins in ONE round and everyone converges"
   const carol1 = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc");
   const carol2 = await client(hub, pds, 4, "did:plc:cccccccccccccccccccccccc");
 
-  const convo = await alice.atsms.open({ members: [bob.did], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did] });
   await hub.flush();
   await convo.send("yo");
   await hub.flush();
 
-  await alice.atsms.addMember(convo.id, carol1.did);
+  await convo.addMember(carol1.did);
   await hub.flush();
 
   const addSpan = samples.find((m) => m.kind === "op" && m.name === "addMember");
@@ -209,7 +209,7 @@ test("batched add: a multi-device DID joins in ONE round and everyone converges"
   expect(await texts(carol2)).toContain("welcome carols");
 
   // And a newcomer can speak to everyone.
-  const c2Convo = await carol2.atsms.get(convo.id);
+  const c2Convo = await carol2.atsms.conversations.get(convo.id);
   await c2Convo!.send("both here");
   await hub.flush();
   expect(await texts(alice)).toEqual(["yo", "welcome carols", "both here"]);

@@ -139,11 +139,11 @@ test("consecutive adds keep the existing member receiving (welcome is point-to-p
   const dave = await client(hub, pds, 4, "did:plc:dddddddddddddddddddddddd");
 
   // Two-party conversation, both directions working.
-  const convo = await alice.atsms.open({ members: [bob.did], kind: "group" });
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did] });
   await hub.flush();
   await convo.send("yo");
   await hub.flush();
-  const bobConvo = await bob.atsms.get(convo.id);
+  const bobConvo = await bob.atsms.conversations.get(convo.id);
   await bobConvo!.send("yoko");
   await hub.flush();
   expect(await texts(alice, convo.id)).toEqual(["yo", "yoko"]);
@@ -153,9 +153,9 @@ test("consecutive adds keep the existing member receiving (welcome is point-to-p
   // DID with several devices. Each welcome routes to its joiner only; the
   // SECOND round's control frames are where a ctrlSeq-numbered welcome used to
   // strand Bob (the frame after a welcome jumps the gap the welcome left).
-  await alice.atsms.addMember(convo.id, carol.did);
+  await convo.addMember(carol.did);
   await hub.flush();
-  await alice.atsms.addMember(convo.id, dave.did);
+  await convo.addMember(dave.did);
   await hub.flush();
 
   // Alice speaks: Bob (existing) and both newcomers must hear it.
@@ -180,19 +180,19 @@ test("removeMember: strong remove — the removed member reads nothing after; ot
   const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb");
   const carol = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc");
 
-  const convo = await alice.atsms.open({ members: [bob.did, carol.did] });
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did, carol.did] });
   await hub.flush();
   await convo.send("hello all three");
   await hub.flush();
   expect(await texts(carol, convo.id)).toEqual(["hello all three"]);
 
   // Alice (admin) removes Carol — one batched round (removes + healing update).
-  await alice.atsms.removeMember(convo.id, carol.did);
+  await convo.removeMember(carol.did);
   await hub.flush();
 
   // Rosters shrink everywhere — including on Bob, who only RECEIVED the ops.
   expect(convo.members.sort()).toEqual([alice.did, bob.did].sort());
-  const bobConvo = await bob.atsms.get(convo.id);
+  const bobConvo = await bob.atsms.conversations.get(convo.id);
   expect(bobConvo!.members.sort()).toEqual([alice.did, bob.did].sort());
   expect((await bob.storage.getConversation(convo.id))!.participantIds.sort()).toEqual(
     [alice.did, bob.did].sort(),
@@ -208,11 +208,11 @@ test("removeMember: strong remove — the removed member reads nothing after; ot
   expect(await texts(carol, convo.id)).toEqual(["hello all three"]);
 
   // Guards: a non-member and self are rejected loudly.
-  await expect(alice.atsms.removeMember(convo.id, carol.did)).rejects.toThrow(/not a member/);
-  await expect(alice.atsms.removeMember(convo.id, alice.did)).rejects.toThrow(/leave\(\)/);
+  await expect((await alice.atsms.conversations.get(convo.id))!.removeMember(carol.did)).rejects.toThrow(/not a member/);
+  await expect((await alice.atsms.conversations.get(convo.id))!.removeMember(alice.did)).rejects.toThrow(/leave\(\)/);
 
   // Non-admin removal is rejected by the engine (dgm §4).
-  await expect(bob.atsms.removeMember(convo.id, alice.did)).rejects.toThrow(/Unauthorized/);
+  await expect((await bob.atsms.conversations.get(convo.id))!.removeMember(alice.did)).rejects.toThrow(/Unauthorized/);
 }, 20000);
 
 test("a removed member's later messages are rejected by everyone — including the remover", async () => {
@@ -227,21 +227,21 @@ test("a removed member's later messages are rejected by everyone — including t
   const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb");
   const carol = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc");
 
-  const convo = await alice.atsms.open({ members: [bob.did, carol.did] });
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did, carol.did] });
   await hub.flush();
   // Everyone speaks first — this is what populates each member's receive tag
   // table with entries for the member about to be removed (the live shape).
   await convo.send("alice here");
   await hub.flush();
-  const carolConvo = await carol.atsms.get(convo.id);
+  const carolConvo = await carol.atsms.conversations.get(convo.id);
   await carolConvo!.send("carol here");
   await hub.flush();
-  const bobConvo = await bob.atsms.get(convo.id);
+  const bobConvo = await bob.atsms.conversations.get(convo.id);
   await bobConvo!.send("bob here");
   await hub.flush();
   expect(await texts(alice, convo.id)).toEqual(["alice here", "carol here", "bob here"]);
 
-  await alice.atsms.removeMember(convo.id, carol.did);
+  await convo.removeMember(carol.did);
   await hub.flush();
 
   // Carol's own client now refuses the send (always-notify: her removal was
@@ -268,14 +268,14 @@ test("the removed member is told: amMember flips, sends are refused, the record 
   const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb");
   const carol = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc");
 
-  const convo = await alice.atsms.open({ members: [bob.did, carol.did] });
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did, carol.did] });
   await hub.flush();
   await convo.send("hello all");
   await hub.flush();
-  const carolConvo = await carol.atsms.get(convo.id);
+  const carolConvo = await carol.atsms.conversations.get(convo.id);
   expect(carolConvo!.amMember).toBe(true);
 
-  await alice.atsms.removeMember(convo.id, carol.did);
+  await convo.removeMember(carol.did);
   await hub.flush();
 
   // Always-notify: the removal op is sealed to the device it removes.
@@ -288,7 +288,7 @@ test("the removed member is told: amMember flips, sends are refused, the record 
 
   // The remaining members are unaffected and still see each other.
   expect(alice.atsms.peers !== undefined).toBe(true);
-  const bobConvo = await bob.atsms.get(convo.id);
+  const bobConvo = await bob.atsms.conversations.get(convo.id);
   expect(bobConvo!.amMember).toBe(true);
   await bobConvo!.send("still here");
   await hub.flush();
