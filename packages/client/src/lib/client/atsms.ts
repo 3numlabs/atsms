@@ -176,6 +176,11 @@ export class ATSMSConversation {
     return this.convo.amMember;
   }
 
+  /** Admin DIDs — who may add, remove, and grant admin (dgm §4). */
+  get admins(): string[] {
+    return this.convo.admins;
+  }
+
   /** How this device stopped being a member ("left" | "removed"), or null. */
   get departure(): "left" | "removed" | null {
     return this.convo.departure;

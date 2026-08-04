@@ -119,6 +119,11 @@ export class Conversation {
     return undefined;
   }
 
+  /** Admin DIDs (dgm §4: who may add, remove, and grant admin). */
+  get admins(): string[] {
+    return [...this.session.engine.admins()];
+  }
+
   /** Am I still a member? False once my own removal is processed — the
    *  removal op is sealed to the device it removes, so this flips without any
    *  polling. A client MUST stop sending (and say so). */
