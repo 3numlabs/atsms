@@ -713,16 +713,10 @@ export class ATSMS {
       // Only a conversation's tag table can recognize it — offer to all; the
       // seal layer dedups (EnvelopeID) and buffers unknown tags briefly.
       for (const handle of this.openConvos.values()) {
-        const wasMember = handle.inner.amMember;
+        // `removed-from-conversation` is emitted by the conversation itself —
+        // membership ops arrive on this path OR unsealed via ingestFrame.
         const repairs = await handle.inner.deliverEnvelope(envelope);
         await this.route(repairs, handle.inner);
-        // The removal op is sealed to the device it removes, so this is how a
-        // removed device finds out — immediately, on the delivery that carries
-        // it (the conversation record's `removed` flag is written by the same
-        // delivery, so a reloading client sees it too).
-        if (wasMember && !handle.inner.amMember) {
-          this.onEvent("removed-from-conversation", handle.id);
-        }
       }
       return;
     }
@@ -827,9 +821,27 @@ export class ATSMS {
       // Known group (e.g. a redelivered welcome, or an asym-sealed frame from
       // the pre-epoch window) — hand the frame to its session.
       const handle = this.openConvos.get(groupId)!;
-      if (parsed.body.cls !== CLS_WELCOME) {
-        await this.route(await handle.inner.ingestFrame(frame), handle.inner);
+      if (parsed.body.cls === CLS_WELCOME) {
+        // A welcome for a group we already hold is normally redundant. But if
+        // we are NOT a member of it, this is a RE-ADMISSION (ordering-auth A4:
+        // a re-added member): the session we hold was excluded and can never
+        // derive the epochs minted since, so rebuild from the welcome. Stored
+        // history stays — only the crypto state is replaced.
+        if (!handle.inner.amMember) {
+          const keys = this.admissionKeys(frame);
+          if (keys === null) {
+            this.onEvent("drop-admission-keys", `re-admission welcome for group ${groupId}`);
+            return;
+          }
+          const { conversation, outbound } = await Conversation.join(this.context(), { keys, welcomeFrame: frame });
+          this.register(conversation);
+          this.onEvent("rejoined", groupId);
+          if (this.transport.ingressUrl !== null) await conversation.advertiseEndpoint(this.transport.ingressUrl);
+          await this.route(outbound, conversation);
+        }
+        return;
       }
+      await this.route(await handle.inner.ingestFrame(frame), handle.inner);
       return;
     }
 

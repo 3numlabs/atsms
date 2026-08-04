@@ -1,0 +1,294 @@
+/**
+ * Membership churn: the scenario suite for add / remove / re-add over the real
+ * client stack (DID-routed delivery, multi-device DIDs, batched ops).
+ *
+ * Every live membership bug so far — the welcome ctrlSeq gap, strong remove at
+ * the remover, the welcome-size blowup on re-add — was a *sequence* bug that a
+ * single add or a single remove could not surface. This suite drives sequences
+ * and asserts the whole contract after each step:
+ *
+ *   1. membership   — every client agrees on the roster (and the stored record
+ *                     matches, since that is what the UI renders)
+ *   2. delivery     — every current member receives what any member sends
+ *   3. exclusion    — non-members receive nothing new and cannot send
+ *   4. events       — the client-visible event stream says what happened
+ *   5. size         — sealed material stays inside the envelope bucket, so the
+ *                     Nth round works as well as the first
+ */
+
+import type { PdsClient, PdsRecordView, PutResult } from "@atsms/dcgka";
+import { Database } from "bun:sqlite";
+import { expect, test } from "bun:test";
+
+import { ATSMS, type ATSMSConversation } from "../lib/client/atsms.js";
+import { textOf } from "../lib/format/index.js";
+import { ATSMSDeviceIdentity } from "../lib/identity/device-identity.js";
+import { SQLiteAdapter } from "../lib/storage/sqlite-adapter.js";
+import type { EnvelopeTransport } from "../lib/transport/envelope-transport.js";
+import { generateTestEndpointCertificate } from "./test-certificates.js";
+
+class Wrap {
+  private db = new Database(":memory:");
+  exec(s: string): void {
+    this.db.exec(s);
+  }
+  prepare(s: string) {
+    const st = this.db.prepare(s);
+    return {
+      run: (...p: unknown[]) => st.run(...(p as never[])),
+      get: (...p: unknown[]) => st.get(...(p as never[])),
+      all: (...p: unknown[]) => st.all(...(p as never[])),
+    };
+  }
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+}
+const rngOf = (seed: number) => {
+  let s = seed >>> 0;
+  return (n: number) => {
+    const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      out[i] = (s >>> 24) & 0xff;
+    }
+    return out;
+  };
+};
+
+class SharedPds {
+  private store = new Map<string, unknown>();
+  forDid(myDid: string): PdsClient {
+    const key = (repo: string, c: string, rk: string) => `${repo} ${c} ${rk}`;
+    return {
+      putRecord: async (c, rk, value): Promise<PutResult> => {
+        this.store.set(key(myDid, c, rk), value);
+        return { uri: `at://${myDid}/${c}/${rk}` };
+      },
+      deleteRecord: async (c, rk): Promise<void> => {
+        this.store.delete(key(myDid, c, rk));
+      },
+      getRecord: async (repo, c, rk): Promise<PdsRecordView | null> => {
+        const v = this.store.get(key(repo, c, rk));
+        return v === undefined ? null : { uri: `at://${repo}/${c}/${rk}`, value: v };
+      },
+      listRecords: async (repo, c): Promise<PdsRecordView[]> => {
+        const out: PdsRecordView[] = [];
+        for (const [k, v] of this.store) {
+          const [r, coll, rk] = k.split(" ");
+          if (r === repo && coll === c) out.push({ uri: `at://${repo}/${coll}/${rk}`, value: v });
+        }
+        return out;
+      },
+    };
+  }
+}
+
+/** DID-routed relay: one envelope reaches every device of the addressed DID,
+ *  exactly like the worker's fan-out — and records the largest envelope seen. */
+class Relay {
+  private handlers = new Map<string, Set<(e: Uint8Array) => Promise<void>>>();
+  private queue: Array<{ did: string; env: Uint8Array }> = [];
+  largestEnvelope = 0;
+  post(did: string, env: Uint8Array): void {
+    this.largestEnvelope = Math.max(this.largestEnvelope, env.length);
+    this.queue.push({ did, env });
+  }
+  async flush(): Promise<void> {
+    let guard = 0;
+    while (this.queue.length > 0) {
+      if (guard++ > 20000) throw new Error("livelock");
+      const { did, env } = this.queue.shift()!;
+      for (const h of this.handlers.get(did) ?? []) await h(env);
+    }
+  }
+  transportFor(did: string): EnvelopeTransport {
+    return {
+      ingressUrl: `loop://${encodeURIComponent(did)}`,
+      deliverToUrl: async (url, env) => this.post(decodeURIComponent(url.replace("loop://", "")), env),
+      deliverToDid: async (target, env) => this.post(target, env),
+      start: async (onEnvelope) => {
+        let set = this.handlers.get(did);
+        if (set === undefined) this.handlers.set(did, (set = new Set()));
+        set.add(onEnvelope);
+      },
+      stop: async () => {},
+    };
+  }
+}
+
+interface Device {
+  label: string;
+  did: string;
+  storage: SQLiteAdapter;
+  atsms: ATSMS;
+  events: string[];
+}
+
+/** One device. Several devices sharing a DID model a multi-device user. */
+async function device(relay: Relay, pds: SharedPds, seed: number, did: string, label: string): Promise<Device> {
+  const { cert, privateKey } = await generateTestEndpointCertificate(did, `${seed}.example`, "atsms.email");
+  const storage = new SQLiteAdapter(new Wrap() as never);
+  const rng = rngOf(seed);
+  const myPds = pds.forDid(did);
+  const identity = await ATSMSDeviceIdentity.load({ did, certificatePEM: cert, privateKeyPEM: privateKey, storage, rng });
+  await myPds.putRecord("at.atsms.x509", identity.fingerprint, { $type: "at.atsms.x509", certificate: cert });
+  const events: string[] = [];
+  const atsms = await ATSMS.create({
+    identity,
+    storage,
+    transport: relay.transportFor(did),
+    pds: myPds,
+    rng,
+    onEvent: (kind, detail) => events.push(`${kind}: ${detail}`),
+    genesisWaitMs: 0,
+    peerMaxAgeMs: 0, // roster changes must be seen immediately in tests
+  });
+  return { label, did, storage, atsms, events };
+}
+
+const texts = async (d: Device, convoId: string): Promise<string[]> =>
+  (await d.storage.getMessages(convoId)).map((m) => textOf(m.content) ?? "");
+
+/** The full contract check, run after every churn step. */
+async function assertGroupState(
+  convoId: string,
+  all: Device[],
+  expectedMemberDids: string[],
+  note: string,
+): Promise<void> {
+  const expected = [...new Set(expectedMemberDids)].sort();
+  for (const d of all) {
+    const convo = await d.atsms.get(convoId);
+    if (convo === null) continue; // never joined — nothing to assert
+    const isMember = expected.includes(d.did);
+
+    // (1) membership, from the engine AND from the stored record the UI reads.
+    expect(convo.amMember, `${note}: ${d.label} amMember`).toBe(isMember);
+    if (isMember) {
+      expect([...convo.members].sort(), `${note}: ${d.label} roster`).toEqual(expected);
+      const record = await d.storage.getConversation(convoId);
+      expect(record?.metadata?.removed ?? false, `${note}: ${d.label} record.removed`).toBe(false);
+      expect([...(record?.participantIds ?? [])].sort(), `${note}: ${d.label} record roster`).toEqual(expected);
+    } else {
+      const record = await d.storage.getConversation(convoId);
+      expect(record?.metadata?.removed, `${note}: ${d.label} record.removed`).toBe(true);
+    }
+  }
+}
+
+/** Everyone in `members` hears `speaker`; everyone in `excluded` does not. */
+async function assertDelivery(
+  relay: Relay,
+  convoId: string,
+  speaker: Device,
+  members: Device[],
+  excluded: Device[],
+  text: string,
+): Promise<void> {
+  const convo = await speaker.atsms.get(convoId);
+  await convo!.send(text);
+  await relay.flush();
+  for (const m of members) {
+    expect(await texts(m, convoId), `${m.label} should hear "${text}" from ${speaker.label}`).toContain(text);
+  }
+  for (const e of excluded) {
+    expect(await texts(e, convoId), `${e.label} must NOT hear "${text}"`).not.toContain(text);
+  }
+}
+
+test("churn: add, re-add and remove a multi-device DID repeatedly", async () => {
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+  const CA = "did:plc:cccccccccccccccccccccccc";
+
+  const alice = await device(relay, pds, 1, AL, "alice");
+  const bob = await device(relay, pds, 2, BO, "bob");
+  // Carol has THREE devices — the live shape that produced three add ops per
+  // add, three remove ops per remove, and three welcomes per round.
+  const carol1 = await device(relay, pds, 3, CA, "carol/1");
+  const carol2 = await device(relay, pds, 4, CA, "carol/2");
+  const carol3 = await device(relay, pds, 5, CA, "carol/3");
+  const carols = [carol1, carol2, carol3];
+  const all = [alice, bob, ...carols];
+
+  // ── open a 2-party conversation ───────────────────────────────────────────
+  const convo = await alice.atsms.open({ members: [bob.did] });
+  await relay.flush();
+  await assertGroupState(convo.id, all, [AL, BO], "after open");
+  await assertDelivery(relay, convo.id, alice, [alice, bob], carols, "m1 hello bob");
+
+  // Three churn rounds: each adds Carol (3 devices), talks, removes her, talks.
+  for (let round = 1; round <= 3; round++) {
+    // ── add ────────────────────────────────────────────────────────────────
+    await alice.atsms.addMember(convo.id, CA);
+    await relay.flush();
+    await assertGroupState(convo.id, all, [AL, BO, CA], `round ${round} after add`);
+
+    // Every Carol device joined — not just the first.
+    for (const c of carols) {
+      expect((await c.atsms.get(convo.id))?.amMember, `round ${round}: ${c.label} joined`).toBe(true);
+    }
+    // Everyone hears everyone, in both directions.
+    await assertDelivery(relay, convo.id, alice, [bob, carol1, carol2, carol3], [], `r${round} from alice`);
+    await assertDelivery(relay, convo.id, carol2, [alice, bob, carol1, carol3], [], `r${round} from carol2`);
+
+    // ── remove ─────────────────────────────────────────────────────────────
+    await alice.atsms.removeMember(convo.id, CA);
+    await relay.flush();
+    await assertGroupState(convo.id, all, [AL, BO], `round ${round} after remove`);
+
+    // (4) the removed devices were TOLD, and say so to their UI.
+    for (const c of carols) {
+      expect(
+        c.events.some((e) => e.startsWith("removed-from-conversation")),
+        `round ${round}: ${c.label} was told it was removed`,
+      ).toBe(true);
+      const convoC = (await c.atsms.get(convo.id)) as ATSMSConversation;
+      await expect(convoC.send("i should not be able to")).rejects.toThrow(/no longer a member/);
+      c.events.length = 0; // reset for the next round's assertion
+    }
+    // (3) exclusion: post-removal traffic reaches the remaining members only.
+    await assertDelivery(relay, convo.id, bob, [alice], carols, `r${round} after remove`);
+  }
+
+  // (5) size: sealed material stays well inside the 64 KiB bucket even after
+  // repeated add/remove rounds. Welcomes used to nest welcomes and blow it.
+  expect(relay.largestEnvelope, "largest sealed envelope across all churn").toBeLessThan(64 * 1024);
+
+  // Final transcript sanity: the two constant members agree on everything.
+  expect(await texts(alice, convo.id)).toEqual(await texts(bob, convo.id));
+}, 60000);
+
+test("churn: a removed member's devices can be re-added and talk again", async () => {
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+  const alice = await device(relay, pds, 1, AL, "alice");
+  const bob1 = await device(relay, pds, 2, BO, "bob/1");
+  const bob2 = await device(relay, pds, 3, BO, "bob/2");
+
+  const convo = await alice.atsms.open({ members: [BO] });
+  await relay.flush();
+  await assertDelivery(relay, convo.id, alice, [bob1, bob2], [], "before removal");
+
+  await alice.atsms.removeMember(convo.id, BO);
+  await relay.flush();
+  await assertGroupState(convo.id, [alice, bob1, bob2], [AL], "after removing bob");
+
+  // Re-add: the welcome must still fit, and BOTH devices must come back.
+  await alice.atsms.addMember(convo.id, BO);
+  await relay.flush();
+  await assertGroupState(convo.id, [alice, bob1, bob2], [AL, BO], "after re-adding bob");
+  await assertDelivery(relay, convo.id, alice, [bob1, bob2], [], "after re-add");
+  await assertDelivery(relay, convo.id, bob2, [alice, bob1], [], "re-added device speaks");
+
+  // The record's removed flag cleared on re-admission.
+  for (const b of [bob1, bob2]) {
+    expect((await b.storage.getConversation(convo.id))!.metadata?.removed, `${b.label} flag cleared`).toBe(false);
+  }
+  expect(relay.largestEnvelope).toBeLessThan(64 * 1024);
+}, 60000);

@@ -301,17 +301,36 @@ export class Conversation {
   /** Deliver an inbound sealed envelope (a decrypted message lands in
    *  `messages$`); returns any triggered repair envelopes. */
   async deliverEnvelope(envelope: Uint8Array): Promise<Outbound[]> {
-    const before = this.members.join(",");
-    const outbound = await this.session.deliver(envelope);
-    // A delivered control frame may have changed membership (remote add or
-    // remove) — keep the stored roster in sync for every member's UI.
-    if (this.members.join(",") !== before) await this.saveConversationRecord();
-    return outbound;
+    return this.withMembershipSync(() => this.session.deliver(envelope));
   }
 
   /** Ingest an already-unsealed frame (dispatcher bootstrap path). */
   async ingestFrame(frame: Uint8Array): Promise<Outbound[]> {
-    return this.session.ingestFrame(frame);
+    return this.withMembershipSync(() => this.session.ingestFrame(frame));
+  }
+
+  /**
+   * Run an inbound step and reconcile everything membership-derived: the
+   * stored roster + `removed` flag (what the UI renders), and the
+   * removed-from-conversation transition.
+   *
+   * Both inbound paths must go through here. Membership ops arrive sym under
+   * the parent epoch normally, but ASYM whenever no sealable epoch exists —
+   * which is routine right after a batched add, since each joiner's mandatory
+   * post-join update makes the epochs concurrent. Wiring this to the sym path
+   * alone left removed devices with a stale record and no event.
+   */
+  private async withMembershipSync(step: () => Promise<Outbound[]>): Promise<Outbound[]> {
+    const before = this.members.join(",");
+    const wasMember = this.amMember;
+    const outbound = await step();
+    if (this.members.join(",") !== before || wasMember !== this.amMember) {
+      await this.saveConversationRecord();
+    }
+    if (wasMember && !this.amMember) {
+      this.ctx.onEngineEvent?.("removed-from-conversation", this.convoId);
+    }
+    return outbound;
   }
 
   /** Rotate keys (post-compromise healing / mandatory post-join update). */
