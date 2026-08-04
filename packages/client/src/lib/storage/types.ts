@@ -66,6 +66,9 @@ export interface ConversationMetadata {
   /** This device is no longer a member (its removal was processed). Clients
    *  render read-only; cleared automatically if the device is re-admitted. */
   removed?: boolean;
+  /** …and it was this device's own choice — `leave()`, not a removal. The UI
+   *  tells a different story for each. */
+  left?: boolean;
 }
 
 export interface ConversationFilter {

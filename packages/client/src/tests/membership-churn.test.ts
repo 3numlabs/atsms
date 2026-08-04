@@ -371,3 +371,118 @@ test("churn: a device that re-keyed since the directory snapshot is still re-add
   await assertDelivery(relay, convo.id, alice, [bob2], [], "after re-add of a re-keyed device");
   await assertDelivery(relay, convo.id, bob2, [alice], [], "the re-keyed device speaks");
 }, 60000);
+
+test("leave: the leaver goes quiet, the group heals lazily, and the story is 'left'", async () => {
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+  const CA = "did:plc:cccccccccccccccccccccccc";
+  const alice = await device(relay, pds, 1, AL, "alice");
+  const bob = await device(relay, pds, 2, BO, "bob");
+  // Carol has two devices — leaving must take BOTH out.
+  const carol1 = await device(relay, pds, 3, CA, "carol/1");
+  const carol2 = await device(relay, pds, 4, CA, "carol/2");
+  const all = [alice, bob, carol1, carol2];
+
+  const convo = await alice.atsms.open({ members: [BO, CA] });
+  await relay.flush();
+  await assertDelivery(relay, convo.id, alice, [bob, carol1, carol2], [], "before leaving");
+
+  // Carol leaves from ONE of her devices. She is not an admin — leaving needs
+  // no permission (same-DID removal is never admin-gated).
+  await carol1.atsms.leave(convo.id);
+  await relay.flush();
+
+  await assertGroupState(convo.id, all, [AL, BO], "after carol left");
+  for (const c of [carol1, carol2]) {
+    const convoC = await c.atsms.get(convo.id);
+    expect(convoC!.departure, `${c.label} knows it LEFT, not that it was removed`).toBe("left");
+    expect((await c.storage.getConversation(convo.id))!.metadata?.left, `${c.label} record.left`).toBe(true);
+    await expect(convoC!.send("still here?")).rejects.toThrow(/you left/);
+  }
+  expect(carol1.events.some((e) => e.startsWith("left-conversation"))).toBe(true);
+
+  // The remaining members were NOT healed by the leaver — the next sender
+  // heals lazily, and everyone converges without any extra machinery.
+  await assertDelivery(relay, convo.id, bob, [alice], [carol1, carol2], "after the leave");
+  await assertDelivery(relay, convo.id, alice, [bob], [carol1, carol2], "and back again");
+
+  // History is kept on the leaver's side (leave is not forget).
+  expect((await texts(carol1, convo.id)).length).toBeGreaterThan(0);
+}, 60000);
+
+test("leave: a sole admin must appoint a successor first", async () => {
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+  const alice = await device(relay, pds, 1, AL, "alice"); // creator ⇒ sole admin
+  const bob = await device(relay, pds, 2, BO, "bob");
+
+  const convo = await alice.atsms.open({ members: [BO] });
+  await relay.flush();
+
+  const aliceConvo = await alice.atsms.get(convo.id);
+  expect(aliceConvo!.wouldStrandGroup, "a UI should offer succession first").toBe(true);
+  await expect(alice.atsms.leave(convo.id)).rejects.toThrow(/LastAdmin/);
+  expect(aliceConvo!.amMember, "a refused leave changes nothing").toBe(true);
+
+  // Appoint Bob, then leaving is allowed and Bob can still run the group.
+  await alice.atsms.grantAdmin(convo.id, BO);
+  await relay.flush();
+  expect(aliceConvo!.wouldStrandGroup).toBe(false);
+  await alice.atsms.leave(convo.id);
+  await relay.flush();
+
+  expect(aliceConvo!.departure).toBe("left");
+  const bobConvo = await bob.atsms.get(convo.id);
+  expect(bobConvo!.amMember).toBe(true);
+  expect(bobConvo!.members).toEqual([BO]);
+
+  // The successor's admin rights are real: he can still add someone.
+  const CA = "did:plc:cccccccccccccccccccccccc";
+  const carol = await device(relay, pds, 3, CA, "carol");
+  await bob.atsms.addMember(convo.id, CA);
+  await relay.flush();
+  expect((await carol.atsms.get(convo.id))?.amMember, "the successor could still add").toBe(true);
+}, 60000);
+
+test("leave: the last member out is a local act, and a leaver can be re-added", async () => {
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+  const alice = await device(relay, pds, 1, AL, "alice");
+  const bob = await device(relay, pds, 2, BO, "bob");
+
+  const convo = await alice.atsms.open({ members: [BO] });
+  await relay.flush();
+  await assertDelivery(relay, convo.id, alice, [bob], [], "before bob leaves");
+
+  // Bob leaves, then Alice invites him back: re-admission after a LEAVE is the
+  // same path as after a removal, and it must clear the left/removed story.
+  await bob.atsms.leave(convo.id);
+  await relay.flush();
+  expect((await bob.atsms.get(convo.id))!.departure).toBe("left");
+
+  await alice.atsms.addMember(convo.id, BO);
+  await relay.flush();
+  const bobConvo = await bob.atsms.get(convo.id);
+  expect(bobConvo!.amMember, "the leaver came back").toBe(true);
+  expect(bobConvo!.departure).toBe(null);
+  const record = await bob.storage.getConversation(convo.id);
+  expect(record!.metadata?.left).toBe(false);
+  expect(record!.metadata?.removed).toBe(false);
+  await assertDelivery(relay, convo.id, bob, [alice], [], "the returning member speaks");
+
+  // Now Alice is alone: leaving is recorded locally, with no ops on the wire.
+  await alice.atsms.removeMember(convo.id, BO);
+  await relay.flush();
+  const before = relay.largestEnvelope;
+  await alice.atsms.leave(convo.id);
+  const aliceConvo = await alice.atsms.get(convo.id);
+  expect(aliceConvo!.departure, "last one out still reads as 'left'").toBe("left");
+  expect((await alice.storage.getConversation(convo.id))!.metadata?.left).toBe(true);
+  expect(relay.largestEnvelope, "nothing was sent — there was nobody to tell").toBe(before);
+}, 60000);

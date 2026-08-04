@@ -70,6 +70,8 @@ export interface SendInput {
 
 export class Conversation {
   private nextCausal: number | null = null;
+  /** Set when this device left as the LAST member — a purely local act. */
+  private locallyLeft = false;
 
   private constructor(
     private readonly session: ConversationSession,
@@ -231,6 +233,10 @@ export class Conversation {
     if (session === null) return null;
     const convo = new Conversation(session, ctx.storage, ctx);
     holder.convo = convo;
+    // A last-member departure lives only in the record (no op expresses it),
+    // so restore the mark or a reloaded client would look like a member again.
+    const record = await ctx.storage.getConversation(convo.convoId);
+    if (record?.metadata?.left === true && convo.amMember) convo.locallyLeft = true;
     return convo;
   }
 
@@ -287,6 +293,53 @@ export class Conversation {
     const outbound = await this.session.addMembers(members);
     await this.saveConversationRecord();
     return outbound;
+  }
+
+  /** Grant admin to a DID (admin-only) — the succession step a sole admin
+   *  must take before it may leave. */
+  async grantAdmin(did: string): Promise<Outbound[]> {
+    const outbound = await this.session.grantAdmin(did);
+    await this.saveConversationRecord();
+    return outbound;
+  }
+
+  /** Leave this conversation (see ConversationSession.leave). */
+  async leave(): Promise<Outbound[]> {
+    const outbound = await this.session.leave();
+    await this.saveConversationRecord();
+    return outbound;
+  }
+
+  /** Would leaving now strand the group (sole admin, others remain)? */
+  get wouldStrandGroup(): boolean {
+    return this.session.wouldStrandGroup();
+  }
+
+  /**
+   * How this device stopped being a member, or null while it still is.
+   * Derived from the op log's actor — no extra wire data: a removal I authored
+   * against my own device is a departure, anyone else's is a removal.
+   */
+  get departure(): "left" | "removed" | null {
+    // A last-member departure mints no op — the engine still reports us as a
+    // member — so the local mark is the only evidence and comes first.
+    if (this.locallyLeft) return "left";
+    if (this.amMember) return null;
+    const mine = bytesToHex(this.ctx.device.fingerprint);
+    let verdict: "left" | "removed" | null = null;
+    for (const e of this.membershipLog()) {
+      if (e.type !== "remove") continue;
+      if (!e.devices.some((d) => bytesToHex(d.fingerprint) === mine)) continue;
+      verdict = e.actor.did === this.ctx.did ? "left" : "removed";
+    }
+    return verdict ?? "removed";
+  }
+
+  /** Last-member departure: no op exists (the tree keeps its last member), so
+   *  the host records it locally. */
+  async markLeftLocally(): Promise<void> {
+    this.locallyLeft = true;
+    await this.saveConversationRecord();
   }
 
   /** Batched remove (strong remove, dgm §4 — cross-DID removal needs admin;
@@ -399,7 +452,14 @@ export class Conversation {
       unreadCount: existing?.unreadCount ?? 0,
       // `removed` lets a client render the state without holding the engine
       // (and clears itself if the DID is later re-added and rejoins).
-      metadata: { ...existing?.metadata, protocol: "dcgka", removed: !this.amMember },
+      metadata: {
+        ...existing?.metadata,
+        protocol: "dcgka",
+        // Two flags, because the UI tells two different stories: `removed` is
+        // "you are out", `left` is "and you chose it".
+        removed: !this.amMember || this.locallyLeft,
+        left: this.departure === "left",
+      },
     });
   }
 

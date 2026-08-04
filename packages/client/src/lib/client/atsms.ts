@@ -172,6 +172,17 @@ export class ATSMSConversation {
     return this.convo.amMember;
   }
 
+  /** How this device stopped being a member ("left" | "removed"), or null. */
+  get departure(): "left" | "removed" | null {
+    return this.convo.departure;
+  }
+
+  /** Would leaving now strand the group (I am the sole admin, others remain)?
+   *  A UI should offer succession before offering Leave. */
+  get wouldStrandGroup(): boolean {
+    return this.convo.wouldStrandGroup;
+  }
+
   /** Who admitted/removed whom, in causal order (for a system-message view). */
   membershipLog(): ReturnType<Conversation["membershipLog"]> {
     return this.convo.membershipLog();
@@ -192,8 +203,15 @@ export class ATSMSConversation {
     // NoRootKey — indistinguishable from the transient case the catch below
     // heals by updating, which for a non-member mints a fork nobody accepts.
     // Check membership first and say so plainly.
-    if (!this.convo.amMember) {
-      throw new Error("removed-from-conversation: you are no longer a member of this conversation");
+    // `departure` covers both stories, including a last-member leave that the
+    // engine cannot express (it still counts us as the sole member).
+    const departure = this.convo.departure;
+    if (departure !== null) {
+      throw new Error(
+        departure === "left"
+          ? "left-conversation: you left this conversation"
+          : "removed-from-conversation: you are no longer a member of this conversation",
+      );
     }
     try {
       await this.router(await this.convo.send(input), this.convo);
@@ -661,6 +679,49 @@ export class ATSMS {
     trace.mark("deliver");
     trace.end({ devices: memberships.length, envelopes: outbound.length });
     this.onEvent("member-removed", `${did} (${memberships.length} devices) from ${handle.id.slice(0, 10)}`);
+  }
+
+  /** Grant admin to a DID in a conversation (admin-only, dgm §4) — how a sole
+   *  admin appoints the successor that `leave()` requires. */
+  async grantAdmin(groupId: string, did: string): Promise<void> {
+    const handle = await this.get(groupId);
+    if (handle === null) throw new Error(`unknown conversation ${groupId}`);
+    await this.route(await handle.inner.grantAdmin(did), handle.inner);
+    this.onEvent("admin-granted", `${did} in ${handle.id.slice(0, 10)}`);
+  }
+
+  /**
+   * Leave a conversation: every device of my DID is removed, mine last, and no
+   * healing update is minted — the post-leave epoch must exclude me, so the
+   * remaining members establish it lazily on their next send.
+   *
+   * Refuses (LastAdmin) if I am the sole admin with others still here: leaving
+   * would freeze the group, so a successor must be appointed first
+   * (`grantAdmin`). As the LAST member there is nobody to tell and nothing to
+   * heal, so it is recorded locally with no ops.
+   */
+  async leave(groupId: string): Promise<void> {
+    const handle = await this.get(groupId);
+    if (handle === null) throw new Error(`unknown conversation ${groupId}`);
+    if (!handle.inner.amMember) return; // already out — idempotent
+    const trace = span(this.onMetric, "leave", handle.id);
+    try {
+      const outbound = await handle.inner.leave();
+      trace.mark("seal");
+      await this.route(outbound, handle.inner);
+      trace.mark("deliver");
+      trace.end({ envelopes: outbound.length });
+    } catch (err) {
+      if (!(err instanceof Error) || !err.message.startsWith("LastMember")) {
+        trace.end({ envelopes: 0 }, false);
+        throw err;
+      }
+      // Last one out: no op can express it (the tree keeps its last member),
+      // and there is no one to notify. Record it locally.
+      await handle.inner.markLeftLocally();
+      trace.end({ envelopes: 0 });
+    }
+    this.onEvent("left-conversation", handle.id);
   }
 
   // ── auto-routing ───────────────────────────────────────────────────────────

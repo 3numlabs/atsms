@@ -214,6 +214,25 @@ export class ConversationSession {
     return this.drain();
   }
 
+  /** Grant admin to a DID (admin-only, dgm §4). */
+  async grantAdmin(did: string): Promise<Outbound[]> {
+    this.session.grantAdmin(did);
+    return this.drain();
+  }
+
+  /** Leave: remove every device of my DID, mine last, no healing update (the
+   *  leaver cannot mint an epoch that excludes it — remaining members heal
+   *  lazily on their next send). Throws LastAdmin / LastMember / AlreadyLeft. */
+  async leave(): Promise<Outbound[]> {
+    this.session.leave();
+    return this.drain();
+  }
+
+  /** Would leaving now strand the group (I am the sole admin, others remain)? */
+  wouldStrandGroup(): boolean {
+    return this.session.wouldStrandGroup();
+  }
+
   /** Rotate keys (post-compromise healing / mandatory post-join update). */
   async update(): Promise<Outbound[]> {
     this.session.update();
