@@ -216,7 +216,20 @@ export class Session {
 
   /** Build the welcome for a just-added device (call right after `add()`). */
   buildWelcome(addOpId: Uint8Array): Uint8Array {
-    const frames = this.retainedOrder.map((k) => this.retained.get(k)!.raw);
+    // ONLY control frames: the joiner rebuilds group state from the op log.
+    // Previously this shipped the entire retained log — including app frames
+    // it cannot decrypt and, fatally, previous WELCOME frames, each of which
+    // embeds the log as it stood. Welcomes nesting welcomes made the body
+    // grow multiplicatively: a second add round on a 3-device DID produced a
+    // 104 KB plaintext and blew the 64 KiB seal bucket, so re-adding anyone
+    // failed outright (live, 2026-08-03).
+    const frames: Uint8Array[] = [];
+    for (const k of this.retainedOrder) {
+      const meta = this.retained.get(k);
+      if (meta === undefined) continue;
+      if (parseFrame(meta.raw).body.cls !== CLS_CONTROL) continue;
+      frames.push(meta.raw);
+    }
     const welcomeBody = cborEncode([null, frames, [], 1]); // [checkpoint, ops, deliveryMap, profile]
     // ctrlSeq null: the welcome is point-to-point (sealed asym to the joiner
     // only — existing members never receive it), so it must not occupy a slot
@@ -844,6 +857,10 @@ export class Session {
     this.applyRotation(frame, st);
     this.applyEndpoint(frame);
     this.processed.add(bytesToHex(frame.id));
+    // A welcome is point-to-point admission material — no peer ever repairs it
+    // and no joiner needs another joiner's — so it stays out of the retained
+    // log (which is also what a welcome body is built from).
+    if (frame.body.cls === CLS_WELCOME) return;
     this.retain(bytesToHex(frame.id), {
       raw: frame.raw,
       senderKey,

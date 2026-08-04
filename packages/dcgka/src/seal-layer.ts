@@ -106,7 +106,19 @@ export class SealLayer {
   drainSealed(): Outbound[] {
     const out: Outbound[] = [];
     // (the table is rebuilt at the end — a local op may have changed membership)
-    for (const raw of this.session.takeOutbox()) {
+    const outbox = this.session.takeOutbox();
+    // Removals in one batch form a dependency CHAIN (remove#2 depends on
+    // remove#1). A device that could only open its own removal would buffer it
+    // forever on the missing earlier op and never learn — so every removal in
+    // the batch is addressed to every device the batch removes. They were all
+    // members when it happened; a removal is a fact they are party to.
+    const batchRemoved: Membership[] = [];
+    for (const raw of outbox) {
+      for (const m of removedBy(parseFrame(raw))) {
+        if (!batchRemoved.some((x) => sameFp(x, m))) batchRemoved.push(m);
+      }
+    }
+    for (const raw of outbox) {
       const frame = parseFrame(raw);
       if (frame.body.cls === CLS_CONTROL) {
         // Learn prekeys before routing (an add precedes its welcome in the outbox).
@@ -138,8 +150,10 @@ export class SealLayer {
       // they did not already know (they were members; the op names them), and
       // it is what every mainstream messenger does. They cannot derive the
       // post-remove epoch, so this is their last readable frame.
-      for (const removed of removedBy(frame)) {
-        if (!recipients.some((m) => sameFp(m, removed))) recipients.push(removed);
+      if (removedBy(frame).length > 0) {
+        for (const removed of batchRemoved) {
+          if (!recipients.some((m) => sameFp(m, removed))) recipients.push(removed);
+        }
       }
       const epochId = this.session.engine.sealEpochFor(frame.body.deps);
       const envKey = epochId === null ? null : this.session.engine.epochEnvKey(epochId, this.encMe);
