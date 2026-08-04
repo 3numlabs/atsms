@@ -59,6 +59,9 @@ export interface Reaction {
 export interface ConversationMetadata {
   title?: string;
   description?: string;
+  /** Fixed at creation: a DM is exactly two people forever; a group stays a
+   *  group however much it shrinks. Never inferred from the member count. */
+  kind?: "dm" | "group";
   isGroup?: boolean;
   pinnedAt?: Date;
   /** Which encryption path this conversation runs on (atsms-integration §4). */

@@ -138,7 +138,7 @@ describe("add a member under concurrency (live 3-way repro)", () => {
     const b = await client(hub, pds, 2, "did:plc:b");
     const c = await client(hub, pds, 3, "did:plc:c");
 
-    const convo = await a.atsms.open({ members: [b.did] });
+    const convo = await a.atsms.open({ members: [b.did], kind: "group" });
     await hub.flush();
     await convo.send("yo");
     await hub.flush();
@@ -160,7 +160,7 @@ describe("add a member under concurrency (live 3-way repro)", () => {
     const b = await client(hub, pds, 12, "did:plc:b");
     const c = await client(hub, pds, 13, "did:plc:c");
 
-    const convo = await a.atsms.open({ members: [b.did] });
+    const convo = await a.atsms.open({ members: [b.did], kind: "group" });
     await hub.flush();
     await convo.send("yo");
     await hub.flush();

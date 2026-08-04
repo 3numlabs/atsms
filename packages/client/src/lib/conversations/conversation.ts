@@ -119,6 +119,12 @@ export class Conversation {
     return undefined;
   }
 
+  /** What this conversation is — fixed by its create op (a group that shrinks
+   *  to two is still a group; a DM is exactly its two people, forever). */
+  get kind(): "dm" | "group" {
+    return this.session.kind;
+  }
+
   /** Admin DIDs (dgm §4: who may add, remove, and grant admin). */
   get admins(): string[] {
     return [...this.session.engine.admins()];
@@ -186,7 +192,7 @@ export class Conversation {
   /** Found a conversation. `members` includes this device first (the creator). */
   static async open(
     ctx: ConversationContext,
-    params: { keys: LocalKeys; members: MemberDescriptor[]; admins: string[] },
+    params: { keys: LocalKeys; members: MemberDescriptor[]; admins: string[]; kind?: "dm" | "group" },
   ): Promise<{ conversation: Conversation; outbound: Outbound[] }> {
     const holder: { convo: Conversation | null } = { convo: null };
     const { conversation: session, outbound } = await ConversationSession.create(ctx, {
@@ -194,6 +200,7 @@ export class Conversation {
       members: params.members,
       admins: params.admins,
       events: eventsFor(holder, ctx),
+      ...(params.kind !== undefined ? { kind: params.kind } : {}),
     });
     const convo = new Conversation(session, ctx.storage, ctx);
     holder.convo = convo;
@@ -468,6 +475,7 @@ export class Conversation {
       metadata: {
         ...existing?.metadata,
         protocol: "dcgka",
+        kind: this.kind,
         // Two flags, because the UI tells two different stories: `removed` is
         // "you are out", `left` is "and you chose it".
         removed: !this.amMember || this.locallyLeft,

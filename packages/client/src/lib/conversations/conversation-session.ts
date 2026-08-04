@@ -89,7 +89,13 @@ export class ConversationSession {
    *  creator). Returns the session and the sealed create envelope(s) to deliver. */
   static async create(
     deps: ConversationDeps,
-    params: { keys: LocalKeys; members: MemberDescriptor[]; admins: string[]; events?: SessionEvents },
+    params: {
+      keys: LocalKeys;
+      members: MemberDescriptor[];
+      admins: string[];
+      events?: SessionEvents;
+      kind?: "dm" | "group";
+    },
   ): Promise<{ conversation: ConversationSession; outbound: Outbound[] }> {
     const session = Session.createGroup(
       params.members,
@@ -98,6 +104,7 @@ export class ConversationSession {
       shareKeysOf(params.keys),
       deps.rng,
       params.events ?? {},
+      params.kind ?? "group",
     );
     const convo = ConversationSession.wrap(session, deps);
     const outbound = await convo.drain();
@@ -280,6 +287,11 @@ export class ConversationSession {
   noteHealthy(): void {
     this.lastHealthyAt = Date.now();
     this.unopenable = 0;
+  }
+
+  /** What this conversation is — fixed by its create op, never counted. */
+  get kind(): "dm" | "group" {
+    return this.session.kind;
   }
 
   /** Am I still a member in my own view (see Session.amMember). */

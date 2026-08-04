@@ -215,7 +215,7 @@ test("churn: add, re-add and remove a multi-device DID repeatedly", async () => 
   const all = [alice, bob, ...carols];
 
   // ── open a 2-party conversation ───────────────────────────────────────────
-  const convo = await alice.atsms.open({ members: [bob.did] });
+  const convo = await alice.atsms.open({ members: [bob.did], kind: "group" });
   await relay.flush();
   await assertGroupState(convo.id, all, [AL, BO], "after open");
   await assertDelivery(relay, convo.id, alice, [alice, bob], carols, "m1 hello bob");
@@ -271,7 +271,7 @@ test("churn: a removed member's devices can be re-added and talk again", async (
   const bob1 = await device(relay, pds, 2, BO, "bob/1");
   const bob2 = await device(relay, pds, 3, BO, "bob/2");
 
-  const convo = await alice.atsms.open({ members: [BO] });
+  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
   await relay.flush();
   await assertDelivery(relay, convo.id, alice, [bob1, bob2], [], "before removal");
 
@@ -342,7 +342,7 @@ test("churn: a device that re-keyed since the directory snapshot is still re-add
   };
 
   const bob = await bootBob(2, "bob");
-  const convo = await alice.atsms.open({ members: [BO] });
+  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
   await relay.flush();
   await assertDelivery(relay, convo.id, alice, [bob], [], "before");
 
@@ -420,7 +420,7 @@ test("leave: a sole admin must appoint a successor first", async () => {
   const alice = await device(relay, pds, 1, AL, "alice"); // creator ⇒ sole admin
   const bob = await device(relay, pds, 2, BO, "bob");
 
-  const convo = await alice.atsms.open({ members: [BO] });
+  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
   await relay.flush();
 
   const aliceConvo = await alice.atsms.get(convo.id);
@@ -456,7 +456,7 @@ test("leave: the last member out is a local act, and a leaver can be re-added", 
   const alice = await device(relay, pds, 1, AL, "alice");
   const bob = await device(relay, pds, 2, BO, "bob");
 
-  const convo = await alice.atsms.open({ members: [BO] });
+  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
   await relay.flush();
   await assertDelivery(relay, convo.id, alice, [bob], [], "before bob leaves");
 
@@ -500,7 +500,7 @@ test("a healthy member is never told it might have been removed (C-fallback fals
   const alice = await device(relay, pds, 1, AL, "alice");
   const bob = await device(relay, pds, 2, BO, "bob");
 
-  const convo = await alice.atsms.open({ members: [BO] });
+  const convo = await alice.atsms.open({ members: [BO], kind: "group" });
   await relay.flush();
   await assertDelivery(relay, convo.id, bob, [alice], [], "healthy traffic");
 
@@ -524,4 +524,52 @@ test("a healthy member is never told it might have been removed (C-fallback fals
   // And she is plainly fine: still a member, still talking both ways.
   expect(aliceConvo!.amMember).toBe(true);
   await assertDelivery(relay, convo.id, alice, [bob], [], "still working after the junk");
+}, 60000);
+
+test("DM vs group: kind is fixed at creation, and each rule holds", async () => {
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+  const CA = "did:plc:cccccccccccccccccccccccc";
+  const alice = await device(relay, pds, 1, AL, "alice");
+  const bob = await device(relay, pds, 2, BO, "bob");
+  const carol = await device(relay, pds, 3, CA, "carol");
+
+  // R1: exactly one DM per pair — opening it again returns the same one.
+  const dm = await alice.atsms.open({ members: [BO] });
+  await relay.flush();
+  expect(dm.kind).toBe("dm");
+  const dmAgain = await alice.atsms.open({ members: [BO] });
+  expect(dmAgain.id, "the DM with Bob is a single conversation").toBe(dm.id);
+  // …and both sides agree on the kind, because it rides in the create op.
+  expect((await bob.atsms.get(dm.id))!.kind).toBe("dm");
+
+  // R2: you cannot add to a DM — a group with all three is the way.
+  await expect(alice.atsms.addMember(dm.id, CA)).rejects.toThrow(/DirectConversation/);
+  const group = await alice.atsms.open({ members: [BO, CA], kind: "group" });
+  await relay.flush();
+  expect(group.kind).toBe("group");
+  expect(group.id, "the group is a NEW conversation, not the DM grown").not.toBe(dm.id);
+  // The DM is untouched and still works.
+  await assertDelivery(relay, dm.id, alice, [bob], [], "the DM still works");
+
+  // R3: the same people may share any number of groups.
+  const group2 = await alice.atsms.open({ members: [BO, CA], kind: "group" });
+  await relay.flush();
+  expect(group2.id, "a second group with the same members is its own conversation").not.toBe(group.id);
+
+  // R4: a group that shrinks to two is still a group — it keeps its member
+  // panel, its name, and the ability to change membership.
+  await alice.atsms.removeMember(group.id, CA);
+  await relay.flush();
+  expect(group.members.length).toBe(2);
+  expect(group.kind, "still a group at two members").toBe("group");
+  expect((await alice.storage.getConversation(group.id))!.metadata?.kind).toBe("group");
+  await expect(alice.atsms.addMember(group.id, CA)).resolves.toBeUndefined();
+  await relay.flush();
+
+  // …and it is still NOT the DM with Bob: opening that returns the DM.
+  const dmStill = await alice.atsms.open({ members: [BO] });
+  expect(dmStill.id).toBe(dm.id);
 }, 60000);

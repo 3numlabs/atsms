@@ -156,7 +156,7 @@ async function addWithDroppedAddFrame(repairAfterMs: number) {
   const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb", repairAfterMs);
   const carol = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc", repairAfterMs);
 
-  const convo = await alice.atsms.open({ members: [bob.did] });
+  const convo = await alice.atsms.open({ members: [bob.did], kind: "group" });
   await hub.flush();
   await convo.send("yo");
   await hub.flush();

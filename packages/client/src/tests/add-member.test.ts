@@ -139,7 +139,7 @@ test("consecutive adds keep the existing member receiving (welcome is point-to-p
   const dave = await client(hub, pds, 4, "did:plc:dddddddddddddddddddddddd");
 
   // Two-party conversation, both directions working.
-  const convo = await alice.atsms.open({ members: [bob.did] });
+  const convo = await alice.atsms.open({ members: [bob.did], kind: "group" });
   await hub.flush();
   await convo.send("yo");
   await hub.flush();

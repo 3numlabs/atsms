@@ -176,6 +176,12 @@ export class ATSMSConversation {
     return this.convo.amMember;
   }
 
+  /** What this conversation is — fixed at creation, never counted. Clients
+   *  render naming and affordances from this, not from `members.length`. */
+  get kind(): "dm" | "group" {
+    return this.convo.kind;
+  }
+
   /** Admin DIDs — who may add, remove, and grant admin (dgm §4). */
   get admins(): string[] {
     return this.convo.admins;
@@ -513,11 +519,22 @@ export class ATSMS {
    * never silently downgraded (capability §3); one-shots to them can use the
    * stateless X509 baseline instead.
    */
-  async open(params: { members: string[]; admins?: string[] }): Promise<ATSMSConversation> {
+  async open(params: { members: string[]; admins?: string[]; kind?: "dm" | "group" }): Promise<ATSMSConversation> {
     const others = [...new Set(params.members.filter((d) => d !== this.identity.did))];
     const participants = [this.identity.did, ...others];
+    if (others.length === 0) throw new Error("open: no members");
+    // One other person defaults to a DM; several to a group. `kind` overrides
+    // it — a two-person GROUP is a legitimate thing, distinct from the DM with
+    // that same person, and only the caller knows which was meant.
+    const kind: "dm" | "group" = params.kind ?? (others.length === 1 ? "dm" : "group");
+    if (kind === "dm" && others.length !== 1) {
+      throw new Error("open: a DM is exactly two people — pass kind:'group' for more");
+    }
 
-    const existing = await this.storage.findConversationByParticipants(participants);
+    // Reuse is for DMs ONLY: there is exactly one DM per pair, while the same
+    // people may share any number of groups. Reopening a specific group is
+    // `get(convoId)`, not `open()`.
+    const existing = kind === "dm" ? await this.findDirectConversation(others[0]!) : null;
     // The record's id is the v2 ConvoId hex; only a conversation-context id
     // (0x02 prefix) maps back to a DCGKA GroupID — a one-shot record with the
     // same participant set is a different conversation (format §8).
@@ -573,6 +590,7 @@ export class ATSMS {
       keys: this.identity.localKeys,
       members: descriptors,
       admins: params.admins ?? [this.identity.did],
+      kind,
     });
     const handle = this.register(conversation);
     this.onEvent("open-created", handle.id.slice(0, 10));
@@ -597,6 +615,21 @@ export class ATSMS {
     trace.mark("deliver");
     trace.end({ members: others.length, devices: descriptors.length - 1, envelopes: outbound.length + firstUpdate.length });
     return handle;
+  }
+
+  /**
+   * The DM with `did`, if this device already holds one. Matched by KIND plus
+   * the pair — not by the current member set, which would happily hand back a
+   * group that has shrunk to the two of you.
+   */
+  private async findDirectConversation(did: string): Promise<LocalConversation | null> {
+    const pair = [this.identity.did, did].sort().join(",");
+    for (const record of await this.storage.getConversations()) {
+      if ((record.metadata as { kind?: string } | undefined)?.kind !== "dm") continue;
+      if ([...record.participantIds].sort().join(",") !== pair) continue;
+      return record;
+    }
+    return null;
   }
 
   /** A conversation by ID (v2 ConvoId hex, or a bare DCGKA GroupID) — open
@@ -650,6 +683,11 @@ export class ATSMS {
   async addMember(groupId: string, did: string): Promise<void> {
     const handle = await this.get(groupId);
     if (handle === null) throw new Error(`unknown conversation ${groupId}`);
+    if (handle.kind === "dm") {
+      throw new Error(
+        "DirectConversation: a DM stays these two people — open a group with everyone instead",
+      );
+    }
     const trace = span(this.onMetric, "addMember", did);
     // Deliberate admission: fetch this DID's current keys, never the cache.
     const devices = capableFromSnapshot(await this.peers.refresh(did));
