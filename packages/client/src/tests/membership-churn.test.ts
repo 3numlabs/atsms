@@ -16,7 +16,7 @@
  *                     Nth round works as well as the first
  */
 
-import type { PdsClient, PdsRecordView, PutResult } from "@atsms/dcgka";
+import { cborEncode, type PdsClient, type PdsRecordView, type PutResult } from "@atsms/dcgka";
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 
@@ -485,4 +485,43 @@ test("leave: the last member out is a local act, and a leaver can be re-added", 
   expect(aliceConvo!.departure, "last one out still reads as 'left'").toBe("left");
   expect((await alice.storage.getConversation(convo.id))!.metadata?.left).toBe(true);
   expect(relay.largestEnvelope, "nothing was sent — there was nobody to tell").toBe(before);
+}, 60000);
+
+test("a healthy member is never told it might have been removed (C-fallback false positive)", async () => {
+  // Live 2026-08-04: after a member left, the creator — still a member, still
+  // chatting — saw a burst of unopenable envelopes (stale buffered traffic
+  // from earlier churn) and was told "possibly-removed-from-conversation".
+  // Unopenable traffic alone means nothing; the state worth suspecting is
+  // "nothing has worked for a long time".
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+  const alice = await device(relay, pds, 1, AL, "alice");
+  const bob = await device(relay, pds, 2, BO, "bob");
+
+  const convo = await alice.atsms.open({ members: [BO] });
+  await relay.flush();
+  await assertDelivery(relay, convo.id, bob, [alice], [], "healthy traffic");
+
+  // A burst of envelopes Alice cannot open (sealed under an epoch she does not
+  // hold) — shaped like a sym envelope so it reaches the pending buffer.
+  const rng = rngOf(1234);
+  for (let i = 0; i < 12; i++) {
+    relay.post(AL, cborEncode([1, 2, rng(8), rng(24), rng(64)]));
+  }
+  await relay.flush();
+
+  const aliceConvo = await alice.atsms.get(convo.id);
+  expect(aliceConvo!.inner.unopenableCount, "the junk really did fail to open").toBeGreaterThan(0);
+  // Give the health tick several chances to jump to conclusions.
+  await new Promise((r) => setTimeout(r, 400));
+  expect(
+    alice.events.filter((e) => e.startsWith("possibly-removed-from-conversation")),
+    "a member with recent working traffic is never suspected",
+  ).toEqual([]);
+
+  // And she is plainly fine: still a member, still talking both ways.
+  expect(aliceConvo!.amMember).toBe(true);
+  await assertDelivery(relay, convo.id, alice, [bob], [], "still working after the junk");
 }, 60000);

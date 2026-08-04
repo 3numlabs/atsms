@@ -148,6 +148,11 @@ export class Conversation {
     return this.session.unopenableCount;
   }
 
+  /** Age (ms) of the last inbound traffic that opened successfully. */
+  get sinceHealthyMs(): number {
+    return this.session.sinceHealthyMs;
+  }
+
   /** Frames held in the ordering buffer awaiting missing causal ancestors — a
    *  persistent non-zero count is the §8 gap signal (lossy relay). */
   get bufferedFrames(): number {
@@ -405,6 +410,9 @@ export class Conversation {
    * authority on the sender; the content self-reports nothing to trust.
    */
   async handleDecrypted(plaintext: Uint8Array, senderDid: string): Promise<void> {
+    // Something arrived and opened: whatever else is failing, we are still in
+    // this conversation (clears the possibly-removed suspicion).
+    this.session.noteHealthy();
     let content: MessageContent;
     try {
       content = decodeContent(plaintext);

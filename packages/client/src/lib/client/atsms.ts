@@ -125,9 +125,13 @@ const GENESIS_EPOCH_POLL_MS = 250;
  *  the client asks the members to re-serve the missing frames. */
 const REPAIR_AFTER_MS = 60_000;
 
-/** C-fallback threshold: unopenable envelopes on a conversation we still
- *  believe we belong to, before surfacing a soft "possibly removed". */
+/** C-fallback: unopenable envelopes on a conversation we still believe we
+ *  belong to, before suspecting a missed removal notice. Necessary but NOT
+ *  sufficient — a burst of unopenable traffic is ordinary during churn (stale
+ *  buffered envelopes, a peer mid-heal). The state we are actually looking for
+ *  is "nothing works any more", so nothing may have opened for a while either. */
 const UNOPENABLE_SUSPECT_REMOVED = 3;
+const SUSPECT_REMOVED_QUIET_MS = 5 * 60 * 1000;
 
 /**
  * Freshness for OPPORTUNISTIC admission (reconcileDevices, which runs on every
@@ -352,9 +356,17 @@ export class ATSMS {
       // it is a member while nothing it receives opens — surface that as a
       // soft "you may have been removed", never as fact. Members' self-healing
       // re-notice usually resolves it into the authoritative event above.
-      if (handle.inner.amMember && handle.inner.unopenableCount >= UNOPENABLE_SUSPECT_REMOVED && !this.suspected.has(groupId)) {
+      if (
+        handle.inner.amMember &&
+        handle.inner.unopenableCount >= UNOPENABLE_SUSPECT_REMOVED &&
+        handle.inner.sinceHealthyMs >= SUSPECT_REMOVED_QUIET_MS &&
+        !this.suspected.has(groupId)
+      ) {
         this.suspected.add(groupId);
-        this.onEvent("possibly-removed-from-conversation", `${handle.id} (nothing opening)`);
+        this.onEvent(
+          "possibly-removed-from-conversation",
+          `${handle.id} (nothing has opened in ${Math.round(handle.inner.sinceHealthyMs / 1000)}s)`,
+        );
       }
       const buffered = handle.inner.bufferedFrames;
       if (buffered === 0) {

@@ -66,6 +66,10 @@ export interface ConversationDeps {
 export class ConversationSession {
   /** Count of persistently-unopenable inbound envelopes (C-fallback signal). */
   private unopenable = 0;
+  /** When inbound traffic last opened successfully. A member that is quietly
+   *  out of the group stops opening ANYTHING; a healthy member with some
+   *  unopenable junk keeps working. Only the difference distinguishes them. */
+  private lastHealthyAt = Date.now();
 
   private constructor(
     readonly groupId: string,
@@ -265,6 +269,17 @@ export class ConversationSession {
    *  the notice). */
   get unopenableCount(): number {
     return this.unopenable;
+  }
+
+  /** Age (ms) of the last successfully-opened inbound traffic. */
+  get sinceHealthyMs(): number {
+    return Date.now() - this.lastHealthyAt;
+  }
+
+  /** Inbound traffic opened and processed — the conversation is working. */
+  noteHealthy(): void {
+    this.lastHealthyAt = Date.now();
+    this.unopenable = 0;
   }
 
   /** Am I still a member in my own view (see Session.amMember). */
