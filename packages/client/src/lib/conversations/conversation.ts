@@ -104,6 +104,33 @@ export class Conversation {
     return out;
   }
 
+  /** Route a sealed envelope's target device to its DID. Current members
+   *  first, then devices we have REMOVED — their removal notice is addressed
+   *  to them precisely because they are no longer members, so routing must
+   *  outlive membership (else the notice is dropped as unroutable). */
+  didOfDevice(fingerprintHex: string): string | undefined {
+    const member = this.memberDevices.get(fingerprintHex);
+    if (member !== undefined) return member;
+    for (const gone of this.session.removedMemberships()) {
+      if (bytesToHex(gone.device.fingerprint) === fingerprintHex) return gone.device.did;
+    }
+    return undefined;
+  }
+
+  /** Am I still a member? False once my own removal is processed — the
+   *  removal op is sealed to the device it removes, so this flips without any
+   *  polling. A client MUST stop sending (and say so). */
+  get amMember(): boolean {
+    return this.session.amMember();
+  }
+
+  /** Membership history (causal order) derived from the retained op log:
+   *  who admitted/removed whom. Frames carry no wall clock, so a UI wanting
+   *  timestamps records its own observation time. */
+  membershipLog(): Array<{ opId: string; type: "create" | "add" | "remove"; actor: DeviceID; devices: DeviceID[] }> {
+    return this.session.membershipLog();
+  }
+
   /** Every membership (device + admission) of one DID — removal currency. */
   membershipsOf(did: string): Membership[] {
     return this.session.engine.members().filter((m: Membership) => m.device.did === did);
@@ -112,6 +139,11 @@ export class Conversation {
   /** A usable epoch exists — `send()` will not throw `NoRootKey`. */
   get hasSendableEpoch(): boolean {
     return this.session.engine.currentEpoch() !== null;
+  }
+
+  /** Persistently-unopenable inbound envelopes (C-fallback signal). */
+  get unopenableCount(): number {
+    return this.session.unopenableCount;
   }
 
   /** Frames held in the ordering buffer awaiting missing causal ancestors — a
@@ -346,7 +378,9 @@ export class Conversation {
       createdAt: existing?.createdAt ?? new Date(now),
       lastMessageAt: new Date(now),
       unreadCount: existing?.unreadCount ?? 0,
-      metadata: { ...existing?.metadata, protocol: "dcgka" },
+      // `removed` lets a client render the state without holding the engine
+      // (and clears itself if the DID is later re-added and rejoins).
+      metadata: { ...existing?.metadata, protocol: "dcgka", removed: !this.amMember },
     });
   }
 

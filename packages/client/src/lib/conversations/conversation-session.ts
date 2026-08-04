@@ -64,6 +64,9 @@ export interface ConversationDeps {
 }
 
 export class ConversationSession {
+  /** Count of persistently-unopenable inbound envelopes (C-fallback signal). */
+  private unopenable = 0;
+
   private constructor(
     readonly groupId: string,
     private readonly session: Session,
@@ -238,6 +241,29 @@ export class ConversationSession {
     await this.persist();
   }
 
+  /** Persistently-unopenable inbound envelopes seen by the seal layer — the
+   *  C-fallback signal (nothing opening may mean we were removed and missed
+   *  the notice). */
+  get unopenableCount(): number {
+    return this.unopenable;
+  }
+
+  /** Am I still a member in my own view (see Session.amMember). */
+  amMember(): boolean {
+    return this.session.amMember();
+  }
+
+  /** Memberships we removed and still hold the removal op for (routing +
+   *  identification of a device that has not learned yet). */
+  removedMemberships(): Membership[] {
+    return this.session.removedMemberships();
+  }
+
+  /** Membership history from the retained op log (causal order). */
+  membershipLog(): ReturnType<Session["membershipLog"]> {
+    return this.session.membershipLog();
+  }
+
   /** Frames buffered awaiting missing causal ancestors (§8 gap signal). */
   get bufferedFrames(): number {
     return this.session.bufferedCount();
@@ -259,8 +285,14 @@ export class ConversationSession {
   // ── internals ───────────────────────────────────────────────────────────────
 
   private static wrap(session: Session, deps: ConversationDeps): ConversationSession {
-    const seal = new SealLayer(session, deps.prekeySecrets, deps.rng, deps.onEvent);
-    return new ConversationSession(bytesToHex(session.engine.groupId), session, seal, deps.storage);
+    const holder: { convo: ConversationSession | null } = { convo: null };
+    const seal = new SealLayer(session, deps.prekeySecrets, deps.rng, (kind, detail) => {
+      if (kind === "unopenable-envelope" && holder.convo !== null) holder.convo.unopenable += 1;
+      deps.onEvent?.(kind, detail);
+    });
+    const convo = new ConversationSession(bytesToHex(session.engine.groupId), session, seal, deps.storage);
+    holder.convo = convo;
+    return convo;
   }
 
   private async drain(): Promise<Outbound[]> {

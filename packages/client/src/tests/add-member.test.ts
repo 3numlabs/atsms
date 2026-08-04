@@ -244,8 +244,11 @@ test("a removed member's later messages are rejected by everyone — including t
   await alice.atsms.removeMember(convo.id, carol.did);
   await hub.flush();
 
-  // Carol's client is unaware and keeps talking — her envelopes DO arrive.
-  await carolConvo!.send("hey again");
+  // Carol's own client now refuses the send (always-notify: her removal was
+  // sealed to her, so she knows). The receive-side gate below is what protects
+  // members from a client that DOESN'T know — a lost notice, or a hostile
+  // build with the check removed; the dcgka suite covers that path directly.
+  await expect(carolConvo!.send("hey again")).rejects.toThrow(/no longer a member/);
   await hub.flush();
 
   const after = ["alice here", "carol here", "bob here"];
@@ -256,4 +259,39 @@ test("a removed member's later messages are rejected by everyone — including t
   await convo.send("carry on");
   await hub.flush();
   expect(await texts(bob, convo.id)).toEqual([...after, "carry on"]);
+}, 20000);
+
+test("the removed member is told: amMember flips, sends are refused, the record says so", async () => {
+  const hub = new Hub();
+  const pds = new SharedPds();
+  const alice = await client(hub, pds, 1, "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa");
+  const bob = await client(hub, pds, 2, "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb");
+  const carol = await client(hub, pds, 3, "did:plc:cccccccccccccccccccccccc");
+
+  const convo = await alice.atsms.open({ members: [bob.did, carol.did] });
+  await hub.flush();
+  await convo.send("hello all");
+  await hub.flush();
+  const carolConvo = await carol.atsms.get(convo.id);
+  expect(carolConvo!.amMember).toBe(true);
+
+  await alice.atsms.removeMember(convo.id, carol.did);
+  await hub.flush();
+
+  // Always-notify: the removal op is sealed to the device it removes.
+  expect(carolConvo!.amMember, "the removed device learns it was removed").toBe(false);
+  expect(carol.events.some((e) => e.startsWith("removed-from-conversation"))).toBe(true);
+  // …persisted, so a reloading client renders read-only without the engine.
+  expect((await carol.storage.getConversation(convo.id))!.metadata?.removed).toBe(true);
+  // …and the send is refused with a plain reason, NOT healed into a fork.
+  await expect(carolConvo!.send("hey again")).rejects.toThrow(/no longer a member/);
+
+  // The remaining members are unaffected and still see each other.
+  expect(alice.atsms.peers !== undefined).toBe(true);
+  const bobConvo = await bob.atsms.get(convo.id);
+  expect(bobConvo!.amMember).toBe(true);
+  await bobConvo!.send("still here");
+  await hub.flush();
+  expect(await texts(alice, convo.id)).toEqual(["hello all", "still here"]);
+  expect((await alice.storage.getConversation(convo.id))!.metadata?.removed).toBe(false);
 }, 20000);

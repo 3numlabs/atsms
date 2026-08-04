@@ -63,6 +63,9 @@ export interface ConversationMetadata {
   pinnedAt?: Date;
   /** Which encryption path this conversation runs on (atsms-integration §4). */
   protocol?: "dcgka" | "x509";
+  /** This device is no longer a member (its removal was processed). Clients
+   *  render read-only; cleared automatically if the device is re-admitted. */
+  removed?: boolean;
 }
 
 export interface ConversationFilter {

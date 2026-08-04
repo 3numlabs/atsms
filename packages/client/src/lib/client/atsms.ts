@@ -125,6 +125,10 @@ const GENESIS_EPOCH_POLL_MS = 250;
  *  the client asks the members to re-serve the missing frames. */
 const REPAIR_AFTER_MS = 60_000;
 
+/** C-fallback threshold: unopenable envelopes on a conversation we still
+ *  believe we belong to, before surfacing a soft "possibly removed". */
+const UNOPENABLE_SUSPECT_REMOVED = 3;
+
 /** App-facing handle for one conversation: subscribe + send, no crypto. */
 export class ATSMSConversation {
   constructor(
@@ -148,6 +152,17 @@ export class ATSMSConversation {
     return this.convo.members;
   }
 
+  /** Am I still a member? False once my own removal is processed — clients
+   *  render the conversation read-only and say why. */
+  get amMember(): boolean {
+    return this.convo.amMember;
+  }
+
+  /** Who admitted/removed whom, in causal order (for a system-message view). */
+  membershipLog(): ReturnType<Conversation["membershipLog"]> {
+    return this.convo.membershipLog();
+  }
+
   /** Send a message — plain text or structured v2 content (replies, reactions,
    *  edits, signaling); sealing + delivery are automatic.
    *
@@ -159,6 +174,13 @@ export class ATSMSConversation {
    *  Self-heal only if it never arrives, or immediately for an already-
    *  established group that is momentarily rootless (§4.1 converges that path). */
   async send(input: string | SendInput): Promise<void> {
+    // Removed members must not send: their epoch is gone, so send() throws
+    // NoRootKey — indistinguishable from the transient case the catch below
+    // heals by updating, which for a non-member mints a fork nobody accepts.
+    // Check membership first and say so plainly.
+    if (!this.convo.amMember) {
+      throw new Error("removed-from-conversation: you are no longer a member of this conversation");
+    }
     try {
       await this.router(await this.convo.send(input), this.convo);
     } catch (err) {
@@ -201,6 +223,8 @@ export class ATSMS {
   /** §8 repair trigger state: groupId → when its ordering buffer first went
    *  (and stayed) non-empty. Cleared the moment the buffer drains. */
   private readonly gapSince = new Map<string, number>();
+  /** Conversations already flagged as possibly-removed (report once). */
+  private readonly suspected = new Set<string>();
   private repairTimer: ReturnType<typeof setInterval> | null = null;
   /** The local peer directory (sdk-shape.md: the third noun) — operations
    *  read it; refreshes happen off the user's critical path. */
@@ -291,6 +315,15 @@ export class ATSMS {
   private async repairTick(): Promise<void> {
     const now = Date.now();
     for (const [groupId, handle] of this.openConvos) {
+      // C-fallback (A+C): the removal notice is one best-effort envelope. A
+      // device that missed it (offline past mailbox retention) still believes
+      // it is a member while nothing it receives opens — surface that as a
+      // soft "you may have been removed", never as fact. Members' self-healing
+      // re-notice usually resolves it into the authoritative event above.
+      if (handle.inner.amMember && handle.inner.unopenableCount >= UNOPENABLE_SUSPECT_REMOVED && !this.suspected.has(groupId)) {
+        this.suspected.add(groupId);
+        this.onEvent("possibly-removed-from-conversation", `${handle.id} (nothing opening)`);
+      }
       const buffered = handle.inner.bufferedFrames;
       if (buffered === 0) {
         this.gapSince.delete(groupId);
@@ -635,8 +668,10 @@ export class ATSMS {
             await this.transport.deliverToUrl(o.url, o.envelope);
             continue;
           }
-          const did = devices.get(o.to);
-          if (did === undefined) continue; // not a known member device — unroutable
+          // Members, plus devices we removed: a removal notice is addressed to
+          // a device that is (by then) no longer a member.
+          const did = devices.get(o.to) ?? convo.didOfDevice(o.to);
+          if (did === undefined) continue; // unknown device — unroutable
           await this.deliverByDid(did, o.envelope);
         }
       }),
@@ -678,8 +713,16 @@ export class ATSMS {
       // Only a conversation's tag table can recognize it — offer to all; the
       // seal layer dedups (EnvelopeID) and buffers unknown tags briefly.
       for (const handle of this.openConvos.values()) {
+        const wasMember = handle.inner.amMember;
         const repairs = await handle.inner.deliverEnvelope(envelope);
         await this.route(repairs, handle.inner);
+        // The removal op is sealed to the device it removes, so this is how a
+        // removed device finds out — immediately, on the delivery that carries
+        // it (the conversation record's `removed` flag is written by the same
+        // delivery, so a reloading client sees it too).
+        if (wasMember && !handle.inner.amMember) {
+          this.onEvent("removed-from-conversation", handle.id);
+        }
       }
       return;
     }
