@@ -152,6 +152,8 @@ export class SealLayer {
       // post-remove epoch, so this is their last readable frame.
       if (removedBy(frame).length > 0) {
         for (const removed of batchRemoved) {
+          // Never to ourselves: on leave() the batch removes our own device too.
+          if (sameFp(removed, this.session.engine.me)) continue;
           if (!recipients.some((m) => sameFp(m, removed))) recipients.push(removed);
         }
       }

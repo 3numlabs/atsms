@@ -327,6 +327,62 @@ export class Session {
     return this.finalizeLocal();
   }
 
+  /** Grant admin to a DID (admin-only, dgm §4) — the succession step a sole
+   *  admin must take before it is allowed to leave. */
+  grantAdmin(did: string): Uint8Array {
+    this.engine.buildGrantAdmin(did);
+    return this.finalizeLocal();
+  }
+
+  /** True iff I am the only admin DID and someone else is still here — the
+   *  state in which leaving would freeze the group (nobody could ever add or
+   *  remove again), so `leave()` refuses. */
+  wouldStrandGroup(): boolean {
+    const me = this.engine.me.device.did;
+    const others = new Set(
+      this.engine.members().filter((m) => m.device.did !== me).map((m) => m.device.did),
+    );
+    if (others.size === 0) return false; // last one out — nothing to strand
+    const admins = this.engine.admins();
+    return admins.has(me) && [...admins].every((a) => a === me);
+  }
+
+  /**
+   * Leave: remove every device of MY DID, my authoring device LAST.
+   *
+   * Order is load-bearing. An op authored by an already-removed member is
+   * invalid (dgm SR1), so my own removal must be the last op I ever author
+   * here. Same-DID removal needs no admin (dgm §4 gates cross-DID only), so
+   * leaving is always available — except to a sole admin with others still in
+   * the group, who must appoint a successor first or the group freezes.
+   *
+   * There is deliberately NO healing update: the post-leave epoch must exclude
+   * me, so minting it is structurally not my job. The remaining members heal
+   * lazily — the next one to send hits the rootless state and updates, which
+   * is exactly the existing self-heal path. A silent group stays unhealed and
+   * loses nothing, because nothing is being encrypted in it.
+   */
+  leave(): Uint8Array[] {
+    if (!this.amMember()) throw new Error('AlreadyLeft: not a member of this conversation');
+    if (this.engine.members().length === 1) {
+      // The tree keeps at least one member (tree.ts RemoveLastMember), and
+      // rightly: an empty group has no one to notify and nothing to heal.
+      // Leaving as the last member is therefore a purely LOCAL act — the host
+      // marks it left and may forget the state; no ops are produced.
+      throw new Error('LastMember: nothing to leave — forget the conversation instead');
+    }
+    if (this.wouldStrandGroup()) {
+      throw new Error(
+        'LastAdmin: appoint another admin before leaving (grantAdmin) — otherwise nobody could add or remove members',
+      );
+    }
+    const me = this.engine.me;
+    const mine = this.engine.members().filter((m) => m.device.did === me.device.did);
+    const others = mine.filter((m) => !bytesEqual(m.device.fingerprint, me.device.fingerprint));
+    const self = mine.filter((m) => bytesEqual(m.device.fingerprint, me.device.fingerprint));
+    return [...others, ...self].map((m) => this.remove(m));
+  }
+
   coverage(): Uint8Array {
     this.engine.buildCoverage();
     return this.finalizeLocal();

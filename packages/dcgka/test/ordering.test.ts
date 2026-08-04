@@ -292,4 +292,75 @@ describe('ordering-auth Session', () => {
     sb.ingestFrame(sa.sendApp(text('still with us, bob?')));
     expect(heard).toBe('still with us, bob?');
   });
+
+  it('leave: removes my own devices last, and the remaining members heal lazily', () => {
+    const { sa, sb, sc } = foundSessions();
+    const u0 = sa.update();
+    sb.ingestFrame(u0);
+    sc.ingestFrame(u0);
+
+    // Bob leaves. Same-DID removal needs no admin, so a non-admin can always go.
+    expect(sb.amMember()).toBe(true);
+    const frames = sb.leave();
+    expect(frames.length).toBe(1); // one device for bob in this harness
+    for (const f of frames) {
+      sa.ingestFrame(f);
+      sc.ingestFrame(f);
+    }
+    expect(sb.amMember(), 'the leaver is out in its own view').toBe(false);
+    expect(sa.engine.members().some((m) => m.device.did === 'did:bob')).toBe(false);
+    expect(sc.engine.members().some((m) => m.device.did === 'did:bob')).toBe(false);
+
+    // No healing update came from the leaver: the group is rootless until a
+    // REMAINING member speaks, and that member's self-heal re-keys it.
+    expect(() => sa.sendApp(text('after bob left'))).toThrow(/NoRootKey/);
+    const heal = sa.update();
+    sc.ingestFrame(heal);
+    let heard = '';
+    const scAny = sc as unknown as { events: { onAppMessage?: (p: Uint8Array) => void } };
+    scAny.events.onAppMessage = (p: Uint8Array) => {
+      heard = new TextDecoder().decode(p);
+    };
+    sc.ingestFrame(sa.sendApp(text('after bob left')));
+    expect(heard).toBe('after bob left');
+    expect(sa.engine.treeHash()).toBe(sc.engine.treeHash());
+  });
+
+  it('leave: a sole admin must appoint a successor first (refuse, then allow)', () => {
+    const { sa, sb, sc } = foundSessions(); // alice is the only admin
+    const u0 = sa.update();
+    sb.ingestFrame(u0);
+    sc.ingestFrame(u0);
+
+    // Leaving now would freeze the group — nobody could ever add or remove.
+    expect(sa.wouldStrandGroup()).toBe(true);
+    expect(() => sa.leave()).toThrow(/LastAdmin/);
+
+    // Appoint Bob, then leaving is allowed.
+    const grant = sa.grantAdmin('did:bob');
+    sb.ingestFrame(grant);
+    sc.ingestFrame(grant);
+    expect(sa.wouldStrandGroup()).toBe(false);
+    for (const f of sa.leave()) {
+      sb.ingestFrame(f);
+      sc.ingestFrame(f);
+    }
+    expect(sa.amMember()).toBe(false);
+    expect(sb.engine.admins().has('did:bob'), 'the successor can still run the group').toBe(true);
+    expect(sb.engine.members().some((m) => m.device.did === 'did:alice')).toBe(false);
+  });
+
+  it('leave: the last member has nothing to leave (local act, not an op)', () => {
+    const { sa } = foundSessions();
+    sa.update();
+    for (const did of ['did:bob', 'did:carol']) {
+      const m = sa.engine.members().find((x) => x.device.did === did)!;
+      sa.remove(m);
+    }
+    // No successor needed — but also nobody to tell and nothing to heal, and
+    // the tree keeps its last member. The host handles this locally.
+    expect(sa.wouldStrandGroup(), 'nobody left to strand').toBe(false);
+    expect(() => sa.leave()).toThrow(/LastMember/);
+    expect(sa.amMember()).toBe(true);
+  });
 });
