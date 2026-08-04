@@ -118,6 +118,7 @@ export class Session {
     sks: ShareKeyMap,
     rng: Csprng,
     events: SessionEvents = {},
+    kind: 'dm' | 'group' = 'group',
   ): Session {
     const holder: { s: Session | null } = { s: null };
     const boot = {
@@ -132,7 +133,7 @@ export class Session {
       // Bootstrap mint (the create op, before the Session object exists).
       return mintControlRaw(boot, ZERO32, author, deps, payload, rng, boot.frames);
     };
-    const engine = Engine.create(devices, initialAdmins, sks, rng, minter);
+    const engine = Engine.create(devices, initialAdmins, sks, rng, minter, kind);
     const session = new Session(engine, boot.signing, rng, events, {
       seq: boot.seq,
       ctrlSeq: boot.ctrlSeq,
@@ -364,6 +365,11 @@ export class Session {
    */
   leave(): Uint8Array[] {
     if (!this.amMember()) throw new Error('AlreadyLeft: not a member of this conversation');
+    if (this.kind === 'dm') {
+      // Signal semantics: you do not leave a direct conversation, you delete
+      // it. Checked before the admin rules, which have nothing to say here.
+      throw new Error('DirectConversation: a DM cannot be left — delete it locally instead');
+    }
     if (this.engine.members().length === 1) {
       // The tree keeps at least one member (tree.ts RemoveLastMember), and
       // rightly: an empty group has no one to notify and nothing to heal.
@@ -499,6 +505,11 @@ export class Session {
       }
     }
     return null;
+  }
+
+  /** What this conversation is — fixed by its create op (see OpPayload.kind). */
+  get kind(): 'dm' | 'group' {
+    return this.engine.kind;
   }
 
   /** Am I still a member in my own view? False once I process my own removal

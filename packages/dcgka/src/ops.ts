@@ -21,6 +21,16 @@ export type OpPayload =
       /** signingPk: the device's initial protocol signing key (ordering-auth §5); ZERO32 when the frame layer is absent (tests). */
       initialDevices: Array<{ device: DeviceID; leafPk: Uint8Array; signingPk?: Uint8Array }>;
       initialAdmins: string[];
+      /**
+       * What kind of conversation this is, fixed at creation and never
+       * inferred from membership (a group that shrinks to two is still a
+       * group; a two-person group and the DM with that same person must be
+       * distinguishable). `dm` is an AUTHORIZATION statement, not a label:
+       * the DGM rejects every membership op on a DM, so no client — hostile
+       * or buggy — can grow or shrink someone's direct conversation.
+       * Defaults to 'group' when absent.
+       */
+      kind?: 'dm' | 'group';
     }
   | { type: 'add'; device: DeviceID; leafPk: Uint8Array; leafIndex: number; signingPk?: Uint8Array }
   | { type: 'remove'; membership: Membership; removedKeys: Uint8Array[] }
@@ -102,6 +112,7 @@ export function payloadToCbor(p: OpPayload): CborValue {
         [
           p.initialDevices.map((d) => [[d.device.did, d.device.fingerprint], d.leafPk, d.signingPk ?? Z32]),
           p.initialAdmins,
+          p.kind === 'dm' ? 1 : 0,
         ],
       ];
     case 'add':
@@ -149,7 +160,7 @@ export function payloadFromCbor(v: CborValue, authorFingerprint: Uint8Array): Op
   const a = args as CborValue[];
   switch (t) {
     case 1: {
-      const [devices, admins] = a as [CborValue[], string[]];
+      const [devices, admins, kind] = a as [CborValue[], string[], number | undefined];
       return {
         type: 'create',
         initialDevices: devices.map((d) => {
@@ -157,6 +168,7 @@ export function payloadFromCbor(v: CborValue, authorFingerprint: Uint8Array): Op
           return { device: { did, fingerprint: fp }, leafPk, signingPk };
         }),
         initialAdmins: admins,
+        kind: kind === 1 ? 'dm' : 'group',
       };
     }
     case 2: {

@@ -35,6 +35,14 @@ interface Ctx {
   order: Op[];
 }
 
+/** Is this conversation a DM (its create op says so)? Membership is then fixed. */
+function isDirectConversation(ctx: Ctx): boolean {
+  for (const op of ctx.order) {
+    if (op.payload.type === 'create') return op.payload.kind === 'dm';
+  }
+  return false;
+}
+
 function buildCtx(ops: Op[]): Ctx {
   const byId = new Map<string, Op>();
   for (const op of ops) byId.set(opKey(op.id), op);
@@ -257,16 +265,33 @@ function pass(ctx: Ctx, seed: DgmSeed | undefined, prev: PassState | null): Pass
     if (authorOk && removedOk) {
       const view = membersAt(k);
       const authorDid = op.author.device.did;
+      // A DM's membership is FIXED by its create op: exactly those two people,
+      // for as long as it exists. Rejecting membership ops here (not merely in
+      // the local builders) is what makes it an invariant rather than a
+      // convention — no client can grow or shrink someone else's DM.
+      const isDirect = isDirectConversation(ctx);
       switch (p.type) {
         case 'create':
           authzOk = true;
           break;
-        case 'add':
-          authzOk = p.device.did === authorDid || view.admins.has(authorDid);
+        case 'add': {
+          // In a DM the set of PEOPLE is fixed by the create op; enrolling
+          // another device of someone already present is still allowed.
+          const knownDid = [...view.members.values()].some((m) => m.device.did === p.device.did);
+          authzOk = (!isDirect || knownDid) && (p.device.did === authorDid || view.admins.has(authorDid));
           break;
-        case 'remove':
-          authzOk = p.membership.device.did === authorDid || view.admins.has(authorDid);
+        }
+        case 'remove': {
+          // …and the mirror: a DM participant's spare device may be revoked,
+          // but never their last one (that would drop them from the DM).
+          const remaining = [...view.members.values()].filter(
+            (m) => m.device.did === p.membership.device.did,
+          ).length;
+          authzOk =
+            (!isDirect || remaining > 1) &&
+            (p.membership.device.did === authorDid || view.admins.has(authorDid));
           break;
+        }
         case 'grantAdmin': {
           const granteeHasMember = [...view.members.values()].some((m) => m.device.did === p.did);
           authzOk = view.admins.has(authorDid) && granteeHasMember;

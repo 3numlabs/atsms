@@ -363,4 +363,71 @@ describe('ordering-auth Session', () => {
     expect(() => sa.leave()).toThrow(/LastMember/);
     expect(sa.amMember()).toBe(true);
   });
+
+  it('a DM has fixed membership: no add, no remove, no leave — by DGM rule, not convention', () => {
+    const pa = partyOf('alice');
+    const pb = partyOf('bob');
+    const devices = [
+      { device: pa.device, leafPk: pa.leafPk, signingPk: pa.signingPk },
+      { device: pb.device, leafPk: pb.leafPk, signingPk: pb.signingPk },
+    ];
+    const sa = Session.createGroup(devices, ['did:alice'], pa.signingSk, pa.sks, pa.rng, {}, 'dm');
+    const createFrames = sa.takeOutbox();
+    const sb = Session.fromFrames(createFrames, pb.device, pb.signingSk, pb.sks, pb.rng);
+    sb.takeOutbox();
+
+    // Kind travels in the create op, so BOTH sides agree without being told.
+    expect(sa.kind).toBe('dm');
+    expect(sb.kind).toBe('dm');
+
+    const u0 = sa.update();
+    sb.ingestFrame(u0);
+
+    // A third PERSON cannot be added, the other person cannot be evicted, and
+    // there is no leaving — a DM is those two, for as long as it exists.
+    const pc = partyOf('carol');
+    expect(() => sa.add(pc.device, pc.leafPk, pc.signingPk)).toThrow(/DirectConversation/);
+    const bobMembership = sa.engine.members().find((m) => m.device.did === 'did:bob')!;
+    expect(() => sa.remove(bobMembership)).toThrow(/DirectConversation/);
+    expect(() => sa.leave()).toThrow(/DirectConversation/);
+
+    // …and the conversation keeps working as a two-person conversation.
+    let heard = '';
+    const sbAny = sb as unknown as { events: { onAppMessage?: (p: Uint8Array) => void } };
+    sbAny.events.onAppMessage = (p: Uint8Array) => {
+      heard = new TextDecoder().decode(p);
+    };
+    sb.ingestFrame(sa.sendApp(text('just us')));
+    expect(heard).toBe('just us');
+
+    // But DEVICES are not people: enrolling another device of someone already
+    // here is ordinary multi-device life, and revoking a spare is allowed.
+    // (Both blank the root, so this comes last — the group would re-key.)
+    const bob2 = partyOf('bob-phone');
+    const bob2Device = { did: 'did:bob', fingerprint: bob2.device.fingerprint };
+    expect(() => sa.add(bob2Device, bob2.leafPk, bob2.signingPk)).not.toThrow();
+    const spare = sa.engine
+      .members()
+      .find((m) => m.device.did === 'did:bob' && m.device.fingerprint === bob2Device.fingerprint)!;
+    expect(() => sa.remove(spare), 'a spare device may be revoked').not.toThrow();
+  });
+
+  it('a group stays a group when it shrinks to two', () => {
+    const { sa, sb, sc } = foundSessions(); // created as a group (default)
+    const u0 = sa.update();
+    sb.ingestFrame(u0);
+    sc.ingestFrame(u0);
+    expect(sa.kind).toBe('group');
+
+    const carol = sa.engine.members().find((m) => m.device.did === 'did:carol')!;
+    const rm = sa.remove(carol);
+    sb.ingestFrame(rm);
+    expect(sa.engine.members().length).toBe(2);
+    // Two members, but still a group — kind is fixed at creation, never counted.
+    expect(sa.kind).toBe('group');
+    expect(sb.kind).toBe('group');
+    // …so membership can still change.
+    const pd = partyOf('dave');
+    expect(() => sa.add(pd.device, pd.leafPk, pd.signingPk)).not.toThrow();
+  });
 });

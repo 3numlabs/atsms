@@ -100,11 +100,12 @@ export class Engine {
     creatorSks: ShareKeyMap,
     rng: Csprng,
     minter: OpMinter | null = null,
+    kind: 'dm' | 'group' = 'group',
   ): Engine {
     const creator = devices[0];
     if (creator === undefined) throw new Error('create needs at least one device');
     const author: Membership = { device: creator.device, admittedBy: new Uint8Array(32) };
-    const payload: OpPayload = { type: 'create', initialDevices: devices, initialAdmins };
+    const payload: OpPayload = { type: 'create', initialDevices: devices, initialAdmins, kind };
     const op =
       minter !== null
         ? { id: minter(author, [], payload), author, deps: [], payload }
@@ -205,6 +206,12 @@ export class Engine {
       throw new Error('Unauthorized: cross-DID add requires admin (dgm.md §4)');
     }
     if (this.tree.containsId(device.fingerprint)) throw new Error('already a member');
+    // A DM's PEOPLE are fixed; their devices are not. Enrolling another device
+    // of someone already here is ordinary multi-device life; adding a new DID
+    // is what a DM cannot do.
+    if (this.kind === 'dm' && !this.members().some((m) => m.device.did === device.did)) {
+      throw new Error('DirectConversation: a DM has exactly its two people — start a group instead');
+    }
     const leafIndex = this.tree.pushLeaf(device.fingerprint, shareNodeKey(leafPk));
     const op = this.mint({ type: 'add', device, leafPk, leafIndex, signingPk });
     this.recordOp(op);
@@ -213,8 +220,23 @@ export class Engine {
     return op;
   }
 
+  /** What this conversation is, from its create op — fixed, never inferred. */
+  get kind(): 'dm' | 'group' {
+    const boot = this.bootstrapOp();
+    return boot.payload.type === 'create' && boot.payload.kind === 'dm' ? 'dm' : 'group';
+  }
+
   buildRemove(membership: Membership): Op {
     this.settle();
+    // Same rule in reverse: a stale device of a DM participant can be revoked,
+    // but not their LAST one — that would drop the person from the DM, and you
+    // do not evict or leave a direct conversation (you delete it locally).
+    if (
+      this.kind === 'dm' &&
+      this.members().filter((m) => m.device.did === membership.device.did).length <= 1
+    ) {
+      throw new Error('DirectConversation: a DM keeps both people — delete it locally instead');
+    }
     if (
       membership.device.did !== this.me.device.did &&
       !this.dgm.admins.has(this.me.device.did)
