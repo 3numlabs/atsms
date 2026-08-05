@@ -395,7 +395,7 @@ Content-Transfer-Encoding: base64\r
                 : testCase.expectedError.includes("No base64 content")
                   ? "No base64 content found"
                   : testCase.expectedError;
-          expect(error.message).toContain(coreError);
+          expect(error instanceof Error ? error.message : String(error)).toContain(coreError);
         }
       }
     });

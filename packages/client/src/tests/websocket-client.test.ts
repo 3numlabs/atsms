@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 
-import { ATSMSWebSocketClient } from "../lib/websocket-client.js";
+import { ATSMSWebSocketClient, type ATSMSWebSocketClientConfig } from "../lib/websocket-client.js";
 
 describe("ATSMSWebSocketClient", () => {
   let _capturedUrl: string | null = null;
@@ -123,7 +123,7 @@ describe("ATSMSWebSocketClient", () => {
       const config: ATSMSWebSocketClientConfig = {
         apiUrl: "https://api.example.com",
         did: "did:plc:test",
-        certSerial: "serial123",
+        deviceFingerprint: "serial123",
         getToken: async () => "token",
       };
 
@@ -135,7 +135,7 @@ describe("ATSMSWebSocketClient", () => {
       const config: ATSMSWebSocketClientConfig = {
         apiUrl: "https://api.example.com",
         did: "did:plc:test",
-        certSerial: "serial123",
+        deviceFingerprint: "serial123",
         getToken: async () => "token",
       };
 
@@ -154,7 +154,7 @@ describe("ATSMSWebSocketClient", () => {
       const config: ATSMSWebSocketClientConfig = {
         apiUrl: "https://api.example.com",
         did: "did:plc:test",
-        certSerial: "serial123",
+        deviceFingerprint: "serial123",
         getToken: async () => "token",
       };
 
@@ -168,7 +168,7 @@ describe("ATSMSWebSocketClient", () => {
       const config: ATSMSWebSocketClientConfig = {
         apiUrl: "https://api.example.com",
         did: "did:plc:test",
-        certSerial: "serial123",
+        deviceFingerprint: "serial123",
         getToken: async () => "token",
       };
 
@@ -179,7 +179,7 @@ describe("ATSMSWebSocketClient", () => {
           did: "did:plc:recipient",
           endpoints: [
             {
-              certSerial: "12345678",
+              certSerial: "12345678", // legacy ATSMSSendRecipient shape (pre-v2 surface)
               email: "user@example.com",
             },
           ],
@@ -196,7 +196,7 @@ describe("ATSMSWebSocketClient", () => {
       const config: ATSMSWebSocketClientConfig = {
         apiUrl: "https://api.example.com",
         did: "did:plc:test",
-        certSerial: "serial123",
+        deviceFingerprint: "serial123",
         getToken: async () => "token",
       };
 

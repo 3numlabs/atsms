@@ -18,13 +18,22 @@ Layer: **[Protocol]** — this is the open ATSMS core, not Haiven-operator produ
 bun install                 # deps (bun is the package manager, not npm)
 bun test src/tests          # test suite (bun:test)
 bun test src/tests/foo.test.ts
+bun run typecheck           # tsc over lib + tests + scripts (no emit)
 bun run build               # 3 bundles (browser/node/native) + tsc .d.ts
-bun run build-types         # just tsc (type-check + emit .d.ts)
+bun run build-types         # just tsc (type-check + emit .d.ts, lib only)
 bun run lint  / lint:fix
 ```
 
 `tsc` is **`strict: true`**. `@atsms/dcgka` ships built `.d.ts` (so atsms-lib's tsc uses declarations, not
 dcgka source); runtime (bun) still runs dcgka source.
+
+**Two tsconfigs, on purpose.** `tsconfig.json` is the EMIT config: `src/lib` only, `rootDir` set,
+declarations to `dist/`. `tsconfig.test.json` extends it for CHECKING — adds `src/tests` and `scripts`,
+`noEmit`, and ES2022/esnext (what bun actually runs them under). Before this split the tests were
+excluded from every tsc invocation, so a rename could pass `tsc` and fail at runtime one test at a
+time — and stale fields (`certSerial` after the §8.5 fingerprint re-keying) sat in transport and
+websocket tests for weeks, quietly asserting URLs containing `undefined`. Run `bun run typecheck`
+after any refactor.
 
 ## Architecture — the two surfaces + their modules
 

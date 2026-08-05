@@ -50,7 +50,7 @@ function transportOver(w: ReturnType<typeof fakeWorker>, resolveInboxUrl = async
   const t = new ATSMSWorkerEnvelopeTransport({
     apiUrl: "https://worker.test",
     did: "did:plc:me",
-    certSerial: "abc123",
+    deviceFingerprint: "abc123",
     privateKeyPEM: KEY_PEM,
     resolveInboxUrl,
     fetchFn: w.fetchFn,

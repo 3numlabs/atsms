@@ -7,6 +7,13 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { ATSMSApiClient } from "../lib/atsms-api.js";
 import { type ATSMSConfig } from "../lib/types.js";
 
+/** A loosely-typed view of globalThis for fetch mocking: bun's `typeof fetch`
+ *  also carries `preconnect`, which these call-signature-only stubs do not
+ *  implement (and never exercise). */
+const g = globalThis as unknown as {
+  fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+};
+
 describe("ATSMSApiClient", () => {
   let client: ATSMSApiClient;
   const testConfig: ATSMSConfig = {
@@ -29,10 +36,10 @@ describe("ATSMSApiClient", () => {
       client.setAuthToken(token);
 
       // Mock fetch to verify headers
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedHeaders: HeadersInit | undefined;
 
-      global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      g.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         capturedHeaders = init?.headers;
         return new Response(
           JSON.stringify({
@@ -55,7 +62,7 @@ describe("ATSMSApiClient", () => {
           `Bearer ${token}`,
         );
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
   });
@@ -65,10 +72,10 @@ describe("ATSMSApiClient", () => {
       client.setAuthToken("test-token");
 
       // Mock fetch to capture the URL
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedUrl = "";
 
-      global.fetch = async (input: RequestInfo | URL) => {
+      g.fetch = async (input: RequestInfo | URL) => {
         capturedUrl = input.toString();
         return new Response(
           JSON.stringify({
@@ -90,7 +97,7 @@ describe("ATSMSApiClient", () => {
           "https://test.api.acme.xyz/messages/did:plc:test/cert123/list",
         );
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
 
@@ -98,10 +105,10 @@ describe("ATSMSApiClient", () => {
       client.setAuthToken("test-token");
 
       // Mock fetch to capture the URL
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedUrl = "";
 
-      global.fetch = async (input: RequestInfo | URL) => {
+      g.fetch = async (input: RequestInfo | URL) => {
         capturedUrl = input.toString();
         return new Response(
           JSON.stringify({
@@ -123,7 +130,7 @@ describe("ATSMSApiClient", () => {
           "https://test.api.acme.xyz/messages/did:plc:test/cert123/list?after=42",
         );
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
 
@@ -131,10 +138,10 @@ describe("ATSMSApiClient", () => {
       client.setAuthToken("test-token");
 
       // Mock fetch to capture the URL
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedUrl = "";
 
-      global.fetch = async (input: RequestInfo | URL) => {
+      g.fetch = async (input: RequestInfo | URL) => {
         capturedUrl = input.toString();
         return new Response(
           JSON.stringify({
@@ -156,14 +163,14 @@ describe("ATSMSApiClient", () => {
           "https://test.api.acme.xyz/messages/did:plc:test/cert123/list?after=0",
         );
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
 
     test("should handle API errors gracefully", async () => {
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
 
-      global.fetch = async () => {
+      g.fetch = async () => {
         return new Response("Not Found", {
           status: 404,
           statusText: "Not Found",
@@ -175,7 +182,7 @@ describe("ATSMSApiClient", () => {
           client.listMessages("did:plc:test", "cert-serial"),
         ).rejects.toThrow("Failed to list messages");
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
   });
@@ -186,10 +193,10 @@ describe("ATSMSApiClient", () => {
       const certSerial = "test-cert-serial";
       const messageId = "msg-123";
 
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedUrl = "";
 
-      global.fetch = async (input: RequestInfo | URL) => {
+      g.fetch = async (input: RequestInfo | URL) => {
         capturedUrl = input.toString();
         return new Response(
           JSON.stringify({
@@ -212,18 +219,18 @@ describe("ATSMSApiClient", () => {
         );
         expect(result.id).toBe(messageId);
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
   });
 
   describe("sendMessage", () => {
     test("should send atsms message with correct payload", async () => {
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedBody: any;
       let capturedUrl = "";
 
-      global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      g.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         capturedUrl = input.toString();
         capturedBody = init?.body ? JSON.parse(init.body as string) : undefined;
         return new Response(
@@ -245,15 +252,15 @@ describe("ATSMSApiClient", () => {
           encryptedContent: "base64content==",
         });
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
 
     test("should include messageType when not atsms", async () => {
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedBody: any;
 
-      global.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      g.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
         capturedBody = init?.body ? JSON.parse(init.body as string) : undefined;
         return new Response(
           JSON.stringify({ success: true, results: [] }),
@@ -269,7 +276,7 @@ describe("ATSMSApiClient", () => {
         );
         expect(capturedBody.messageType).toBe("atsms-email");
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
   });
@@ -279,12 +286,12 @@ describe("ATSMSApiClient", () => {
       const recipientDID = "did:plc:recipient";
       const encryptedContent = "base64encodedcontent==";
 
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedBody: any;
       let capturedMethod: string | undefined;
       let capturedUrl = "";
 
-      global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      g.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         capturedUrl = input.toString();
         capturedMethod = init?.method;
         capturedBody = init?.body ? JSON.parse(init.body as string) : undefined;
@@ -300,14 +307,14 @@ describe("ATSMSApiClient", () => {
           encryptedContent: encryptedContent,
         });
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
 
     test("should handle send errors in legacy method", async () => {
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
 
-      global.fetch = async () => {
+      g.fetch = async () => {
         return new Response("Server Error", {
           status: 500,
           statusText: "Internal Server Error",
@@ -319,7 +326,7 @@ describe("ATSMSApiClient", () => {
           client.sendMessageLegacy("did:plc:test", "content"),
         ).rejects.toThrow("Failed to send message");
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
   });
@@ -330,11 +337,11 @@ describe("ATSMSApiClient", () => {
       const certSerial = "test-cert-serial";
       const messageId = "msg-123";
 
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedUrl = "";
       let capturedMethod: string | undefined;
 
-      global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      g.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         capturedUrl = input.toString();
         capturedMethod = init?.method;
         return new Response("", { status: 200 });
@@ -347,7 +354,7 @@ describe("ATSMSApiClient", () => {
         );
         expect(capturedMethod).toBe("DELETE");
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
   });
@@ -357,10 +364,10 @@ describe("ATSMSApiClient", () => {
       const did = "did:plc:test123";
       const certSerial = "test-cert-serial";
 
-      const originalFetch = global.fetch;
+      const originalFetch = g.fetch;
       let capturedUrl = "";
 
-      global.fetch = async (input: RequestInfo | URL) => {
+      g.fetch = async (input: RequestInfo | URL) => {
         capturedUrl = input.toString();
         return new Response(
           JSON.stringify({
@@ -384,7 +391,7 @@ describe("ATSMSApiClient", () => {
         expect(stats.latestSeq).toBe(42);
         expect(stats.connectedClients).toBe(3);
       } finally {
-        global.fetch = originalFetch;
+        g.fetch = originalFetch;
       }
     });
   });

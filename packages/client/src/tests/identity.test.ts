@@ -20,7 +20,10 @@ import { generateTestEndpointCertificate } from "./test-certificates.js";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 async function sha256(data: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await cryptoProvider.subtle.digest("SHA-256", data));
+  // `as BufferSource`: the DOM typings want ArrayBufferView<ArrayBuffer> while a
+  // plain Uint8Array is ArrayBufferLike-backed. A typings-level variance only —
+  // WebCrypto takes either at runtime.
+  return new Uint8Array(await cryptoProvider.subtle.digest("SHA-256", data as BufferSource));
 }
 
 /** A mock AtpAgent: an in-memory single-repo (`myDid`) store over com.atproto.repo.*. */
@@ -137,7 +140,13 @@ describe("identityPublicKeyFromCert", () => {
     // Correctness: a signature made by the cert's private key verifies under the
     // extracted public key — exactly what prekey bundleSig verification relies on.
     const der = pemToDer(privateKey);
-    const sk = await cryptoProvider.subtle.importKey("pkcs8", der, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+    const sk = await cryptoProvider.subtle.importKey(
+      "pkcs8",
+      der as BufferSource, // see sha256 above — typings variance, not a runtime concern
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["sign"],
+    );
     const msg = enc("prekey-bundle-under-cert-key");
     const sig = new Uint8Array(await cryptoProvider.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, sk, msg));
     expect(p256.verify(sig, await sha256(msg), pub, { lowS: false })).toBe(true);
@@ -185,7 +194,7 @@ function b64urlToBytes(s: string): Uint8Array {
 async function p256Scalar(privateKeyPEM: string): Promise<Uint8Array> {
   const key = await cryptoProvider.subtle.importKey(
     "pkcs8",
-    pemToDer(privateKeyPEM),
+    pemToDer(privateKeyPEM) as BufferSource, // typings variance — see sha256
     { name: "ECDSA", namedCurve: "P-256" },
     true,
     ["sign"],

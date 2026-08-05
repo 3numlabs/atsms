@@ -29,8 +29,6 @@
   "exclude": [
     "node_modules",
     "dist",
-    "src/client",
-    "src/workers",
     "src/tests"
   ]
 }

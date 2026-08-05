@@ -133,7 +133,7 @@ describe("Conversation (app-facing message pipeline)", () => {
     const bob = party(4, "did:plc:bob4");
     const { convoA, convoB, wires } = await founded(alice, bob);
 
-    const seen: string[][] = [];
+    const seen: Array<Array<string | null>> = [];
     const sub = convoB.messages$.subscribe((msgs) => seen.push(texts(msgs)));
 
     await pipe(await convoA.send("reactive"), wires);
