@@ -24,12 +24,12 @@ describe("ATSMSWebSocketClient", () => {
       // Test the URL construction logic directly
       const apiUrl = "https://inbox.atsms.at";
       const did = "did:plc:gbkt44wmk7k3h3dm2dlqhcoj";
-      const certSerial = "a34e16bf51aec7ef";
+      const deviceFingerprint = "a34e16bf51aec7ef";
 
       // Replicate the URL construction from websocket-client.ts:61-64
       const encodedDid = encodeURIComponent(did);
-      const encodedCertSerial = encodeURIComponent(certSerial);
-      const wsUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedCertSerial}`;
+      const encodedFingerprint = encodeURIComponent(deviceFingerprint);
+      const wsUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedFingerprint}`;
 
       // Verify DID is URL-encoded (colons should be %3A)
       expect(wsUrl).toContain("did%3Aplc%3Agbkt44wmk7k3h3dm2dlqhcoj");
@@ -47,14 +47,14 @@ describe("ATSMSWebSocketClient", () => {
       expect(pathPart).not.toContain(":");
     });
 
-    test("should URL-encode certificate serials with special characters", () => {
+    test("should URL-encode device fingerprints with special characters", () => {
       const apiUrl = "https://api.example.com";
       const did = "did:plc:test123";
-      const certSerial = "cert/serial+special=chars";
+      const deviceFingerprint = "cert/serial+special=chars";
 
       const encodedDid = encodeURIComponent(did);
-      const encodedCertSerial = encodeURIComponent(certSerial);
-      const wsUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedCertSerial}`;
+      const encodedFingerprint = encodeURIComponent(deviceFingerprint);
+      const wsUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedFingerprint}`;
 
       // Verify special characters are encoded
       expect(wsUrl).toContain("cert%2Fserial%2Bspecial%3Dchars");
@@ -66,11 +66,11 @@ describe("ATSMSWebSocketClient", () => {
     test("should convert http to ws protocol", () => {
       const apiUrl = "http://localhost:3000";
       const did = "did:plc:test";
-      const certSerial = "serial123";
+      const deviceFingerprint = "e3b0c44298fc1c14";
 
       const encodedDid = encodeURIComponent(did);
-      const encodedCertSerial = encodeURIComponent(certSerial);
-      const wsUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedCertSerial}`;
+      const encodedFingerprint = encodeURIComponent(deviceFingerprint);
+      const wsUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedFingerprint}`;
 
       expect(wsUrl).toStartWith("ws://localhost:3000");
       expect(wsUrl).not.toStartWith("http://");
@@ -79,11 +79,11 @@ describe("ATSMSWebSocketClient", () => {
     test("should convert https to wss protocol", () => {
       const apiUrl = "https://secure.example.com";
       const did = "did:plc:abc";
-      const certSerial = "xyz";
+      const deviceFingerprint = "xyz";
 
       const encodedDid = encodeURIComponent(did);
-      const encodedCertSerial = encodeURIComponent(certSerial);
-      const wsUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedCertSerial}`;
+      const encodedFingerprint = encodeURIComponent(deviceFingerprint);
+      const wsUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedFingerprint}`;
 
       expect(wsUrl).toStartWith("wss://secure.example.com");
       expect(wsUrl).not.toStartWith("https://");
@@ -93,10 +93,10 @@ describe("ATSMSWebSocketClient", () => {
       // This test demonstrates the bug that was fixed
       const apiUrl = "https://inbox.atsms.at";
       const did = "did:plc:gbkt44wmk7k3h3dm2dlqhcoj";
-      const certSerial = "a34e16bf51aec7ef";
+      const deviceFingerprint = "a34e16bf51aec7ef";
 
       // OLD WAY (buggy - no encoding)
-      const buggyUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${did}/${certSerial}`;
+      const buggyUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${did}/${deviceFingerprint}`;
 
       // The buggy URL contains unencoded colons
       expect(buggyUrl).toContain("did:plc:");
@@ -106,8 +106,8 @@ describe("ATSMSWebSocketClient", () => {
 
       // NEW WAY (correct - with encoding)
       const encodedDid = encodeURIComponent(did);
-      const encodedCertSerial = encodeURIComponent(certSerial);
-      const correctUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedCertSerial}`;
+      const encodedFingerprint = encodeURIComponent(deviceFingerprint);
+      const correctUrl = `${apiUrl.replace("https://", "wss://").replace("http://", "ws://")}/ws/${encodedDid}/${encodedFingerprint}`;
 
       // The correct URL has encoded colons
       expect(correctUrl).not.toContain("did:plc:");
@@ -123,7 +123,7 @@ describe("ATSMSWebSocketClient", () => {
       const config: ATSMSWebSocketClientConfig = {
         apiUrl: "https://api.example.com",
         did: "did:plc:test",
-        deviceFingerprint: "serial123",
+        deviceFingerprint: "e3b0c44298fc1c14",
         getToken: async () => "token",
       };
 
@@ -135,7 +135,7 @@ describe("ATSMSWebSocketClient", () => {
       const config: ATSMSWebSocketClientConfig = {
         apiUrl: "https://api.example.com",
         did: "did:plc:test",
-        deviceFingerprint: "serial123",
+        deviceFingerprint: "e3b0c44298fc1c14",
         getToken: async () => "token",
       };
 
@@ -149,76 +149,20 @@ describe("ATSMSWebSocketClient", () => {
     });
   });
 
-  describe("Send Message API", () => {
-    test("should have sendMessage method", () => {
+  describe("Requests", () => {
+    test("should reject a request when not connected", async () => {
       const config: ATSMSWebSocketClientConfig = {
         apiUrl: "https://api.example.com",
         did: "did:plc:test",
-        deviceFingerprint: "serial123",
+        deviceFingerprint: "e3b0c44298fc1c14",
         getToken: async () => "token",
       };
 
       const client = new ATSMSWebSocketClient(config);
 
-      // Verify sendMessage method exists
-      expect(typeof client.sendMessage).toBe("function");
-    });
-
-    test("should reject sendMessage when not connected", async () => {
-      const config: ATSMSWebSocketClientConfig = {
-        apiUrl: "https://api.example.com",
-        did: "did:plc:test",
-        deviceFingerprint: "serial123",
-        getToken: async () => "token",
-      };
-
-      const client = new ATSMSWebSocketClient(config);
-
-      const recipients = [
-        {
-          did: "did:plc:recipient",
-          endpoints: [
-            {
-              certSerial: "12345678", // legacy ATSMSSendRecipient shape (pre-v2 surface)
-              email: "user@example.com",
-            },
-          ],
-        },
-      ];
-
-      // Should reject when not connected
-      await expect(
-        client.sendMessage(recipients, "base64content"),
-      ).rejects.toThrow("WebSocket not connected or authenticated");
-    });
-
-    test("should accept grouped multi-recipient format", () => {
-      const config: ATSMSWebSocketClientConfig = {
-        apiUrl: "https://api.example.com",
-        did: "did:plc:test",
-        deviceFingerprint: "serial123",
-        getToken: async () => "token",
-      };
-
-      const client = new ATSMSWebSocketClient(config);
-
-      // Verify the method accepts the new grouped format
-      const recipients = [
-        {
-          did: "did:plc:recipient1",
-          endpoints: [
-            { certSerial: "12345678", email: "user1@example.com" },
-            { certSerial: "abcdef12", email: "user1-backup@example.com" },
-          ],
-        },
-        {
-          did: "did:plc:recipient2",
-          endpoints: [{ certSerial: "87654321", email: "user2@example.com" }],
-        },
-      ];
-
-      // This will fail with "not connected" but verifies the signature is correct
-      expect(client.sendMessage(recipients, "base64content")).rejects.toThrow();
+      await expect(client.listMessages()).rejects.toThrow(
+        "WebSocket not connected or authenticated",
+      );
     });
   });
 });

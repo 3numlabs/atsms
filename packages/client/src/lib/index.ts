@@ -65,18 +65,12 @@ export * from "./format/index";
 // Export the shared inbound ingest + transcript helpers
 export { ingestMessage, transcriptMessages } from "./storage/apply";
 
-// Export API client
-export { ATSMSApiClient } from "./atsms-api";
-
-// Export WebSocket client
+// Export WebSocket client (inbound push for the envelope transport)
 export {
   ATSMSWebSocketClient,
   type ATSMSWebSocketClientConfig,
   type ATSMSWebSocketMessage,
 } from "./websocket-client";
-
-// Export Transport Layer
-export { ATSMSTransportLayer } from "./transport-layer";
 
 // Export JWT authentication
 export { generateJWT, getTokenExpiration } from "./jwt-auth";
@@ -94,7 +88,6 @@ export type {
   ATSMSListMessagesResponse,
   ATSMSMessageMetadata,
   ATSMSStatsResponse,
-  ATSMSTransportLayerConfig,
   ATSMSTransportMessage,
   ATSMSTransportReceipt,
 } from "./types";

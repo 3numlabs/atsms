@@ -118,45 +118,6 @@ export interface ATProtocolRecord {
 }
 
 /**
- * Recipient information for multi-recipient message send
- * Groups all endpoints (devices) for a single DID
- */
-export interface ATSMSSendRecipient {
-  did: string; // Recipient's DID
-  endpoints: Array<{
-    certSerial: string; // Certificate serial number for this endpoint/device
-    email: string; // Email address for routing (DO-to-DO vs SMTP)
-  }>;
-}
-
-/**
- * Response from sending messages to multiple recipients
- * Contains per-endpoint delivery results
- */
-export interface ATSMSSendMessageResponse {
-  results: Array<{
-    did: string; // Recipient DID
-    certSerial?: string; // Recipient certificate serial (atsms/atsms-email)
-    email?: string; // Recipient email (atsms/atsms-email)
-    status: "sent" | "failed"; // Delivery status
-    error?: string; // Error message (if failed)
-    deliveredTo?: number; // Number of certs delivered to (email type)
-  }>;
-}
-
-/**
- * Configuration for the transport layer
- * Used to initialize ATSMSTransportLayer with HTTP and WebSocket clients
- */
-export interface ATSMSTransportLayerConfig {
-  did: string;
-  certSerial: string;
-  httpClient: any; // ATSMSApiClient (avoiding circular dependency)
-  wsClient?: any; // ATSMSWebSocketClient (avoiding circular dependency)
-  preferWebSocket?: boolean;
-}
-
-/**
  * Options for listing messages from inbox
  */
 export interface ATSMSListMessagesOptions {

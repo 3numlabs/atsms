@@ -1,5 +1,12 @@
 # @atsms/sms API Reference
 
+> **STALE — documents the pre-v2 API.** Most of what follows no longer exists. The god-object clients
+> (`ATSMSStorageManager`, `ATSMSClient`) were deleted at the v2 message-format cut-over, and
+> `ATSMSTransportLayer` / `ATSMSApiClient` were deleted with the rest of that surface on 2026-08-05.
+> For the current API — `ATSMS.create()`, `atsms.send()`, `atsms.conversations`, `atsms.peers` — see
+> [`CLAUDE.md`](./CLAUDE.md) and the umbrella [`docs/sdk-shape.md`](../docs/sdk-shape.md). This file is
+> kept only until it is rewritten against the current shape.
+
 Complete API documentation for the AT-SMS Secure Messaging System library.
 
 **Browser & Node.js Support**: This library supports both environments with automatic platform detection and WebCrypto API usage.

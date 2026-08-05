@@ -19,8 +19,6 @@ import type {
   ATSMSDeleteMessageResponse,
   ATSMSGetMessageResponse,
   ATSMSListMessagesResponse,
-  ATSMSSendMessageResponse,
-  ATSMSSendRecipient,
   ATSMSStatsResponse,
 } from "./types";
 
@@ -551,21 +549,4 @@ export class ATSMSWebSocketClient {
     };
   }
 
-  /**
-   * Send a message via WebSocket
-   * @param recipients - Array of recipient objects with DID, certSerial, and email
-   * @param encryptedContent - Base64-encoded encrypted message content
-   */
-  async sendMessage(
-    recipients: ATSMSSendRecipient[],
-    encryptedContent: string,
-  ): Promise<ATSMSSendMessageResponse> {
-    const response = await this.sendRequest<any>("send", {
-      to: recipients,
-      encryptedContent,
-    });
-    return {
-      results: response.results || [],
-    };
-  }
 }
