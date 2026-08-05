@@ -105,3 +105,88 @@ any member holding that epoch key can open any copy — a copy addressed to anot
 our own devices is normally salvaged, not buffered. What actually buffers is traffic
 under an epoch we do not hold, which is precisely why the report should be keyed to
 epochs learned.
+
+---
+
+*Issues 5–9 come from the loss-and-reordering survey of 2026-08-05 — every message type audited
+against "what if this is dropped for good" and "what if this arrives out of order". The full
+per-message analysis, with enough background to read it cold, is
+[`spec/loss-and-reordering.md`](./spec/loss-and-reordering.md).*
+
+## 5. First contact has no retry and nothing to repair from — OPEN, pre-v1
+
+A conversation begins with one best-effort envelope sealed to the recipient's prekey: a `create`
+(founding a conversation) or a `welcome` (admitting a new device). If it is lost, nothing recovers it.
+The sender gets no acknowledgement — deliberate, since security properties attach to *processing*, not
+to acks — and the recipient cannot ask for it, because repair is a conversation-level mechanism and the
+recipient has no conversation. Any later group traffic arrives as a symmetric envelope matching no known
+conversation, so it is discarded and deleted at the relay rather than held.
+
+Consequences today: a lost `create` means the recipient never learns the conversation exists, silently,
+with no signal on either side. A lost `welcome` means the joiner never joins while every other member's
+view already contains them; the only cure is a human noticing and doing remove-then-re-add. The same
+gap makes the ordering case lossy: traffic that overtakes a welcome is dropped rather than buffered.
+
+This is the most consequential of the five — it is how every conversation starts. **Design it together
+with inbound admission control**, which touches the same moment: an invitation held pending a policy
+decision must not trigger a re-request, since that would signal to the sender exactly what holding it
+back is meant to conceal.
+
+Candidate directions (undecided): sender-side retransmission with a bounded schedule; a holding area
+for envelopes that match no known conversation, so a late `create`/`welcome` can still make sense of
+them; making stale-member surfacing (ordering-auth §9) real so a never-arrived joiner becomes visible
+to the group rather than invisible.
+
+## 6. Application-message loss recovery is specified but unbuilt — OPEN, pre-v1
+
+`ordering-auth.md` §8.1 is a complete design, marked DESIGNED 2026-07-23, with no implementation. Today
+a user message that is never delivered is lost silently at both ends. Two shapes: an **interior gap**
+(message 5 arrived, 4 never did) is locally detectable — the skipped-key store records the hole — but no
+request is ever issued for it; a **trailing gap** (the sender sent three more, then went quiet) is
+undiscoverable, because nothing advertises how many messages exist.
+
+Reordering, by contrast, is handled well and passively: kept skipped keys mean a late message still
+decrypts when it turns up.
+
+The design needs: a per-epoch high-water advert (`appHW`) on coverage frames, app-range repair requests
+naming `(sender, epoch, fromGen, toGen)`, and serving from any member (the inner ciphertext is identical
+for every recipient, so any holder can answer). Note it depends on coverage frames actually being sent
+— issue 7. Recovery stays bounded by forward secrecy: past epoch eviction the ciphertext can be
+re-served but is undecryptable by design, and the client must then say so rather than omit the message.
+
+## 7. Head-reconciliation adverts are built but never sent — OPEN, pre-v1
+
+`coverage()` / `advertiseHeads()` exist in the engine — a frame whose dependencies are the sender's
+current frontier, carrying a consistency digest, so a peer missing anything buffers it and repairs.
+Nothing in `@atsms/sms` ever schedules one.
+
+Consequence: gaps are discovered only because *later* traffic depends on the missing operation. That
+covers a busy conversation, but in one that has gone quiet a trailing control gap sits undetected — a
+member can be a full epoch behind and neither side notices until someone speaks. Scheduling coverage on
+idle is a small host-side change, and it is also the carrier issue 6 needs, so the two should land
+together.
+
+## 8. A restart erases the evidence of a gap — OPEN, pre-v1
+
+`Session.serialize()` persists the retained frame log, the secrets and the counters — deliberately not
+the buffer of frames waiting on a hole, nor the seal layer's envelopes waiting for an epoch. Both are
+in-memory only, and both were already acknowledged and deleted at the relay.
+
+So a restart loses the data *and* the knowledge that something is missing: the buffer is empty, so the
+repair timer sees nothing to repair and never fires. The hole resurfaces only if new traffic happens to
+depend on the missing operation. This is the durability half of issue 3 (ack-before-durable) — the fix
+is either to persist the pending state alongside the session, or to stop deleting at the relay until an
+envelope has been genuinely consumed, which sealed sender makes hard to define ("not mine" and "not
+mine yet" are indistinguishable by design).
+
+## 9. Forward secrecy is claimed but not enforced at runtime — OPEN, pre-v1
+
+Retained frames are never evicted (`retain()` only ever adds), and nothing in the host calls the
+engine's epoch eviction. The specified retention rules — keep until covered by all members, or 30 days
+(`T_REPAIR_GIVEUP`) — are not implemented anywhere.
+
+The visible symptom is storage growing without bound, which is the mild part. The real cost is that old
+epoch keys stay live, so the forward-secrecy window the spec describes never actually closes: a device
+compromised today still yields yesterday's traffic. This also interacts with issue 6, whose bounded
+recovery story assumes eviction is real. It should be on the external crypto review's list either way —
+a claimed property that no code enforces is exactly what a review exists to catch.
