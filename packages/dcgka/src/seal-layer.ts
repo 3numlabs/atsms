@@ -38,6 +38,8 @@ import {
   parseSymEnvelope,
   sealAsymTo,
   sealSymTo,
+  openSym,
+  type SealedPlaintext,
 } from './envelope.js';
 import { payloadFromCbor } from './ops.js';
 import type { Session } from './ordering.js';
@@ -213,9 +215,25 @@ export class SealLayer {
       parseSymEnvelope(envelope); // validate shape
       const opened = this.tags.open(envelope);
       if (opened === null) {
-        // Not addressed to us by a member. Is it a device we removed that
-        // never learned? Then consume it — content discarded, never ingested —
-        // and re-send its removal notice.
+        // Not addressed to US by tag — but that is the COMMON case in a
+        // multi-device DID: the relay cannot tell which device an envelope is
+        // for (sealed sender), so it fans every copy to every device of the
+        // recipient DID, and we see one copy per sibling.
+        //
+        // Those copies are ours to open anyway: the sym key is per
+        // (epoch, sender) — only the tag and nonce are per-recipient (§11.3,
+        // where the tag is called a routing HINT, not a secret). Opening them
+        // turns fan-out into redundancy (a sibling's copy still delivers the
+        // frame if ours was lost) and, just as usefully, keeps the
+        // unopenable-envelope warning meaningful instead of firing on ordinary
+        // multi-device traffic.
+        const sibling = this.openAsSiblingCopy(envelope);
+        if (sibling !== null) {
+          if (sibling.contentType === CONTENT_FRAME) this.ingest(sibling.body); // A5 dedups
+          return true;
+        }
+        // Is it a device we removed that never learned? Then consume it —
+        // content discarded, never ingested — and re-send its removal notice.
         const fromRemoved = this.removedTags.open(envelope);
         if (fromRemoved !== null) {
           const meta = fromRemoved.meta as { device: DeviceID };
@@ -223,7 +241,7 @@ export class SealLayer {
           this.session.renotifyRemovedDevice(meta.device);
           return true;
         }
-        return false; // unknown tag — epoch not derived yet
+        return false; // genuinely unknown: an epoch we do not hold
       }
       if (opened.plaintext.contentType === CONTENT_FRAME) this.ingest(opened.plaintext.body);
       return true;
@@ -241,6 +259,37 @@ export class SealLayer {
       return false; // not addressed to us
     }
     return false;
+  }
+
+  /**
+   * Try every (live epoch, member-sender) key we hold. A hit means the
+   * envelope is a fan-out copy addressed to one of our sibling devices —
+   * same plaintext, different tag/nonce. Bounded by epochs × members, and
+   * only reached when the tag lookup missed.
+   */
+  private openAsSiblingCopy(envelope: Uint8Array): SealedPlaintext | null {
+    const eng = this.session.engine;
+    // Only while we are IN the group. A device that left or was removed can
+    // still decrypt fan-out copies for a while (it holds the old epoch), and
+    // picking group state out of them would let it walk itself back in: it
+    // would ingest the add op that re-admits it from someone else's copy,
+    // believe it is a member again, and never process the welcome that
+    // carries the material it actually needs — so its next message is sealed
+    // under state no one shares (live-shaped regression, caught by the
+    // leave → re-add churn scenario). The way back in is the welcome.
+    if (!this.session.amMember()) return null;
+    for (const epochId of eng.liveEpochs()) {
+      for (const sender of eng.members()) {
+        const envKey = eng.epochEnvKey(epochId, encodeMembership(sender));
+        if (envKey === null) continue;
+        try {
+          return openSym(envKey, envelope);
+        } catch {
+          /* not this key — keep looking */
+        }
+      }
+    }
+    return null;
   }
 
   private ingest(frameBytes: Uint8Array): void {

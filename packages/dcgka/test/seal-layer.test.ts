@@ -397,6 +397,66 @@ describe('SealLayer in-band delivery-endpoint advertisement (§12)', () => {
     expect(carol.session.amMember(), 'the re-notice reached her').toBe(false);
     expect(() => carol.session.sendApp(text('anyone?'))).toThrow(/NoRootKey/);
   });
+
+  it("a multi-device DID's fan-out copies open, they do not look like divergence", () => {
+    // The relay cannot tell which device an envelope is for, so it fans every
+    // copy to every device of the recipient DID: a device sees one copy per
+    // sibling. Those are ours to open — the sym key is per (epoch, sender),
+    // only the tag is per-recipient — so they must neither be reported as
+    // divergence (live 2026-08-04: a healthy DM produced three "epoch
+    // divergence" warnings per message) nor wasted.
+    //
+    // The test delivers ONLY THE SIBLING'S COPY, so it fails outright without
+    // the salvage path rather than passing on the device's own copy.
+    const wire = new Wire();
+    const pa = party('alice');
+    const pb1 = party('bob-phone');
+    const pb2 = party('bob-laptop'); // same person, second device
+    const fpOf = (p: Party) => blakeHex(p.device.fingerprint);
+    const dev = (p: Party) => ({ did: p === pa ? 'did:alice' : 'did:bob', fingerprint: p.device.fingerprint });
+
+    const aliceSession = Session.createGroup(
+      [pa, pb1, pb2].map((p) => ({ device: dev(p), leafPk: p.leafPk, signingPk: p.signingPk })),
+      ['did:alice'],
+      pa.signingSk,
+      pa.sks,
+      pa.rng,
+    );
+    const alice = new SealLayer(aliceSession, [pa.leafSk], pa.rng);
+    wire.send(alice.drainSealed());
+    const events: string[] = [];
+    const boot = (p: Party, sink?: (k: string) => void): SealLayer => {
+      const env = wire.take(fpOf(p))[0]!;
+      const s2 = Session.fromFrames([SealLayer.openBootstrap(env, [p.leafSk])], dev(p), p.signingSk, p.sks, p.rng);
+      return new SealLayer(s2, [p.leafSk], p.rng, sink === undefined ? undefined : (k) => sink(k));
+    };
+    const phone = boot(pb1, (k) => events.push(k));
+    const laptop = boot(pb2);
+    const heard: string[] = [];
+    (phone.session as unknown as { events: { onAppMessage?: (p: Uint8Array) => void } }).events.onAppMessage = (
+      p: Uint8Array,
+    ) => heard.push(new TextDecoder().decode(p));
+
+    // Everyone derives the epoch from Alice's first update.
+    aliceSession.update();
+    for (const o of alice.drainSealed()) {
+      phone.deliver(o.envelope);
+      laptop.deliver(o.envelope);
+    }
+
+    // Alice speaks. The phone receives ONLY the copy addressed to the laptop.
+    aliceSession.sendApp(text('hello both of bobs devices'));
+    const copies = alice.drainSealed();
+    const laptopCopy = copies.find((o) => o.to === fpOf(pb2));
+    expect(laptopCopy, "alice sealed a copy for bob's other device").toBeDefined();
+    phone.deliver(laptopCopy!.envelope);
+
+    expect(heard, "a sibling's copy still delivers the message").toEqual(['hello both of bobs devices']);
+    // …and the phone's own copy afterwards is a duplicate, not a second read.
+    phone.deliver(copies.find((o) => o.to === fpOf(pb1))!.envelope);
+    expect(heard).toEqual(['hello both of bobs devices']);
+    expect(events.filter((e) => e === 'unopenable-envelope'), 'no false divergence warnings').toEqual([]);
+  });
 });
 
 function blakeHex(b: Uint8Array): string {
