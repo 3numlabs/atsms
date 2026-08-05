@@ -66,6 +66,10 @@ the relay (durability gap: ack-before-durable). Consequences to design for:
 
 *Found 2026-08-04, during the live lossy-relay (§8 repair) run.*
 
+> **Deferred 2026-08-05.** Not to be fixed until the demo has had more testing —
+> the report is noisy but never fatal, and further live data may change the shape of
+> the fix. Re-evaluate before the v1 release.
+
 The "loud unopenable envelope" signal added as fix 4.3 for issue 3 cries wolf.
 `SealLayer` buffers a sym envelope whose hint tag it cannot place, and reports
 `unopenable-envelope` once that envelope has survived `UNOPENABLE_REPORT_AT = 8`
