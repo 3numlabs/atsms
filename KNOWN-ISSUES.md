@@ -1,9 +1,13 @@
-# Known issues (live-testing findings, 2026-08-01)
+# Known issues (live-testing findings)
 
-Found during the first live multi-client test of the v2 message format
-(CLI creator ↔ demo/web joiners, group of 4 devices). All three are
-engine/protocol-level — the v2 content format is not implicated. Input for
-the Phase 6 external crypto review; fix ordering TBD.
+A running list of engine/protocol-level findings from live multi-client testing —
+and the list of protocol fixes to finish before the v1 release. Issues 1–3 came
+from the first live test of the v2 message format (2026-08-01); later findings are
+appended as they are found.
+
+Issues 1–3 were found during that first test (CLI creator ↔ demo/web joiners, group
+of 4 devices). All three are engine/protocol-level — the v2 content format is not
+implicated. Input for the Phase 6 external crypto review; fix ordering TBD.
 
 > **FIXED (2026-08-01):** the three symptoms below are one bug — a merge that blanks the tree root
 > leaves each side holding a private live epoch, and `sealEpochFor` sealed the repair frame under
@@ -57,3 +61,43 @@ the relay (durability gap: ack-before-durable). Consequences to design for:
   definitively rejected (needs a policy decision — sealed sender makes
   "not mine" vs "not yet mine" indistinguishable);
 - the CLI now surfaces `onEvent` (it silently swallowed all drops before).
+
+## 4. Unopenable-envelope reporting counts deliveries, not evidence — OPEN, pre-v1
+
+*Found 2026-08-04, during the live lossy-relay (§8 repair) run.*
+
+The "loud unopenable envelope" signal added as fix 4.3 for issue 3 cries wolf.
+`SealLayer` buffers a sym envelope whose hint tag it cannot place, and reports
+`unopenable-envelope` once that envelope has survived `UNOPENABLE_REPORT_AT = 8`
+**refreshes** (`seal-layer.ts`). But `refresh()` runs on every delivery, so a fan-out
+burst — a group create seals one copy per recipient device, and the relay fans every
+copy of a frame to every device of the addressed DID — spins eight refreshes in
+milliseconds. The envelope is dropped and reported as probable divergence before the
+epoch it needs has even been derived. Live cost: three spurious reports from merely
+setting up a two-account group, and ~15 during the repair run, all in a demonstrably
+healthy conversation. The signal is a diagnostic and never fatal, but it fires loudest
+exactly when the group is busy and well, which is how a divergence alarm decays into
+background noise.
+
+**Root cause.** Refresh count stands in for "we have had a fair chance to learn this
+epoch", and the proxy breaks under bursts: retries that learn nothing are not evidence.
+
+**Recommended fix — count epoch generations, not refreshes.** Bump a counter only when
+`refresh()` installs tags for an epoch never seen before; record that counter on each
+buffered envelope; report only once N *new epochs* have been learned and it still will
+not open. Burst-proof, and it needs no clock — the engine forbids ambient clocks
+(timers are the host's, cf. the injected `now` in `records.ts`). It keeps the signal for
+the issue-1 partition case, where both branches do keep advancing. Accepted cost: in a
+fully quiet group a genuinely divergent envelope may sit buffered without ever being
+reported — harmless (the buffer is FIFO-bounded at 256) but silent.
+
+**Alternative, if that silence is unacceptable:** inject a host clock into `SealLayer`
+the way `records.ts` already takes `now`, and require both a retry count and elapsed
+wall-clock time before reporting.
+
+Note the interaction with fan-out copies: the sym body is encrypted under the
+per-(epoch, sender) envelope key and the per-recipient tag is only a routing hint, so
+any member holding that epoch key can open any copy — a copy addressed to another of
+our own devices is normally salvaged, not buffered. What actually buffers is traffic
+under an epoch we do not hold, which is precisely why the report should be keyed to
+epochs learned.
