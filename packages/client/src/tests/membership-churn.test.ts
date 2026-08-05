@@ -474,6 +474,12 @@ test("leave: the last member out is a local act, and a leaver can be re-added", 
   const record = await bob.storage.getConversation(convo.id);
   expect(record!.metadata?.left).toBe(false);
   expect(record!.metadata?.removed).toBe(false);
+  // The way back in is the WELCOME. A device that left can still decrypt
+  // fan-out copies for a while, and must not walk itself back in by ingesting
+  // the add op from someone else's copy — it would believe it was a member
+  // without the material the welcome carries, and its next message would be
+  // sealed under state nobody shares.
+  expect(bob.events.some((e) => e.startsWith("rejoined")), "bob rejoined via his welcome").toBe(true);
   await assertDelivery(relay, convo.id, bob, [alice], [], "the returning member speaks");
 
   // Now Alice is alone: leaving is recorded locally, with no ops on the wire.
