@@ -148,6 +148,7 @@ interface ConversationOps {
   removeMemberFrom(handle: ATSMSConversation, did: string): Promise<void>;
   grantAdminIn(handle: ATSMSConversation, did: string): Promise<void>;
   leaveConversation(handle: ATSMSConversation): Promise<void>;
+  reinviteIn(handle: ATSMSConversation, did: string): Promise<void>;
 }
 
 export class ATSMSConversation {
@@ -223,9 +224,12 @@ export class ATSMSConversation {
 
   /** Re-send a pending member's admission material — the original `create` for
    *  a founding member, a rebuilt welcome for a later joiner. Deliberately a
-   *  user action: automatic retries on silence would chase whoever declined. */
+   *  user action: automatic retries on silence would chase whoever declined.
+   *
+   *  Throws if the device has re-keyed since it was admitted, naming the fix —
+   *  re-invitation cannot help there, only a fresh add can. */
   async reinvite(did: string): Promise<void> {
-    await this.router(await this.convo.reinvite(did), this.convo);
+    return this.ops.reinviteIn(this, did);
   }
 
   /** Send a message — plain text or structured v2 content (replies, reactions,
@@ -832,6 +836,54 @@ export class ATSMS {
     }
     trace.end({ enrolled: enrolled.length, skipped: skipped.length });
     return { enrolled, skipped };
+  }
+
+  /**
+   * §8.2 re-invitation with the one check the session cannot make itself: is
+   * this device still using the prekey we admitted it with?
+   *
+   * A device that re-keyed — rotated past its grace window, or (the live case)
+   * kept its identity key while losing the ring with its local state — holds no
+   * secret for the key this conversation pinned when it was admitted. Everything
+   * asym-sealed to it is unopenable forever, and a re-invitation seals to that
+   * same dead key, so it fails exactly as silently as the loss it was meant to
+   * repair. Only a fresh `add` (remove, then add again) can re-key the leaf.
+   *
+   * The check needs the network — the device's currently published prekey —
+   * which is why it lives here and not in the conversation.
+   *
+   * @internal — `convo.reinvite(did)`.
+   */
+  async reinviteIn(handle: ATSMSConversation, did: string): Promise<void> {
+    const snapshot = await this.peers.refresh(did);
+    const published = new Map<string, string>();
+    for (const d of snapshot.devices) {
+      if (d.signedPrekeyB64 !== undefined) published.set(d.fingerprint, d.signedPrekeyB64);
+    }
+    const mine = handle.inner.memberDevices;
+    const fresh: string[] = [];
+    const rekeyed: string[] = [];
+    for (const fp of handle.inner.pendingDevices) {
+      if (mine.get(fp) !== did) continue;
+      const admitted = handle.inner.admittedPrekey(fp);
+      const now = published.get(fp);
+      // No published prekey at all: the device has unpublished its records, so
+      // there is nothing to compare against — re-invite and let it fail loudly.
+      if (admitted === null || now === undefined || bytesToHex(admitted) === bytesToHex(peerKeyBytes(now))) {
+        fresh.push(fp);
+      } else {
+        rekeyed.push(fp);
+      }
+    }
+    if (fresh.length === 0 && rekeyed.length > 0) {
+      throw new Error(
+        `re-keyed-device: ${did} device ${rekeyed[0]!.slice(0, 12)}… has changed its keys since it joined ` +
+          `(it published a new prekey, usually after losing its local data). Nothing this conversation ` +
+          `seals to it can be opened, and re-inviting reuses the same key — remove this member and add ` +
+          `them again, which admits their current keys.`,
+      );
+    }
+    await this.route(await handle.inner.reinviteDevices(fresh), handle.inner);
   }
 
   /** Add a DID to a conversation (every capable device of it). */

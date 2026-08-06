@@ -330,6 +330,13 @@ export class ConversationSession {
     return this.session.pendingMembers();
   }
 
+  /** The prekey this conversation admitted a device with. If the device now
+   *  publishes a different one it has re-keyed since, and nothing sealed to the
+   *  admitted key can ever open — re-invitation cannot help, only a fresh add. */
+  admittedPrekey(fingerprintHex: string): Uint8Array | null {
+    return this.seal.admittedPrekey(fingerprintHex);
+  }
+
   /** Re-send a member's admission material: the original `create` for a founding
    *  member, a freshly rebuilt welcome for a later joiner (§8.2). Deliberately a
    *  caller-driven act — never automatic, since re-inviting on silence would aim

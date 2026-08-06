@@ -337,6 +337,12 @@ export class Conversation {
     return [...tally].filter(([, t]) => t.pending === t.total).map(([did]) => did);
   }
 
+  /** The prekey this conversation admitted a device with (see
+   *  ConversationSession.admittedPrekey). */
+  admittedPrekey(fingerprintHex: string): Uint8Array | null {
+    return this.session.admittedPrekey(fingerprintHex);
+  }
+
   /** Individual member devices never heard from (fingerprint hex). A device here
    *  whose owner is NOT in `pendingMembers` is a stranded device: its person is
    *  in the conversation on another device, but this one may never have received
@@ -362,6 +368,17 @@ export class Conversation {
     const out: Outbound[] = [];
     for (const m of this.session.pendingMembers) {
       if (m.device.did === did) out.push(...(await this.session.reinvite(m.device)));
+    }
+    return out;
+  }
+
+  /** Re-invite named devices only (fingerprint hex) — what a caller uses after
+   *  deciding some of a person's devices are beyond re-invitation. */
+  async reinviteDevices(fingerprints: string[]): Promise<Outbound[]> {
+    const wanted = new Set(fingerprints);
+    const out: Outbound[] = [];
+    for (const m of this.session.pendingMembers) {
+      if (wanted.has(bytesToHex(m.device.fingerprint))) out.push(...(await this.session.reinvite(m.device)));
     }
     return out;
   }

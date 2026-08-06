@@ -130,6 +130,7 @@ interface Device {
   did: string;
   storage: SQLiteAdapter;
   atsms: ATSMS;
+  identity: ATSMSDeviceIdentity;
   events: string[];
 }
 
@@ -152,7 +153,7 @@ async function device(relay: Relay, pds: SharedPds, seed: number, did: string, l
     genesisWaitMs: 0,
     peerMaxAgeMs: 0, // roster changes must be seen immediately in tests
   });
-  return { label, did, storage, atsms, events };
+  return { label, did, storage, atsms, identity, events };
 }
 
 const texts = async (d: Device, convoId: string): Promise<string[]> =>
@@ -323,7 +324,7 @@ test("churn: a device that re-keyed since the directory snapshot is still re-add
   await aPds.putRecord("at.atsms.x509", aIdentity.fingerprint, { $type: "at.atsms.x509", certificate: aCert });
   const aEvents: string[] = [];
   const alice: Device = {
-    label: "alice", did: AL, storage: aStorage, events: aEvents,
+    label: "alice", did: AL, storage: aStorage, events: aEvents, identity: aIdentity,
     atsms: await ATSMS.create({
       identity: aIdentity, storage: aStorage, transport: relay.transportFor(AL), pds: aPds, rng: aRng,
       onEvent: (k, d) => aEvents.push(`${k}: ${d}`), genesisWaitMs: 0,
@@ -346,7 +347,7 @@ test("churn: a device that re-keyed since the directory snapshot is still re-add
       identity, storage, transport: relay.transportFor(BO), pds: bPds, rng,
       onEvent: (k, d) => events.push(`${k}: ${d}`), genesisWaitMs: 0, peerMaxAgeMs: 0,
     });
-    return { label, did: BO, storage, atsms, events };
+    return { label, did: BO, storage, atsms, identity, events };
   };
 
   const bob = await bootBob(2, "bob");
@@ -665,6 +666,24 @@ test("re-invite: a joiner whose welcome was lost can be brought in later", async
     "…but the silent device is visible at device level",
   ).toBeGreaterThan(0);
   void carol2;
+
+  // A device that re-keyed after being admitted cannot be re-invited at all:
+  // the conversation seals to the prekey it admitted, whose secret that device
+  // no longer holds. Live shape (2026-08-06): a client kept cert.pem/key.pem —
+  // so the same fingerprint — while its database was wiped, losing the ring.
+  // Re-invitation reused the dead pin and failed as silently as the loss it was
+  // meant to repair, so it must refuse and name the fix instead.
+  const dave = await device(relay, pds, 45, "did:plc:dddddddddddddddddddddddd", "dave");
+  relay.blackhole = dave.did;
+  await convo.addMember(dave.did);
+  await relay.flush();
+  relay.blackhole = null;
+  expect(convo.pendingMembers).toContain(dave.did);
+  // Dave rotates his prekey under the SAME device fingerprint — what a device
+  // does when it comes back with its identity key but a fresh ring.
+  await dave.identity.ensurePrekeyPublished(pds.forDid(dave.did), Date.now() + 400 * 86_400_000);
+  await alice.atsms.peers.invalidate(dave.did);
+  await expect(convo.reinvite(dave.did)).rejects.toThrow(/re-keyed-device/);
 
   // Re-inviting someone we HAVE heard from is a no-op, not a duplicate group.
   const before = await alice.storage.getConversations();
