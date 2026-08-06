@@ -107,9 +107,11 @@ messages go — addressing and transport are left to each deployment. And that D
 ordered, typically centralized server, because it's what agrees one commit per epoch (the concurrency point
 above).
 
-ATSMS instead makes delivery **part of the protocol**: every identity publishes *where its inbox lives* (an
-`at.atsms.inbox` record in its DID document), so any conforming client can resolve any other and deliver
-straight to it — across independent operators, exactly the way any mail server can reach any email address. The
+ATSMS instead makes delivery **part of the protocol**: every identity publishes *where its inbox lives* — an
+`at.atsms.inbox` record in its AT Protocol repo, alongside the endpoint certificate — so any conforming client
+can resolve any other and deliver straight to it. Resolution is the ordinary DID path: the DID document names
+the identity's repo host, and the inbox record is read from the repo itself, so discovery needs no shared
+directory — across independent operators, exactly the way any mail server can reach any email address. The
 transport underneath is only **dumb store-and-forward**, and relays are commodity and swappable: no centralized
 or privileged server sits in the middle, and correctness never depends on any particular one being up. **This
 is what makes ATSMS open the way email is open** — you reach anyone by resolving their published address, not by
