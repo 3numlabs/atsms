@@ -294,10 +294,15 @@ current head, so a member far behind can open them and chain forward one epoch a
 prompt only if coverage frames are being emitted (§8.1 note, dgm §8); without them the returning member
 waits for someone to speak.
 
-**Bound.** Re-invitation does NOT recover a device whose prekey has rotated past its grace window: the
-`add` op pinned its leaf key to the prekey of the day, so it can no longer derive its leaf secret whatever
-the material is sealed to. That case requires a fresh `add` (remove + re-add), and is the same limitation
-as lost local state (identity-devices §4.2).
+**Bound.** Re-invitation does NOT recover a device whose prekey has rotated past its grace window, or that
+kept its identity key while losing the ring with its local state: the `add` op pinned its leaf key to the
+prekey of the day, so it can no longer derive its leaf secret whatever the material is sealed to. That case
+requires a fresh `add` (remove + re-add), and is the same limitation as lost local state (identity-devices
+§4.2). A host SHOULD detect it rather than sealing into the void — compare the admitted prekey against what
+the device publishes now — and MUST route the repair to the device's OWNER, not to a group admin: the
+authorization line (same-DID needs no admin) is also the judgement line, since only the owner knows whether
+that device is still theirs and still wanted. The owner-driven re-admission API is specified in the umbrella
+[`docs/sdk-shape.md`](../../docs/sdk-shape.md) ("Device lifecycle").
 
 ## 9. Stale-member surfacing
 
