@@ -321,7 +321,28 @@ export class Conversation {
    * "invited, not yet joined", never as "delivery failed".
    */
   get pendingMembers(): string[] {
-    return [...new Set(this.session.pendingMembers.map((m) => m.device.did))];
+    // A PERSON is present as soon as ANY of their devices has been heard from —
+    // people routinely carry a device that is switched off, and "some device of
+    // theirs is silent" is close to always true, which would make this useless.
+    // So a DID is pending only when every device it has in this conversation is
+    // unheard-from. The per-device view is `pendingDevices`.
+    const pendingFps = new Set(this.session.pendingMembers.map((m) => bytesToHex(m.device.fingerprint)));
+    const tally = new Map<string, { total: number; pending: number }>();
+    for (const m of this.session.engine.members()) {
+      const t = tally.get(m.device.did) ?? { total: 0, pending: 0 };
+      t.total += 1;
+      if (pendingFps.has(bytesToHex(m.device.fingerprint))) t.pending += 1;
+      tally.set(m.device.did, t);
+    }
+    return [...tally].filter(([, t]) => t.pending === t.total).map(([did]) => did);
+  }
+
+  /** Individual member devices never heard from (fingerprint hex). A device here
+   *  whose owner is NOT in `pendingMembers` is a stranded device: its person is
+   *  in the conversation on another device, but this one may never have received
+   *  its admission material. `reinvite(did)` re-sends to exactly these. */
+  get pendingDevices(): string[] {
+    return this.session.pendingMembers.map((m) => bytesToHex(m.device.fingerprint));
   }
 
   /**

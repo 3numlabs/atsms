@@ -206,11 +206,19 @@ export class ATSMSConversation {
     return this.convo.membershipLog();
   }
 
-  /** Members whose invitation may never have arrived: on the roster, never
-   *  heard from (ordering-auth §8.2). Show as "invited", not "delivery failed"
-   *  — silence also covers someone quiet, or someone who refused. */
+  /** People whose invitation may never have arrived: on the roster, and not one
+   *  of their devices has ever been heard from (ordering-auth §8.2). Show as
+   *  "invited", not "delivery failed" — silence also covers someone quiet, or
+   *  someone who refused. */
   get pendingMembers(): string[] {
     return this.convo.pendingMembers;
+  }
+
+  /** Member devices never heard from (fingerprint hex). One whose owner is not
+   *  in `pendingMembers` is stranded: the person is here on another device, but
+   *  this one may never have received its admission material. */
+  get pendingDevices(): string[] {
+    return this.convo.pendingDevices;
   }
 
   /** Re-send a pending member's admission material — the original `create` for

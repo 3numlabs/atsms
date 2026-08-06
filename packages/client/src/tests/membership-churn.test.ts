@@ -106,6 +106,7 @@ class Relay {
     }
   }
   transportFor(did: string): EnvelopeTransport {
+    let mine: ((e: Uint8Array) => Promise<void>) | null = null;
     return {
       ingressUrl: `loop://${encodeURIComponent(did)}`,
       deliverToUrl: async (url, env) => this.post(decodeURIComponent(url.replace("loop://", "")), env),
@@ -114,8 +115,12 @@ class Relay {
         let set = this.handlers.get(did);
         if (set === undefined) this.handlers.set(did, (set = new Set()));
         set.add(onEnvelope);
+        mine = onEnvelope;
       },
-      stop: async () => {},
+      stop: async () => {
+        if (mine !== null) this.handlers.get(did)?.delete(mine);
+        mine = null;
+      },
     };
   }
 }
@@ -644,6 +649,22 @@ test("re-invite: a joiner whose welcome was lost can be brought in later", async
   await assertDelivery(relay, convo.id, carol, [alice, bob], [], "carol speaks at last");
   await assertDelivery(relay, convo.id, alice, [bob, carol], [], "and is heard by her");
   expect(convo.pendingMembers, "no longer pending once she has spoken").toEqual([]);
+
+  // A person with a second device that never speaks is still PRESENT. Carol's
+  // other device joins the group and stays silent forever — which is what a
+  // phone in a drawer looks like, and what made a live group show a member as
+  // "invited" indefinitely after they had already spoken.
+  const carol2 = await device(relay, pds, 44, CA, "carol/2");
+  await carol2.atsms.close(); // …and is switched off before it ever joins
+  await convo.addMember(CA); // adds carol's newly published second device
+  await relay.flush();
+  expect(convo.members).toContain(CA);
+  expect(convo.pendingMembers, "carol is here — one of her devices has spoken").toEqual([]);
+  expect(
+    convo.pendingDevices.length,
+    "…but the silent device is visible at device level",
+  ).toBeGreaterThan(0);
+  void carol2;
 
   // Re-inviting someone we HAVE heard from is a no-op, not a duplicate group.
   const before = await alice.storage.getConversations();
