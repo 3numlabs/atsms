@@ -5,6 +5,10 @@ and the list of protocol fixes to finish before the v1 release. Issues 1–3 cam
 from the first live test of the v2 message format (2026-08-01); later findings are
 appended as they are found.
 
+Findings that need an outside eye rather than a fix are carried into
+[`spec/review-scope.md`](./spec/review-scope.md), the brief for the gating external
+cryptographic review.
+
 Issues 1–3 were found during that first test (CLI creator ↔ demo/web joiners, group
 of 4 devices). All three are engine/protocol-level — the v2 content format is not
 implicated. Input for the Phase 6 external crypto review; fix ordering TBD.

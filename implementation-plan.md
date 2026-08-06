@@ -385,7 +385,9 @@ already clean (atsms-lib `3992019`, atsms-cli `1731aac`); "facade" is likewise r
 - G14 insider-divergence detection (epoch-hash gossip) or documented recovery; G15 GC bounds enforced; padding &
   batching tuned against the G16 budget (state the 150-device cap in docs).
 - External cryptographic review of the composed system (sealed sender × DCGKA is a novel composition the paper
-  does not analyze) — G18.
+  does not analyze) — G18. **The brief lives in [`spec/review-scope.md`](spec/review-scope.md)** — a living
+  document listing what is novel, what is unfinished, and the specific questions to answer. Add to it as
+  design decisions raise new ones; the bullets below are its standing focus.
 - **Malicious-insider attack surface (explicit review focus):** treat a validly-admitted group member running
   modified/malicious client code as a first-class adversary and enumerate how it could attack the protocol —
   crafting malformed, invalid, or adversarially-ordered operations to (a) defeat the **DGM validity filter**
