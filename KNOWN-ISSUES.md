@@ -213,3 +213,41 @@ epoch keys stay live, so the forward-secrecy window the spec describes never act
 compromised today still yields yesterday's traffic. This also interacts with issue 6, whose bounded
 recovery story assumes eviction is real. It should be on the external crypto review's list either way —
 a claimed property that no code enforces is exactly what a review exists to catch.
+
+## 10. Welcomes outgrow the seal bucket, and a group stops accepting members — OPEN, pre-v1
+
+*Measured 2026-08-06 against the engine, one add + one remove per round (four control ops each).*
+
+| Group size | Welcome after 3 rounds | Exceeds the 64 KiB bucket at |
+|---|---|---|
+| 2 devices | 7.8 KiB | round 25 |
+| 8 devices | 14.9 KiB | round 14 |
+| 20 devices | 25.6 KiB | round 8 |
+
+A welcome carries the entire retained control log, and nothing evicts it (issue 9), so it grows
+monotonically — and faster in bigger groups, where longer tree paths make each `update` fatter. A
+20-device group, well inside the 150-device design point, cannot survive eight membership changes.
+
+**The failure is not graceful.** `addMembers` authors the add, the update and the welcome, and only
+then fails at seal time; `drainSealed` has already taken the outbox, so the frames are dropped rather
+than left queued. The add and update are retained and can come back through §8 repair once some later
+frame references them. The **welcome is not retained** (deliberately — that is the nesting fix), so it
+is simply gone, and re-invitation (§8.2) rebuilds one from the same oversized log and fails the same
+way. That member is permanently unjoinable and the group is effectively closed to newcomers.
+Ordinary messaging keeps working: app frames are small and sealed symmetrically. It is growth that dies.
+
+**The designed-in answer is stubbed**: the welcome body is `[checkpoint, ops, deliveryMap, profile]`
+and `checkpoint` is `null`. A joiner should receive a state snapshot plus a short tail.
+
+**But checkpointing is a trust change, not a compaction.** Today a joiner verifies a chain of signed
+ops back to genesis; a snapshot is an assertion by whoever built it, and a malicious builder could
+misstate membership or admins with nothing to check it against. This is the same failure mode as the
+selective-omission question in [`spec/review-scope.md`](./spec/review-scope.md) §3.1 and wants one
+answer — a frontier commitment, or a checkpoint corroborated by the consistency digests members
+already sign on coverage frames.
+
+Also note: scheduling coverage adverts (issue 7) grows the log on a timer rather than only on churn.
+Whether coverage frames can be excluded from welcomes needs checking — other frames' deps may
+reference them. And the 64 KiB bucket is policy, not physics: `OversizeError` says "blob offload
+required", so a welcome could ride a blob, trading a hard wall for an availability dependency at first
+contact, which is the worst possible moment for one.
