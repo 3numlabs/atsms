@@ -108,6 +108,20 @@ export class SealLayer {
   }
 
   /**
+   * The prekey this conversation ADMITTED a device with — the leaf key named in
+   * its `create`/`add` op, which is also what everything asym-sealed to it uses.
+   * A device that has since re-keyed (rotated past its grace window, or lost the
+   * ring with its local state while keeping its identity key) no longer holds
+   * the matching secret, and nothing sealed to it will ever open. Comparing this
+   * against what the device publishes today is how a host tells "their
+   * invitation went missing" (re-invite works) from "their keys have moved on"
+   * (only a fresh add works).
+   */
+  admittedPrekey(fingerprintHex: string): Uint8Array | null {
+    return this.prekeys.get(fingerprintHex) ?? null;
+  }
+
+  /**
    * §8.2: queue a member's admission material again — the recovery for a lost
    * `create` or `welcome`. Addressing is this layer's job, so the target is
    * recorded here; `drainSealed()` seals it to that device alone, sealed to its
