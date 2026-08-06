@@ -92,6 +92,11 @@ export class Session {
   /** device fingerprint hex → app frames dropped from that non-member, driving
    *  the removal re-notice cadence (a device that keeps talking never got it). */
   private nonMemberDrops = new Map<string, number>();
+  /** Membership keys we have ever processed a frame from (§8.2). A member we
+   *  have never heard from may simply be quiet — but it is also the only shape
+   *  a lost `create`/`welcome` takes, since neither is acknowledged. Rebuilt on
+   *  restore, because restoring replays the retained log through `processFrame`. */
+  private heardFrom = new Set<string>();
 
   private constructor(
     engine: Engine,
@@ -555,6 +560,81 @@ export class Session {
     return out;
   }
 
+  /**
+   * §8.2: members admitted in our view that we have never processed a frame
+   * from. Neither a `create` nor a `welcome` is acknowledged — by design, since
+   * security properties attach to processing, not to acks — so silence is the
+   * ONLY shape a lost invitation takes. It is not proof: a member may simply be
+   * quiet, or may have refused the invitation, and those are deliberately
+   * indistinguishable. Treat it as the input to a human decision, never as an
+   * automatic trigger.
+   */
+  pendingMembers(): Membership[] {
+    const meKey = membershipKey(this.engine.me);
+    return this.engine
+      .members()
+      .filter((m) => membershipKey(m) !== meKey && !this.heardFrom.has(membershipKey(m)));
+  }
+
+  /** The retained `create` frame — the group's genesis, byte-identical for the
+   *  lifetime of the group (its id IS the group id, so a resend must never be a
+   *  rebuild). Null only if we joined by welcome and it fell out of retention. */
+  createFrame(): Uint8Array | null {
+    for (const idHex of this.retainedOrder) {
+      const meta = this.retained.get(idHex);
+      if (meta === undefined) continue;
+      const frame = parseFrame(meta.raw);
+      if (frame.body.cls === CLS_CONTROL && isCreatePayload(frame.body.payload)) return meta.raw;
+    }
+    return null;
+  }
+
+  /**
+   * §8.2: re-send a member's admission material — the answer to a lost `create`
+   * or `welcome`, which no other mechanism recovers (repair belongs to a
+   * conversation, and the recipient has none).
+   *
+   * The two differ, and the difference is forced by what the material IS:
+   * - a **founding** member is admitted by the `create` itself, whose id is the
+   *   group id, so we re-send that exact frame — authoring a second one would
+   *   found a second group;
+   * - a **later** joiner gets a freshly built welcome pinned to the SAME add op
+   *   that admitted it (`admittedBy`), because a welcome is a state snapshot
+   *   with no dependents: rebuilding costs nothing and hands them the group as
+   *   it stands now rather than as it stood at the add.
+   *
+   * Any member can do this, not only the original adder: a welcome body is just
+   * the retained control frames, the joiner's entitlement comes from the add op
+   * it opens with its own prekey secret, and the joiner verifies the welcome
+   * against the rebuilder's key history carried in that same log.
+   *
+   * Queues on the outbox for the host's normal seal/route pass. Returns false if
+   * the device is not a current member, or if the material is unavailable (a
+   * create that fell out of retention). Idempotent at the receiver: a member
+   * that already holds this material dedups it (A5).
+   *
+   * NOT recovery for a device whose prekey has rotated past its grace window —
+   * the add op pinned its leaf key to the prekey of the day, so it can no longer
+   * derive its leaf secret whatever we seal to. That case needs a fresh add.
+   *
+   * Returns the queued frame (so the seal layer can address it) or null.
+   */
+  reinvite(device: DeviceID): Uint8Array | null {
+    const member = this.engine
+      .members()
+      .find(
+        (m) => m.device.did === device.did && bytesEqual(m.device.fingerprint, device.fingerprint),
+      );
+    if (member === undefined) return null;
+    if (!bytesEqual(member.admittedBy, this.engine.groupId)) {
+      return this.buildWelcome(member.admittedBy); // authors + queues it
+    }
+    const raw = this.createFrame();
+    if (raw === null) return null;
+    this.outbox.push(raw); // the original frame, re-queued verbatim
+    return raw;
+  }
+
   /** §8: repair request covering current gaps (unresolved deps + ctrlSeq holes). */
   buildRepairRequest(): Uint8Array | null {
     const missingIds: Uint8Array[] = [];
@@ -789,6 +869,7 @@ export class Session {
       throw e;
     }
 
+    this.heardFrom.add(senderKey);
     st.lastSeq = Math.max(st.lastSeq, frame.body.seq);
     if (frame.body.ctrlSeq !== null) st.lastCtrlSeq = frame.body.ctrlSeq;
     this.applyRotation(frame, st);
@@ -919,6 +1000,7 @@ export class Session {
   private markProcessed(frame: ParsedFrame): void {
     const senderKey = membershipKey(this.senderOf(frame));
     const st = this.ensureSender(this.senderOf(frame));
+    this.heardFrom.add(senderKey);
     st.lastSeq = Math.max(st.lastSeq, frame.body.seq);
     if (frame.body.ctrlSeq !== null) st.lastCtrlSeq = Math.max(st.lastCtrlSeq, frame.body.ctrlSeq);
     this.applyRotation(frame, st);
@@ -1000,6 +1082,7 @@ export class Session {
     this.processed.add(f.idHex);
     this.retain(f.idHex, f.meta);
     const st = this.ensureSender(this.engine.me);
+    this.heardFrom.add(membershipKey(this.engine.me));
     st.lastSeq = Math.max(st.lastSeq, f.meta.seq);
     if (f.meta.ctrlSeq !== null) st.lastCtrlSeq = Math.max(st.lastCtrlSeq, f.meta.ctrlSeq);
     const parsed = parseFrame(f.raw);

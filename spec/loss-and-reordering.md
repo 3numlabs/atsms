@@ -5,7 +5,9 @@
 > alongside [`ordering-auth.md`](./ordering-auth.md) (§4 buffering, §8 repair) — that document specifies the
 > mechanisms; this one audits them against the implementation in `@atsms/dcgka` and its host `@atsms/sms`.
 > The four holes it identifies are filed as issues 5–8 in [`../KNOWN-ISSUES.md`](../KNOWN-ISSUES.md), and the
-> forward-secrecy finding as issue 9.
+> forward-secrecy finding as issue 9. **Updated 2026-08-06:** first-contact recovery (issue 5) is now built —
+> see [`ordering-auth.md` §8.2](./ordering-auth.md) — so the `create` and `welcome` entries below record
+> both the loss and its recovery.
 
 ## Background — enough to read the rest
 
@@ -64,7 +66,14 @@ deleted from the relay. Repair cannot help — repair belongs to a conversation,
 and any later frame depends on it and will wait. The damage is the case above — a recipient that has not
 processed the `create` has nowhere to hold what arrives in the meantime.
 
-*Status:* **hole** — see KNOWN-ISSUES 5.
+*Recovery (built 2026-08-06, ordering-auth §8.2).* Any member can re-send the create — **the identical
+frame**, because its id is the group id and a second one would found a second group. It is addressed to
+that one member, sealed to their prekey, routed to their public inbox exactly as first contact was. The
+detection signal is `pendingMembers()`: on the roster, never heard from. Catch-up then rides ordinary
+repair, so nothing is bundled with it.
+
+*Status:* **recoverable, by a human decision.** Detection stays inherently ambiguous — silence covers a
+lost invitation, a quiet member, and a refusal alike (KNOWN-ISSUES 5).
 
 ### `welcome` — admits a new device
 
@@ -73,9 +82,8 @@ material, sealed to the joiner's prekey, so they can participate from the curren
 members see the matching `add` control frame instead.
 
 *If it is lost.* The joiner never joins. Everyone else believes they did — the `add` was processed, so the
-group's view already contains them. There is no retransmission and no signal, so the only cure today is a
-human noticing and doing remove-then-re-add. (The protocol's stale-member surfacing, ordering-auth §9, would
-be the natural detector; it is not implemented.)
+group's view already contains them. Nothing is signalled, so the group's only clue is that they never
+speak — see the recovery note below.
 
 *If it arrives out of order.* Welcomes deliberately carry no `ctrlSeq` (fixed 2026-08-02 — they used to
 consume one, which stalled every other member's control lane behind a frame only the joiner could see).
@@ -83,7 +91,14 @@ Traffic that arrives *before* the welcome is the problem: the joiner has no conv
 envelopes match nothing and are discarded. Control frames come back later through repair; application
 messages do not.
 
-*Status:* **hole** — see KNOWN-ISSUES 5.
+*Recovery (built 2026-08-06, ordering-auth §8.2).* A welcome is **rebuilt**, not re-sent — it is a state
+snapshot with no dependents, so a fresh one is free and strictly better: it lands the joiner on the group's
+current state rather than the state at the add. It must be pinned to the original `add` op, or the joiner
+gets a membership identity nobody else recognizes. Any member can do it, not just the adder, so a group can
+re-welcome someone after the adder has gone.
+
+*Status:* **recoverable, by a human decision** — with the same ambiguity, and one hard bound: a joiner
+whose prekey rotated past its grace window needs a fresh add, not a welcome (KNOWN-ISSUES 5).
 
 ### `add` — admits a member into everyone else's view
 
@@ -233,8 +248,8 @@ real cost is that old epoch keys stay live, so the forward-secrecy window the sp
 
 | Message | Lost forever | Out of order | Where it stands |
 |---|---|---|---|
-| `create` | recipient never learns of the conversation; no signal either side | anchors everything; the damage is having nowhere to hold what follows | **hole** (5) |
-| `welcome` | joiner never joins; group believes it did | no longer stalls others; earlier traffic is discarded | **hole** (5) |
+| `create` | recipient never learns of the conversation; no signal either side | anchors everything; the damage is having nowhere to hold what follows | re-send the identical frame (§8.2) |
+| `welcome` | joiner never joins; group believes it did | no longer stalls others; earlier traffic is discarded | rebuild, pinned to the add (§8.2) |
 | `add` | joiner's frames buffer as unknown sender → repair | buffered, drains | recovered |
 | `remove` | remaining members repair; removed device refused and re-notified | strict order | recovered, self-healing |
 | `update` | traffic under the new epoch waits → repair on next dependency | buffered | recovered while anyone speaks (7) |
@@ -246,6 +261,7 @@ real cost is that old epoch keys stay live, so the forward-secrecy window the sp
 
 Ordering is in good shape: the control lane is strictly sequenced and buffered, the application lane is
 deliberately exempt and recovers reordering passively, and gap repair works end to end. **Loss is the weak
-axis, and it is weakest exactly where a conversation begins** — first contact has no retry, no
-acknowledgement and nothing to repair from, and application-message loss has a finished design and no
-implementation.
+axis.** First contact — the worst of it, because a conversation cannot even begin — now has a recovery
+path (§8.2, built 2026-08-06), though detecting that it is needed remains a human judgement over an
+ambiguous signal, deliberately so. What is left unbuilt is application-message loss recovery, which has a
+finished design and no implementation.

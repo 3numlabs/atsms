@@ -72,6 +72,8 @@ export class SealLayer {
   private prekeys = new Map<string, Uint8Array>();
   /** add-op id hex → the joiner's device fingerprint (for welcome routing). */
   private addToJoiner = new Map<string, string>();
+  /** frame id hex → the one device a re-invitation is meant for (§8.2). */
+  private reinviteTargets = new Map<string, string>();
   /** sym envelopes whose tag isn't known yet (epoch not derived) — retried on
    *  refresh, FIFO-dropped past the bound (sealed-sender §11.4, "buffer briefly …
    *  else drop"; also sheds the unopenable sym add-copy a joiner receives of its
@@ -97,8 +99,25 @@ export class SealLayer {
   ) {
     this.encMe = encodeMembership(session.engine.me);
     // Learn prekeys from the create the session already holds.
-    this.observeOp(session.engine.bootstrapOp().id, session.engine.bootstrapOp().payload as never);
+    // Replay the whole op log, not just the create: prekeys and add→joiner
+    // routing are learned by observing ops, and a restored session has already
+    // processed its adds, so a fresh seal layer would know nothing about them.
+    // Re-welcoming an earlier joiner (§8.2) needs exactly that routing.
+    for (const op of session.engine.opsList()) this.observeOp(op.id, op.payload as never);
     this.refresh();
+  }
+
+  /**
+   * §8.2: queue a member's admission material again — the recovery for a lost
+   * `create` or `welcome`. Addressing is this layer's job, so the target is
+   * recorded here; `drainSealed()` seals it to that device alone, sealed to its
+   * prekey and routed to its public inbox, exactly as first contact was.
+   */
+  reinvite(device: DeviceID): boolean {
+    const raw = this.session.reinvite(device);
+    if (raw === null) return false;
+    this.reinviteTargets.set(bytesToHex(parseFrame(raw).id), bytesToHex(device.fingerprint));
+    return true;
   }
 
   /**
@@ -126,6 +145,23 @@ export class SealLayer {
         // Learn prekeys before routing (an add precedes its welcome in the outbox).
         const payload = payloadFromCbor(frame.body.payload, frame.body.sender.device.fingerprint);
         this.observeOp(frame.id, payload);
+      }
+      // §8.2 re-invitation: a re-queued `create` is addressed to the one member
+      // that never received it, not fanned to the group — everyone else already
+      // holds it and would only dedup a copy. (A rebuilt welcome routes itself
+      // below, by the joiner named in its add op.)
+      const reinviteFp = this.reinviteTargets.get(bytesToHex(frame.id));
+      if (reinviteFp !== undefined) {
+        this.reinviteTargets.delete(bytesToHex(frame.id));
+        const pk = this.prekeys.get(reinviteFp);
+        if (pk !== undefined) {
+          out.push({
+            to: reinviteFp,
+            url: null, // first contact again: the public inbox record
+            envelope: sealAsymTo(pk, CONTENT_FRAME, raw, this.rng),
+          });
+        }
+        continue;
       }
       if (frame.body.cls === CLS_WELCOME) {
         // Point-to-point, asym to the joiner's prekey.

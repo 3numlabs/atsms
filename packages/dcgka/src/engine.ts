@@ -503,6 +503,13 @@ export class Engine {
     return this.createOp;
   }
 
+  /** Every op this replica holds, in ingest order — the seal layer replays it on
+   *  construction to relearn per-device prekeys and add→joiner routing, which a
+   *  restart would otherwise only rebuild for ops seen since. */
+  opsList(): Op[] {
+    return [...this.ops.values()];
+  }
+
   hasRootKey(): boolean {
     return this.tree.hasRootKey();
   }

@@ -250,6 +250,55 @@ be delivered" placeholder), never a silent omission. A sender MAY, at the app la
 content in the *current* epoch when a peer reports an unrecoverable trailing gap — an application policy,
 not a protocol guarantee.
 
+## 8.2 First-contact recovery — re-invitation (BUILT 2026-08-06)
+
+§8 repairs gaps *inside* a conversation. It cannot reach the one loss that matters most: a `create` or
+`welcome` that never arrives. Repair is a conversation-level mechanism, and the party that missed its
+invitation has no conversation to repair from — every later frame is a symmetric envelope for a group it
+has never heard of, so it matches nothing and is discarded. Nor is either message acknowledged: security
+properties attach to **processing**, not to acks (§3), so the sender learns nothing either.
+
+**Detection is silence, and silence is ambiguous.** A member admitted in our view that we have never
+processed a frame from is the only trace a lost invitation leaves — `Session.pendingMembers()`. It is not
+proof: the member may be present and quiet, or may have refused the invitation, and a system with
+recipient-side admission control MUST keep those indistinguishable. Implementations MUST therefore surface
+this as *invited, not yet joined*, never as *delivery failed*, and MUST NOT re-invite automatically —
+an automatic retry on silence aims a loop at precisely the party that declined.
+
+**Recovery differs by admission material, and the difference is forced by what the material is.**
+
+- **Founding member** (admitted by the `create`): re-send **that exact frame, byte for byte**. The create
+  frame's MessageID *is* the GroupID, so authoring a second one founds a second group — the failure mode
+  is a split conversation, not a retry.
+- **Later joiner** (admitted by an `add`): build a **fresh welcome pinned to the same add op**
+  (`Membership.admittedBy`). A welcome is a state snapshot with no dependents, so rebuilding is free and
+  strictly better: it hands the joiner the group as it stands now instead of as it stood at the add, and
+  it costs no retention (welcomes are deliberately not retained — a retained one nests, §4.2 note).
+  Pinning to the original admission is REQUIRED: a different `admittedBy` gives the joiner a Membership
+  the rest of the group does not recognize.
+
+**Any member may re-invite**, not only the original adder. A welcome body is the retained control-frame
+log; the joiner's entitlement comes from the `add` op, which it opens with its own prekey secret; and it
+verifies the welcome against the rebuilder's signing-key history carried in that same log. A group can
+therefore re-welcome someone after the adder has left or lost its device.
+
+**Addressing.** A re-invitation is first contact again: sealed asym to the target's prekey and routed to
+its public `at.atsms.inbox`, addressed to that device alone — the rest of the group already holds the
+material and would only dedup a copy. Receivers dedup by MessageID (A5), so re-inviting someone who did
+receive it is harmless.
+
+**Catch-up needs no bundling.** Once the material lands, the ordinary path finishes the job: later traffic
+names ops the returning member lacks → unresolved deps → §8 repair → any member serves them. Repair
+responses are sealed under the epoch reachable from *the repaired frame's own deps*, not the server's
+current head, so a member far behind can open them and chain forward one epoch at a time. Discovery is
+prompt only if coverage frames are being emitted (§8.1 note, dgm §8); without them the returning member
+waits for someone to speak.
+
+**Bound.** Re-invitation does NOT recover a device whose prekey has rotated past its grace window: the
+`add` op pinned its leaf key to the prekey of the day, so it can no longer derive its leaf secret whatever
+the material is sealed to. That case requires a fresh `add` (remove + re-add), and is the same limitation
+as lost local state (identity-devices §4.2).
+
 ## 9. Stale-member surfacing
 
 Track per member: last processed message time, oldest own-op not yet covered by them, count of epochs they

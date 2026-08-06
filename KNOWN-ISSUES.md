@@ -113,7 +113,26 @@ against "what if this is dropped for good" and "what if this arrives out of orde
 per-message analysis, with enough background to read it cold, is
 [`spec/loss-and-reordering.md`](./spec/loss-and-reordering.md).*
 
-## 5. First contact has no retry and nothing to repair from — OPEN, pre-v1
+## 5. First contact has no retry and nothing to repair from — RECOVERY BUILT 2026-08-06
+
+> **Built:** re-invitation, specified as [`ordering-auth.md` §8.2](./spec/ordering-auth.md) and
+> implemented across `@atsms/dcgka` (`Session.pendingMembers()` / `reinvite()`, `SealLayer.reinvite()`)
+> and `@atsms/sms` (`convo.pendingMembers` / `convo.reinvite(did)`), with `/members` and `/reinvite` in
+> the reference CLI. A founding member gets the identical `create` frame back (its id is the group id, so
+> a rebuild would found a second group); a later joiner gets a welcome rebuilt against the same `add` op,
+> which lands them on current state. Any member can do it, not only the adder. Tests:
+> `packages/dcgka/test/reinvite.test.ts` and the re-invite scenario in
+> `atsms-lib/src/tests/membership-churn.test.ts`.
+>
+> **What remains open** is detection, and it is open by choice: the only signal is silence, which covers a
+> lost invitation, a quiet member, and a refusal alike. Keeping those indistinguishable is a requirement
+> of recipient-side admission control (see the tracked admission-control work), so re-invitation is a
+> deliberate human action — never automatic — and clients must say "invited", never "delivery failed".
+> Also unrecovered by design: a device whose prekey rotated past its grace window needs a fresh add.
+
+The original finding follows.
+
+### Original finding
 
 A conversation begins with one best-effort envelope sealed to the recipient's prekey: a `create`
 (founding a conversation) or a `welcome` (admitting a new device). If it is lost, nothing recovers it.
