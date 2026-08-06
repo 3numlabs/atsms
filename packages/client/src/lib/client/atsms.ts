@@ -206,6 +206,20 @@ export class ATSMSConversation {
     return this.convo.membershipLog();
   }
 
+  /** Members whose invitation may never have arrived: on the roster, never
+   *  heard from (ordering-auth §8.2). Show as "invited", not "delivery failed"
+   *  — silence also covers someone quiet, or someone who refused. */
+  get pendingMembers(): string[] {
+    return this.convo.pendingMembers;
+  }
+
+  /** Re-send a pending member's admission material — the original `create` for
+   *  a founding member, a rebuilt welcome for a later joiner. Deliberately a
+   *  user action: automatic retries on silence would chase whoever declined. */
+  async reinvite(did: string): Promise<void> {
+    await this.router(await this.convo.reinvite(did), this.convo);
+  }
+
   /** Send a message — plain text or structured v2 content (replies, reactions,
    *  edits, signaling); sealing + delivery are automatic.
    *

@@ -90,8 +90,11 @@ class Relay {
   private handlers = new Map<string, Set<(e: Uint8Array) => Promise<void>>>();
   private queue: Array<{ did: string; env: Uint8Array }> = [];
   largestEnvelope = 0;
+  /** Swallow envelopes addressed to a DID — a relay that loses first contact. */
+  blackhole: string | null = null;
   post(did: string, env: Uint8Array): void {
     this.largestEnvelope = Math.max(this.largestEnvelope, env.length);
+    if (did === this.blackhole) return;
     this.queue.push({ did, env });
   }
   async flush(): Promise<void> {
@@ -578,4 +581,74 @@ test("DM vs group: kind is fixed at creation, and each rule holds", async () => 
   // …and it is still NOT the DM with Bob: opening that returns the DM.
   const dmStill = await alice.atsms.conversations.with(BO);
   expect(dmStill.id).toBe(dm.id);
+}, 60000);
+
+/**
+ * §8.2 first-contact recovery. A `create`/`welcome` is the one message no
+ * repair reaches: repair belongs to a conversation, and whoever missed their
+ * invitation has none. Nothing is acknowledged either, so the loss shows up
+ * only as a member everybody's roster contains and nobody has heard from.
+ */
+test("re-invite: a joiner whose welcome was lost can be brought in later", async () => {
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+  const CA = "did:plc:cccccccccccccccccccccccc";
+
+  const alice = await device(relay, pds, 41, AL, "alice");
+  const bob = await device(relay, pds, 42, BO, "bob");
+  const carol = await device(relay, pds, 43, CA, "carol");
+
+  const convo = await alice.atsms.conversations.createGroup({ members: [bob.did] });
+  await relay.flush();
+
+  // A member who has joined but never spoken is indistinguishable from one who
+  // never arrived — that is inherent, since nothing is acknowledged. Bob speaks,
+  // so the rest of this test can attribute silence to the loss and not to him.
+  expect(convo.pendingMembers, "bob has joined but not yet said anything").toEqual([BO]);
+  await assertDelivery(relay, convo.id, bob, [alice], [], "bob says hello");
+  expect(convo.pendingMembers, "now we have heard from him").toEqual([]);
+
+  // Carol is added — and everything addressed to her is lost, welcome included.
+  relay.blackhole = CA;
+  await convo.addMember(CA);
+  await relay.flush();
+  relay.blackhole = null;
+
+  // The group believes she is a member; she has never heard of the group.
+  expect(convo.members).toContain(CA);
+  expect(await carol.atsms.conversations.get(convo.id), "carol never joined").toBeNull();
+  expect(convo.pendingMembers, "alice sees an invitation that never landed").toEqual([CA]);
+  const bobConvo = (await bob.atsms.conversations.get(convo.id))!;
+  expect(bobConvo.pendingMembers, "so does bob — it is derived state, not the adder's memory").toEqual([CA]);
+
+  // Neither Alice nor Bob is pending: we have heard from both.
+  expect(convo.pendingMembers).not.toContain(BO);
+
+  // The group carries on without her, moving several epochs ahead.
+  await assertDelivery(relay, convo.id, alice, [bob], [carol], "while carol is missing");
+  await assertDelivery(relay, convo.id, bob, [alice], [carol], "still missing");
+
+  // Re-invite: a rebuilt welcome, pinned to the original add.
+  await convo.reinvite(CA);
+  await relay.flush();
+
+  // She is in, at the CURRENT state, and the roster agrees everywhere.
+  const carolConvo = await carol.atsms.conversations.get(convo.id);
+  expect(carolConvo, "carol joined from the rebuilt welcome").not.toBeNull();
+  expect(carolConvo!.amMember).toBe(true);
+  await assertGroupState(convo.id, [alice, bob, carol], [AL, BO, CA], "after re-invite");
+
+  // She can speak and be heard, both ways, and nobody is pending any more.
+  await assertDelivery(relay, convo.id, carol, [alice, bob], [], "carol speaks at last");
+  await assertDelivery(relay, convo.id, alice, [bob, carol], [], "and is heard by her");
+  expect(convo.pendingMembers, "no longer pending once she has spoken").toEqual([]);
+
+  // Re-inviting someone we HAVE heard from is a no-op, not a duplicate group.
+  const before = await alice.storage.getConversations();
+  await convo.reinvite(CA);
+  await relay.flush();
+  expect((await alice.storage.getConversations()).length, "no second conversation").toBe(before.length);
+  expect(carolConvo!.id, "and carol is still in the one group").toBe(convo.id);
 }, 60000);

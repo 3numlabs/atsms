@@ -312,6 +312,39 @@ export class Conversation {
     return outbound;
   }
 
+  /**
+   * Members we have never heard a frame from (ordering-auth §8.2). A `create`
+   * or `welcome` is never acknowledged, so a lost invitation shows up only as
+   * silence — a member everyone's list contains and nobody has heard from. It
+   * is not proof of loss: they may be quiet, or may have refused the
+   * invitation, and those are indistinguishable by design. Surface it as
+   * "invited, not yet joined", never as "delivery failed".
+   */
+  get pendingMembers(): string[] {
+    return [...new Set(this.session.pendingMembers.map((m) => m.device.did))];
+  }
+
+  /**
+   * Re-send a member's admission material — the recovery for a lost `create` or
+   * `welcome`, which nothing else repairs (repair belongs to a conversation and
+   * they have none). A founding member gets the original create frame back,
+   * byte for byte, because its id IS this conversation's id; a later joiner
+   * gets a freshly rebuilt welcome pinned to the same add op, which lands them
+   * on the group's current state rather than the state at the time of the add.
+   * Harmless if they did receive it — duplicates are deduped.
+   *
+   * Caller-driven on purpose: doing it automatically on silence would point a
+   * retry loop at exactly the person who chose not to answer. Bounded attempts
+   * and honest wording ("not delivered", never "blocked") belong in the UI.
+   */
+  async reinvite(did: string): Promise<Outbound[]> {
+    const out: Outbound[] = [];
+    for (const m of this.session.pendingMembers) {
+      if (m.device.did === did) out.push(...(await this.session.reinvite(m.device)));
+    }
+    return out;
+  }
+
   /** Grant admin to a DID (admin-only) — the succession step a sole admin
    *  must take before it may leave. */
   async grantAdmin(did: string): Promise<Outbound[]> {

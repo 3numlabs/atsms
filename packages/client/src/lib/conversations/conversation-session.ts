@@ -323,6 +323,22 @@ export class ConversationSession {
     return this.drain();
   }
 
+  /** Members admitted in our view we have never heard a frame from — the only
+   *  trace a lost invitation leaves (ordering-auth §8.2). Not proof: they may be
+   *  quiet, or may have refused, and the two are indistinguishable by design. */
+  get pendingMembers(): Membership[] {
+    return this.session.pendingMembers();
+  }
+
+  /** Re-send a member's admission material: the original `create` for a founding
+   *  member, a freshly rebuilt welcome for a later joiner (§8.2). Deliberately a
+   *  caller-driven act — never automatic, since re-inviting on silence would aim
+   *  a retry loop at whoever refused the invitation. */
+  async reinvite(device: DeviceID): Promise<Outbound[]> {
+    if (!this.seal.reinvite(device)) return [];
+    return this.drain();
+  }
+
   /** Forget the conversation (key deletion — FS depends on the store honoring it). */
   async forget(): Promise<void> {
     await this.storage.deleteEngineState(this.groupId);
