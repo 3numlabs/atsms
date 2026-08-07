@@ -43,6 +43,12 @@ import {
 /** Inbound signaling messages are dropped when older than this (format §8). */
 const EPHEMERAL_MAX_AGE_MS = 30_000;
 
+/** Shared group state (group-state.md §5): the name is an inline value, so it
+ *  needs no fetch and no application message — unlike the richer group-info
+ *  document, which is a pointer. Byte cap, not a character cap. */
+export const GROUP_NAME_NS = "at.atsms.group.name";
+export const GROUP_NAME_MAX_BYTES = 64;
+
 export interface ConversationContext extends ConversationDeps {
   /** This device's DID (message sender identity). */
   did: string;
@@ -192,7 +198,13 @@ export class Conversation {
   /** Found a conversation. `members` includes this device first (the creator). */
   static async open(
     ctx: ConversationContext,
-    params: { keys: LocalKeys; members: MemberDescriptor[]; admins: string[]; kind?: "dm" | "group" },
+    params: {
+      keys: LocalKeys;
+      members: MemberDescriptor[];
+      admins: string[];
+      kind?: "dm" | "group";
+      initialState?: Array<{ ns: string; value: Uint8Array }>;
+    },
   ): Promise<{ conversation: Conversation; outbound: Outbound[] }> {
     const holder: { convo: Conversation | null } = { convo: null };
     const { conversation: session, outbound } = await ConversationSession.create(ctx, {
@@ -201,6 +213,7 @@ export class Conversation {
       admins: params.admins,
       events: eventsFor(holder, ctx),
       ...(params.kind !== undefined ? { kind: params.kind } : {}),
+      ...(params.initialState !== undefined ? { initialState: params.initialState } : {}),
     });
     const convo = new Conversation(session, ctx.storage, ctx);
     holder.convo = convo;
@@ -337,6 +350,28 @@ export class Conversation {
     return [...tally].filter(([, t]) => t.pending === t.total).map(([did]) => did);
   }
 
+  /**
+   * The group's shared name, or null — the value every member agrees on
+   * (group-state.md), not a local label. Carried by the control log, so it is
+   * present the moment a joiner processes its welcome: no message, no fetch.
+   */
+  get name(): string | null {
+    const raw = this.session.state(GROUP_NAME_NS);
+    return raw === null ? null : new TextDecoder().decode(raw);
+  }
+
+  /** Rename the group (admin-only). Capped at 64 BYTES — about 64 Latin
+   *  characters but ~21 CJK or ~16 emoji, so a UI should count bytes. */
+  async setName(name: string): Promise<Outbound[]> {
+    const bytes = new TextEncoder().encode(name.trim());
+    if (bytes.length > GROUP_NAME_MAX_BYTES) {
+      throw new Error(`group name is ${bytes.length} bytes; the limit is ${GROUP_NAME_MAX_BYTES}`);
+    }
+    const outbound = await this.session.setState(GROUP_NAME_NS, bytes.length === 0 ? null : bytes);
+    await this.saveConversationRecord();
+    return outbound;
+  }
+
   /** The prekey this conversation admitted a device with (see
    *  ConversationSession.admittedPrekey). */
   admittedPrekey(fingerprintHex: string): Uint8Array | null {
@@ -464,8 +499,16 @@ export class Conversation {
   private async withMembershipSync(step: () => Promise<Outbound[]>): Promise<Outbound[]> {
     const before = this.members.join(",");
     const wasMember = this.amMember;
+    const nameBefore = this.name;
     const outbound = await step();
-    if (this.members.join(",") !== before || wasMember !== this.amMember) {
+    // A rename arrives as an ordinary control frame, so the stored record has
+    // to follow it the same way membership does — otherwise every member holds
+    // the new name in the engine and shows the old one from storage.
+    if (
+      this.members.join(",") !== before ||
+      wasMember !== this.amMember ||
+      this.name !== nameBefore
+    ) {
       await this.saveConversationRecord();
     }
     if (wasMember && !this.amMember) {
@@ -547,6 +590,11 @@ export class Conversation {
         ...existing?.metadata,
         protocol: "dcgka",
         kind: this.kind,
+        // The title mirrors the group's shared name, so every member's stored
+        // record agrees — including a joiner, who gets it from the control log
+        // inside their welcome. Null leaves whatever a client set locally
+        // before shared names existed.
+        ...(this.name !== null ? { title: this.name } : {}),
         // Two flags, because the UI tells two different stories: `removed` is
         // "you are out", `left` is "and you chose it".
         removed: !this.amMember || this.locallyLeft,

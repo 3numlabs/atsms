@@ -41,6 +41,8 @@ import { type Observable,Subject } from "rxjs";
 import {
   admissionKeysFor,
   Conversation,
+  GROUP_NAME_MAX_BYTES,
+  GROUP_NAME_NS,
   type ConversationContext,
   type MemberDescriptor,
   type Outbound,
@@ -110,6 +112,16 @@ export interface ATSMSConfig {
    *  sink decides where samples go (the reference CLI appends JSONL under
    *  its profile dir). Default: none collected. */
   onMetric?: (m: ATSMSMetric) => void;
+}
+
+/** Encode a group name, refusing one that exceeds the shared-state cap. The cap
+ *  is BYTES: ~64 Latin characters, but ~21 CJK or ~16 emoji. */
+function groupNameBytes(title: string): Uint8Array {
+  const bytes = new TextEncoder().encode(title);
+  if (bytes.length > GROUP_NAME_MAX_BYTES) {
+    throw new Error(`group name is ${bytes.length} bytes; the limit is ${GROUP_NAME_MAX_BYTES}`);
+  }
+  return bytes;
 }
 
 /** Genesis wait (concurrent-update-partition §4.2): how long a joiner with no
@@ -205,6 +217,18 @@ export class ATSMSConversation {
   /** Who admitted/removed whom, in causal order (for a system-message view). */
   membershipLog(): ReturnType<Conversation["membershipLog"]> {
     return this.convo.membershipLog();
+  }
+
+  /** The group's shared name — what every member sees, not a local label. Null
+   *  when unnamed (a DM, or a group created before names existed). */
+  get name(): string | null {
+    return this.convo.name;
+  }
+
+  /** Rename the group (admin-only). Capped at 64 BYTES, so a UI should count
+   *  bytes: that is ~64 Latin characters but ~21 CJK or ~16 emoji. */
+  async rename(name: string): Promise<void> {
+    await this.router(await this.convo.setName(name), this.convo);
   }
 
   /** People whose invitation may never have arrived: on the roster, and not one
@@ -625,23 +649,23 @@ export class ATSMS {
   }): Promise<ATSMSConversation> {
     const others = [...new Set(params.members.filter((d) => d !== this.identity.did))];
     if (others.length === 0) throw new Error("conversations.createGroup: no members");
-    const handle = await this.openConversation(others, "group", params.admins);
-    if (params.title !== undefined && params.title.trim() !== "") {
-      const record = await this.storage.getConversation(handle.id);
-      if (record !== null) {
-        await this.storage.saveConversation({
-          ...record,
-          metadata: { ...record.metadata, title: params.title.trim() },
-        });
-      }
-    }
-    return handle;
+    // The title is SHARED state, seeded into the create op (group-state.md §4):
+    // every founding member and every later joiner reads it from the control
+    // log, with no message and no fetch. It used to be a local record field, so
+    // only the creator ever saw the name they chose.
+    const title = params.title?.trim() ?? "";
+    const initialState =
+      title === ""
+        ? []
+        : [{ ns: GROUP_NAME_NS, value: groupNameBytes(title) }];
+    return this.openConversation(others, "group", params.admins, initialState);
   }
 
   private async openConversation(
     members: string[],
     kind: "dm" | "group",
     admins: string[] | undefined,
+    initialState: Array<{ ns: string; value: Uint8Array }> = [],
   ): Promise<ATSMSConversation> {
     const params = { members, admins };
     const others = [...new Set(params.members.filter((d) => d !== this.identity.did))];
@@ -710,6 +734,7 @@ export class ATSMS {
       members: descriptors,
       admins: params.admins ?? [this.identity.did],
       kind,
+      initialState,
     });
     const handle = this.register(conversation);
     this.onEvent("open-created", handle.id.slice(0, 10));

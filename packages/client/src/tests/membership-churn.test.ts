@@ -692,3 +692,54 @@ test("re-invite: a joiner whose welcome was lost can be brought in later", async
   expect((await alice.storage.getConversations()).length, "no second conversation").toBe(before.length);
   expect(carolConvo!.id, "and carol is still in the one group").toBe(convo.id);
 }, 60000);
+
+/**
+ * Shared group state (group-state.md): the name lives in the group, not on the
+ * device that chose it. It is seeded into the create op, so it reaches founding
+ * members and later joiners through the control log — no application message,
+ * no fetch — and a rename propagates the same way.
+ */
+test("group name: everyone sees the creator's name, and renames propagate", async () => {
+  const relay = new Relay();
+  const pds = new SharedPds();
+  const AL = "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BO = "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb";
+  const CA = "did:plc:cccccccccccccccccccccccc";
+
+  const alice = await device(relay, pds, 51, AL, "alice");
+  const bob = await device(relay, pds, 52, BO, "bob");
+  const carol = await device(relay, pds, 53, CA, "carol");
+
+  const convo = await alice.atsms.conversations.createGroup({
+    members: [BO],
+    title: "Trip to Kyoto",
+  });
+  await relay.flush();
+
+  // The joiner sees it — this is the bug the feature exists for: before shared
+  // state, the title was a local record field only the creator ever had.
+  const bobConvo = (await bob.atsms.conversations.get(convo.id))!;
+  expect(convo.name).toBe("Trip to Kyoto");
+  expect(bobConvo.name, "a founding member reads it from the create op").toBe("Trip to Kyoto");
+  expect((await bob.storage.getConversation(convo.id))!.metadata?.title).toBe("Trip to Kyoto");
+
+  // A member added later gets it from the control log inside their welcome.
+  await convo.addMember(CA);
+  await relay.flush();
+  const carolConvo = (await carol.atsms.conversations.get(convo.id))!;
+  expect(carolConvo.name, "a later joiner reads it from its welcome").toBe("Trip to Kyoto");
+
+  // Renaming reaches everyone, engine and stored record alike.
+  await convo.rename("Kyoto 2027");
+  await relay.flush();
+  expect((await bob.atsms.conversations.get(convo.id))!.name).toBe("Kyoto 2027");
+  expect((await carol.storage.getConversation(convo.id))!.metadata?.title).toBe("Kyoto 2027");
+
+  // Admin-only: Carol is not an admin, so her rename is refused locally.
+  await expect(carolConvo.rename("Carol's trip")).rejects.toThrow(/Unauthorized/);
+  await relay.flush();
+  expect((await bob.atsms.conversations.get(convo.id))!.name).toBe("Kyoto 2027");
+
+  // The cap is bytes, not characters.
+  await expect(convo.rename("x".repeat(65))).rejects.toThrow(/limit is 64/);
+}, 60000);

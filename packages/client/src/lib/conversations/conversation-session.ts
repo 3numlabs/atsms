@@ -95,6 +95,10 @@ export class ConversationSession {
       admins: string[];
       events?: SessionEvents;
       kind?: "dm" | "group";
+      /** Shared state the group is born with (group-state.md §4) — a name here
+       *  reaches every founding member and every later joiner with no message
+       *  and no fetch. */
+      initialState?: Array<{ ns: string; value: Uint8Array }>;
     },
   ): Promise<{ conversation: ConversationSession; outbound: Outbound[] }> {
     const session = Session.createGroup(
@@ -105,6 +109,7 @@ export class ConversationSession {
       deps.rng,
       params.events ?? {},
       params.kind ?? "group",
+      params.initialState ?? [],
     );
     const convo = ConversationSession.wrap(session, deps);
     const outbound = await convo.drain();
@@ -328,6 +333,17 @@ export class ConversationSession {
    *  quiet, or may have refused, and the two are indistinguishable by design. */
   get pendingMembers(): Membership[] {
     return this.session.pendingMembers();
+  }
+
+  /** Set a shared-state register (group-state.md) — admin-only. */
+  async setState(ns: string, value: Uint8Array | null): Promise<Outbound[]> {
+    this.session.setState(ns, value);
+    return this.drain();
+  }
+
+  /** Current value of a shared-state register, or null. */
+  state(ns: string): Uint8Array | null {
+    return this.session.state(ns);
   }
 
   /** The prekey this conversation admitted a device with. If the device now
