@@ -1,0 +1,32 @@
+ATSMS — @atsms/dcgka
+Copyright 2026 3NUM Labs
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+This work builds directly on published research and open source by others.
+
+BeeKEM — Ink & Switch (https://www.inkandswitch.com/)
+  The concurrent-TreeKEM design this engine implements, and below the PcsKey
+  boundary a faithful port of their Rust `beekem` crate. Our port is validated
+  against that implementation by a differential oracle: on shared scenarios the
+  two must agree byte for byte. BeeKEM solves the problem that makes this
+  protocol possible at all — keeping a group's keys in agreement when several
+  members change the group concurrently, with no server ordering their changes.
+  Any errors in what we built on top are ours, not theirs.
+
+DCGKA — Weidner, Kleppmann, Hugenroth, Beresford (CCS 2021)
+  "Key Agreement for Decentralized Secure Group Messaging with Strong Security
+  Guarantees." The proof obligations our Dynamic Group Management must satisfy —
+  determinism, add-only entry, no-remove-undo, convergence — are theirs.
+
+p2panda-auth (https://p2panda.org/)
+  The strong-remove resolver semantics our DGM implements: a removal takes
+  effect even when it races concurrent operations, so no member can be
+  "un-removed" by a concurrent update.
+
+Cremers et al.
+  Signing-key rotation for post-compromise security of authenticity, which this
+  layer applies to per-message protocol signing keys.
