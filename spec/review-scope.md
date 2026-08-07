@@ -88,6 +88,15 @@ padded size bucket. Public `at.atsms.inbox` carries first contact only; ongoing 
 in-band. Review the residual correlation surface — bucket boundaries, fan-out patterns per DID, the PDS
 read a sender performs before it can seal, and prekey-record lookups.
 
+One asymmetry we want assessed explicitly. An **asym** envelope names no recipient at all (HPKE names
+none), so a mailbox holder cannot separate one destination's traffic by device. A **sym** envelope carries
+a per-recipient hint tag which is deliberately different per mailbox — defeating cross-mailbox group-graph
+reconstruction, §11.3 — but is **stable for a given (epoch, sender, recipient)**. So a relay holding one
+DID's mailbox can partition that traffic into per-device streams within an epoch, learning device count
+and per-device volume without learning identities, with the partition resetting on each re-key. Is that
+residual leak acceptable at the stated threat model, and if not, what is the cheapest fix — per-message
+tag derivation, or tag rotation decoupled from epoch rotation?
+
 ### 3.6 Concurrency findings already surfaced
 
 KNOWN-ISSUES 1 (concurrent-update epoch divergence, fixed via the sealable-epoch predicate — see
