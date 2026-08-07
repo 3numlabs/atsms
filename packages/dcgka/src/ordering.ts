@@ -124,6 +124,7 @@ export class Session {
     rng: Csprng,
     events: SessionEvents = {},
     kind: 'dm' | 'group' = 'group',
+    initialState: Array<{ ns: string; value: Uint8Array }> = [],
   ): Session {
     const holder: { s: Session | null } = { s: null };
     const boot = {
@@ -138,7 +139,7 @@ export class Session {
       // Bootstrap mint (the create op, before the Session object exists).
       return mintControlRaw(boot, ZERO32, author, deps, payload, rng, boot.frames);
     };
-    const engine = Engine.create(devices, initialAdmins, sks, rng, minter, kind);
+    const engine = Engine.create(devices, initialAdmins, sks, rng, minter, kind, initialState);
     const session = new Session(engine, boot.signing, rng, events, {
       seq: boot.seq,
       ctrlSeq: boot.ctrlSeq,
@@ -392,6 +393,27 @@ export class Session {
     const others = mine.filter((m) => !bytesEqual(m.device.fingerprint, me.device.fingerprint));
     const self = mine.filter((m) => bytesEqual(m.device.fingerprint, me.device.fingerprint));
     return [...others, ...self].map((m) => this.remove(m));
+  }
+
+  /**
+   * Set a shared-state register (group-state.md): admin-only, per-namespace
+   * last-writer-wins. A control frame like any other, so it rides the welcome's
+   * op log — which is why a joiner has the group's name at admission with no
+   * fetch and no application message.
+   */
+  setState(ns: string, value: Uint8Array | null): Uint8Array {
+    this.engine.buildSetState(ns, value);
+    return this.finalizeLocal();
+  }
+
+  /** Current value of a shared-state register, or null (group-state.md §3). */
+  state(ns: string): Uint8Array | null {
+    return this.engine.state(ns);
+  }
+
+  /** Namespaces currently holding a value. */
+  stateNamespaces(): string[] {
+    return this.engine.stateNamespaces();
   }
 
   coverage(): Uint8Array {

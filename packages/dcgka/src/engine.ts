@@ -22,7 +22,16 @@ import { chainSeed, rootCommit } from './kdf.js';
 import { generateShareSecretKey, shareKeyOf, type Csprng } from './keyhive.js';
 import { envKeySym } from './envelope.js';
 import { ShareKeyMap, shareNodeKey } from './keys.js';
-import { makeOp, opKey, type Op, type OpMinter, type OpPayload } from './ops.js';
+import {
+  makeOp,
+  MAX_STATE_NS_BYTES,
+  MAX_STATE_VALUE_BYTES,
+  opKey,
+  stateEntryValid,
+  type Op,
+  type OpMinter,
+  type OpPayload,
+} from './ops.js';
 import { SecretStore } from './secretstore.js';
 import { BeeKem, type PathChange } from './tree.js';
 
@@ -101,11 +110,15 @@ export class Engine {
     rng: Csprng,
     minter: OpMinter | null = null,
     kind: 'dm' | 'group' = 'group',
+    initialState: Array<{ ns: string; value: Uint8Array }> = [],
   ): Engine {
     const creator = devices[0];
     if (creator === undefined) throw new Error('create needs at least one device');
+    for (const e of initialState) {
+      if (!stateEntryValid(e.ns, e.value)) throw new Error(`create: invalid initial state for ${e.ns}`);
+    }
     const author: Membership = { device: creator.device, admittedBy: new Uint8Array(32) };
-    const payload: OpPayload = { type: 'create', initialDevices: devices, initialAdmins, kind };
+    const payload: OpPayload = { type: 'create', initialDevices: devices, initialAdmins, kind, initialState };
     const op =
       minter !== null
         ? { id: minter(author, [], payload), author, deps: [], payload }
@@ -277,6 +290,69 @@ export class Engine {
     const op = this.mint({ type: 'coverage' });
     this.recordOp(op);
     return op;
+  }
+
+  /**
+   * Set a shared-state register (group-state.md). Admin-only, like grantAdmin —
+   * checked here so a local mistake fails loudly, and again in the DGM filter
+   * so a remote one is simply dropped. The engine never interprets `ns` or
+   * `value`; it orders them and hands them back.
+   */
+  buildSetState(ns: string, value: Uint8Array | null): Op {
+    if (!this.dgm.admins.has(this.me.device.did)) {
+      throw new Error('Unauthorized: setState requires admin (group-state.md §2)');
+    }
+    if (!stateEntryValid(ns, value)) {
+      throw new Error(
+        `setState: namespace must be ≤${MAX_STATE_NS_BYTES} bytes and value ≤${MAX_STATE_VALUE_BYTES}`,
+      );
+    }
+    const op = this.mint({ type: 'setState', ns, value });
+    this.recordOp(op);
+    return op;
+  }
+
+  /**
+   * The current value of a shared-state register, or null if unset/cleared.
+   *
+   * Resolution (group-state.md §3): among the DGM-valid `setState` ops for this
+   * namespace, take the causally-latest — those that are nobody else's ancestor
+   * — and break genuine concurrency by lowest op id. Deterministic over the same
+   * op set, which is all convergence requires. Initial values from the `create`
+   * op (§4) participate as though set by the create itself, so a group born
+   * named stays named until somebody changes it.
+   */
+  state(ns: string): Uint8Array | null {
+    const writes: Array<{ id: Uint8Array; key: string; value: Uint8Array | null }> = [];
+    for (const op of this.ops.values()) {
+      const k = opKey(op.id);
+      if (!this.dgm.valid.has(k)) continue;
+      if (op.payload.type === 'setState') {
+        if (op.payload.ns === ns) writes.push({ id: op.id, key: k, value: op.payload.value });
+      } else if (op.payload.type === 'create') {
+        const seed = (op.payload.initialState ?? []).find((e) => e.ns === ns);
+        if (seed !== undefined) writes.push({ id: op.id, key: k, value: seed.value });
+      }
+    }
+    if (writes.length === 0) return null;
+    const maximal = writes.filter(
+      (w) => !writes.some((o) => o.key !== w.key && (this.anc.get(o.key)?.has(w.key) ?? false)),
+    );
+    const winner = (maximal.length > 0 ? maximal : writes).sort((a, b) =>
+      a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+    )[0]!;
+    return winner.value;
+  }
+
+  /** Every namespace that currently holds a value (group-state.md §1). */
+  stateNamespaces(): string[] {
+    const out = new Set<string>();
+    for (const op of this.ops.values()) {
+      if (!this.dgm.valid.has(opKey(op.id))) continue;
+      if (op.payload.type === 'setState') out.add(op.payload.ns);
+      else if (op.payload.type === 'create') for (const e of op.payload.initialState ?? []) out.add(e.ns);
+    }
+    return [...out].filter((ns) => this.state(ns) !== null).sort();
   }
 
   buildGrantAdmin(did: string): Op {

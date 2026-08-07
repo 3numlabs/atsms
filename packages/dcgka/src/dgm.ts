@@ -15,7 +15,7 @@
 
 import { bytesEqual, bytesToHex } from './bytes.js';
 import { ZERO32, membershipKey, sameMembership, type Membership } from './ids.js';
-import { opKey, type Op } from './ops.js';
+import { opKey, stateEntryValid, type Op } from './ops.js';
 
 export interface DgmView {
   valid: Set<string>;
@@ -299,6 +299,13 @@ function pass(ctx: Ctx, seed: DgmSeed | undefined, prev: PassState | null): Pass
         }
         case 'revokeAdmin':
           authzOk = view.admins.has(authorDid) && !(view.admins.size === 1 && view.admins.has(p.did));
+          break;
+        case 'setState':
+          // Shared group state is admin-only (group-state.md §2), governed by
+          // the same filter as membership: a non-admin's write is dropped here
+          // and never reaches any register. Bounds are validity too — an
+          // over-long namespace or value is ignored, never fatal.
+          authzOk = view.admins.has(authorDid) && stateEntryValid(p.ns, p.value);
           break;
         default:
           authzOk = true;

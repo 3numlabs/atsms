@@ -31,10 +31,22 @@ export type OpPayload =
        * Defaults to 'group' when absent.
        */
       kind?: 'dm' | 'group';
+      /** Initial shared state (group-state.md §4) — a group born named needs
+       *  no application message and no fetch, and a pointer cannot be seeded
+       *  here (a message's ConvoId derives from this op's own id). */
+      initialState?: Array<{ ns: string; value: Uint8Array }>;
     }
   | { type: 'add'; device: DeviceID; leafPk: Uint8Array; leafIndex: number; signingPk?: Uint8Array }
   | { type: 'remove'; membership: Membership; removedKeys: Uint8Array[] }
   | { type: 'update'; path: PathChange; rootCommit: Uint8Array }
+  /**
+   * Shared group state (group-state.md): a namespaced register whose contents
+   * the engine never interprets. `ns` names it (≤64 bytes, NSID-style by
+   * convention), `value` is opaque (≤128 bytes) or null to clear. Admin-only,
+   * per-namespace last-writer-wins by causal position. Deliberately opaque so
+   * new shared state costs no protocol change.
+   */
+  | { type: 'setState'; ns: string; value: Uint8Array | null }
   | { type: 'grantAdmin'; did: string }
   | { type: 'revokeAdmin'; did: string }
   | { type: 'coverage' };
@@ -57,7 +69,20 @@ export const OP_TYPE_NUM: Record<OpPayload['type'], number> = {
   grantAdmin: 5,
   revokeAdmin: 6,
   coverage: 7,
+  setState: 8,
 };
+
+/** group-state.md §1 bounds. Over-long values are invalid — ignored, never fatal. */
+export const MAX_STATE_NS_BYTES = 64;
+export const MAX_STATE_VALUE_BYTES = 128;
+
+/** Is this a well-formed state register write? (§3: bounds are validity.) */
+export function stateEntryValid(ns: string, value: Uint8Array | null): boolean {
+  return (
+    new TextEncoder().encode(ns).length <= MAX_STATE_NS_BYTES &&
+    (value === null || value.length <= MAX_STATE_VALUE_BYTES)
+  );
+}
 
 /** PathChange → wire-format §4.1 shape (fresh paths are single-version stores). */
 export function encodePathChange(p: PathChange): CborValue {
@@ -113,6 +138,7 @@ export function payloadToCbor(p: OpPayload): CborValue {
           p.initialDevices.map((d) => [[d.device.did, d.device.fingerprint], d.leafPk, d.signingPk ?? Z32]),
           p.initialAdmins,
           p.kind === 'dm' ? 1 : 0,
+          (p.initialState ?? []).map((e) => [e.ns, e.value]),
         ],
       ];
     case 'add':
@@ -126,6 +152,8 @@ export function payloadToCbor(p: OpPayload): CborValue {
       return [OP_TYPE_NUM[p.type], [p.did]];
     case 'coverage':
       return [OP_TYPE_NUM[p.type], []];
+    case 'setState':
+      return [OP_TYPE_NUM[p.type], [p.ns, p.value]];
   }
 }
 
@@ -160,7 +188,12 @@ export function payloadFromCbor(v: CborValue, authorFingerprint: Uint8Array): Op
   const a = args as CborValue[];
   switch (t) {
     case 1: {
-      const [devices, admins, kind] = a as [CborValue[], string[], number | undefined];
+      const [devices, admins, kind, state] = a as [
+        CborValue[],
+        string[],
+        number | undefined,
+        CborValue[] | undefined,
+      ];
       return {
         type: 'create',
         initialDevices: devices.map((d) => {
@@ -169,6 +202,10 @@ export function payloadFromCbor(v: CborValue, authorFingerprint: Uint8Array): Op
         }),
         initialAdmins: admins,
         kind: kind === 1 ? 'dm' : 'group',
+        initialState: (state ?? []).map((e) => {
+          const [ns, value] = e as [string, Uint8Array];
+          return { ns, value };
+        }),
       };
     }
     case 2: {
@@ -193,6 +230,10 @@ export function payloadFromCbor(v: CborValue, authorFingerprint: Uint8Array): Op
       return { type: 'revokeAdmin', did: (a as [string])[0] };
     case 7:
       return { type: 'coverage' };
+    case 8: {
+      const [ns, value] = a as [string, Uint8Array | null];
+      return { type: 'setState', ns, value };
+    }
     default:
       throw new Error(`unknown opType ${t}`);
   }
