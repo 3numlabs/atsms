@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "AT-SMS advanced-tier prekey bundle: the always-available X25519 bootstrap key for a device. One record per device, keyed by the device fingerprint (SHA-256 of the cert's raw uncompressed public-key point, identity-devices.md §2), structurally paired with at.atsms.x509/<fingerprint>. The signedPrekey is both the BeeKEM admission leaf key and the sealed-asym HPKE recipient key (identity-devices.md §4.2).",
+      "description": "ATSMS advanced-tier prekey bundle: the always-available X25519 bootstrap key for a device. One record per device, keyed by the device fingerprint (SHA-256 of the cert's raw uncompressed public-key point, identity-devices.md §2), structurally paired with at.atsms.x509/<fingerprint>. The signedPrekey is both the BeeKEM admission leaf key and the sealed-asym HPKE recipient key (identity-devices.md §4.2).",
       "key": "string",
       "record": {
         "type": "object",

@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "AT-SMS per-DID inbound-delivery record: where to reach this identity. A singleton (rkey 'self'), discovered with a single getRecord. Payload-agnostic — it addresses the DCGKA sealed-envelope path and the stateless one-shot path alike. Supersedes the retired per-device inviteAddress (inbound-delivery.md §3).",
+      "description": "ATSMS per-DID inbound-delivery record: where to reach this identity. A singleton (rkey 'self'), discovered with a single getRecord. Payload-agnostic — it addresses the DCGKA sealed-envelope path and the stateless one-shot path alike. Supersedes the retired per-device inviteAddress (inbound-delivery.md §3).",
       "key": "literal:self",
       "record": {
         "type": "object",
