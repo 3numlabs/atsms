@@ -4,7 +4,7 @@ Guidance for Claude Code working in **atsms-lib** (`@atsms/sms`).
 
 ## What this is
 
-`atsms-lib` is the **app-facing SDK** for AT-SMS: end-to-end encrypted messaging/calling on AT Protocol
+`atsms-lib` is the **app-facing SDK** for ATSMS: end-to-end encrypted messaging/calling on AT Protocol
 identities. It is an **unreleased prototype** being reshaped in place into **`@atsms/client`** — a clean
 two-surface API (a stateless `send()` verb + a stateful `conversations` noun) over the advanced-E2EE engine
 `@atsms/dcgka`. Build in place toward that shape; the SDK-monorepo move is a later migration. See the umbrella
@@ -54,7 +54,7 @@ The target API (built, mostly): `ATSMS.create({ identity, storage, transport, pd
 | **`certificates/`** | `ATSMSEndpointCertificate` (self-signed P-256), `getDeviceFingerprint()` + `atUri`, `generate()/generateWithKey()`. |
 | **`crypto*.ts`** | The X509/CMS pipeline (sign PKCS#7 / encrypt CMS EnvelopedData via `pkijs` + WebCrypto, ECDH P-256). |
 | **`messages.ts`** | `ATSMSMessagePayload`, `createMessagePayload`/`createTextContent`, dialect content types (`atsms/text`, webrtc). |
-| **`jwt-auth.ts`** | AT-SMS API JWT (ES256, `sub = at://<did>/at.atsms.x509/<deviceFingerprint>`). |
+| **`jwt-auth.ts`** | ATSMS API JWT (ES256, `sub = at://<did>/at.atsms.x509/<deviceFingerprint>`). |
 
 ## Load-bearing integration facts
 
@@ -123,15 +123,16 @@ layers treat the encoded bytes as opaque. The pre-v2 JSON payload (`ATSMSMessage
 
 ## Branding
 
-- **`AT-SMS`** — prose/docs/commits. Always hyphenated.
-- **`ATSMS`** — code identifiers only (`ATSMSClient`, `window.ATSMS`, `import * as ATSMS`).
+- **`ATSMS`** — everywhere: prose, docs, commits, and code identifiers (`ATSMSClient`, `window.ATSMS`,
+  `import * as ATSMS`). **Never hyphenated.** `AT-SMS` is the old spelling and was swept out on
+  2026-08-08; do not reintroduce it.
 - **`atsms`** — AT Protocol collections (`at.atsms.x509`) and npm scope (`@atsms/sms`). Don't "correct" these.
 - Avoid in-group jargon in docs/comments/APIs (no "floor"/"facade"); prefer plain terms.
 
 ## Code style
 
 - **NO inline imports** — all `import`s at top of file (rare documented exceptions only; CLI dynamic imports ok).
-- **`ATSMS` type prefix** for all AT-SMS-specific types; types defined once in `types.ts`.
+- **`ATSMS` type prefix** for all ATSMS-specific types; types defined once in `types.ts`.
 - **P-256 ECDSA only** — no RSA, no algorithm detection.
 - **`strict: true`** — no discriminated-union-narrowing kludge casts; fix at the type level.
 - **No backward compatibility** — unreleased; refactor freely, add new storage tables, don't keep dead

@@ -1,6 +1,6 @@
-# SQLite Commands for AT-SMS Development
+# SQLite Commands for ATSMS Development
 
-This document contains helpful SQLite commands for inspecting and debugging the AT-SMS local database.
+This document contains helpful SQLite commands for inspecting and debugging the ATSMS local database.
 
 ## Database Location
 

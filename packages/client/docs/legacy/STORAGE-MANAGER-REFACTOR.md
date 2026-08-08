@@ -133,7 +133,7 @@ if (!primaryDid) {
 export interface ATSMSStorageManagerConfig {
   // Infrastructure dependencies (required at construction)
   storage: StorageAdapter
-  inboxUrl: string          // AT-SMS Inbox Provider URL only
+  inboxUrl: string          // ATSMS Inbox Provider URL only
   atsmsClient: ATSMSClient
 
   // Event handlers (optional)

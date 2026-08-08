@@ -1,25 +1,25 @@
 /**
- * Shared types for AT-SMS Library
+ * Shared types for ATSMS Library
  */
 
 import type { ATSMSEndpointCertificate } from "./certificates/index.js";
 
 /**
- * AT-SMS Certificate Types
+ * ATSMS Certificate Types
  * - 'endpoint': Self-signed endpoint certificate (one per device)
  */
 export type ATSMSCertificateType = "endpoint";
 
 /**
- * AT-SMS Message Types stored in per-certificate inboxes
- * - 'atsms': AT-SMS P7M encrypted payloads (opaque blob)
+ * ATSMS Message Types stored in per-certificate inboxes
+ * - 'atsms': ATSMS P7M encrypted payloads (opaque blob)
  * - 'atsms-email': S/MIME encrypted email (enveloped-data, opaque blob)
  * - 'email': Normal parsed email with subject, body, attachments
  */
 export type ATSMSMessageType = "atsms" | "atsms-email" | "atsms-envelope" | "email";
 
 /**
- * Result of decrypting and verifying an AT-SMS message signature
+ * Result of decrypting and verifying an ATSMS message signature
  */
 export interface ATSMSDecryptedMessage {
   /** The certificate of the message signer */
@@ -33,7 +33,7 @@ export interface ATSMSDecryptedMessage {
 // and inbox-level only.
 
 // Transport receipt for tracking message origin and metadata
-// The AT-SMS Inbox Provider adds this to messages for troubleshooting spam
+// The ATSMS Inbox Provider adds this to messages for troubleshooting spam
 export interface ATSMSTransportReceipt {
   source: "email" | "api"; // How the message was received
   timestamp?: string; // When received

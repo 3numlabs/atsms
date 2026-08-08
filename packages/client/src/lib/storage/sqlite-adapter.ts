@@ -1,5 +1,5 @@
 /**
- * AT-SMS SQLite Storage Adapter
+ * ATSMS SQLite Storage Adapter
  *
  * Platform-agnostic SQLite adapter that works with any SQLite implementation
  * that conforms to the SQLiteDatabase interface

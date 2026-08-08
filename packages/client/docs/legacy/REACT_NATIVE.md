@@ -1,6 +1,6 @@
 # React Native Setup Guide
 
-This guide explains how to use AT-SMS in React Native applications.
+This guide explains how to use ATSMS in React Native applications.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ yarn add @atsms/sms
 
 ## Required Polyfills
 
-React Native doesn't include all Web APIs that AT-SMS requires. You need **two** polyfills for full functionality:
+React Native doesn't include all Web APIs that ATSMS requires. You need **two** polyfills for full functionality:
 
 1. **`react-native-get-random-values`** - Provides `crypto.getRandomValues()` for random number generation
 2. **`@peculiar/webcrypto`** - Provides `crypto.subtle` for key generation, signing, and certificate operations
@@ -58,7 +58,7 @@ module.exports = config;
 
 ### 2. Import and Configure Polyfills
 
-**IMPORTANT**: Set up polyfills at the very top of your app entry point (e.g., `App.tsx`, `_layout.tsx`, or `index.js`), **before** any AT-SMS imports:
+**IMPORTANT**: Set up polyfills at the very top of your app entry point (e.g., `App.tsx`, `_layout.tsx`, or `index.js`), **before** any ATSMS imports:
 
 ```typescript
 // App.tsx or _layout.tsx (MUST be at the very top!)
@@ -75,7 +75,7 @@ if (typeof globalThis.crypto?.subtle === 'undefined') {
   console.log('✅ Initialized @peculiar/webcrypto for React Native')
 }
 
-// Step 3: NOW you can safely import AT-SMS
+// Step 3: NOW you can safely import ATSMS
 import { ATSMSClient, isCryptoProviderAvailable } from '@atsms/sms'
 import { AtpAgent } from '@atproto/api'
 
@@ -90,7 +90,7 @@ if (!isCryptoProviderAvailable()) {
 **Why both polyfills are needed:**
 - `react-native-get-random-values`: Provides `crypto.getRandomValues()` for random bytes
 - `@peculiar/webcrypto`: Provides `crypto.subtle` for key generation and certificate operations
-- Both must be set up **before** AT-SMS imports, or certificate generation will fail
+- Both must be set up **before** ATSMS imports, or certificate generation will fail
 
 ### 3. Verify Platform Support
 
@@ -116,7 +116,7 @@ console.log('Running on:', platform.name) // "react-native"
 
 ## Storage Adapter
 
-AT-SMS requires a SQLite database for local storage. Choose one of these options:
+ATSMS requires a SQLite database for local storage. Choose one of these options:
 
 ### Option 1: Expo SQLite (Recommended for Expo)
 
@@ -252,7 +252,7 @@ export default function App() {
         password: 'your-app-password'
       })
 
-      // Initialize AT-SMS
+      // Initialize ATSMS
       const client = new ATSMSClient(agent, agent.session!.did)
 
       setReady(true)
@@ -275,7 +275,7 @@ export default function App() {
 
   return (
     <View>
-      <Text>AT-SMS Ready!</Text>
+      <Text>ATSMS Ready!</Text>
     </View>
   )
 }
@@ -297,7 +297,7 @@ import 'react-native-get-random-values' // Must be FIRST
 
 **Cause**: `react-native-get-random-values` only provides `crypto.getRandomValues()`, but certificate generation requires the full Web Crypto API including `crypto.subtle`
 
-**Solution**: Install and set up `@peculiar/webcrypto` BEFORE importing AT-SMS:
+**Solution**: Install and set up `@peculiar/webcrypto` BEFORE importing ATSMS:
 
 ```typescript
 // App entry point (e.g., App.tsx or _layout.tsx)
@@ -314,7 +314,7 @@ if (typeof globalThis.crypto?.subtle === 'undefined') {
   console.log('Initialized @peculiar/webcrypto for React Native')
 }
 
-// Step 3: NOW import AT-SMS (after crypto is fully set up)
+// Step 3: NOW import ATSMS (after crypto is fully set up)
 import { ATSMSClient } from '@atsms/sms'
 
 // Rest of your app...
@@ -331,9 +331,9 @@ bun add @peculiar/webcrypto
 
 ### "Web Crypto API not available"
 
-**Cause**: Crypto polyfills not set up before AT-SMS import
+**Cause**: Crypto polyfills not set up before ATSMS import
 
-**Solution**: Follow the complete setup in Step 2 above, ensuring both polyfills are imported **before** AT-SMS.
+**Solution**: Follow the complete setup in Step 2 above, ensuring both polyfills are imported **before** ATSMS.
 
 ### Metro bundler errors with "ws" or "better-sqlite3" package
 

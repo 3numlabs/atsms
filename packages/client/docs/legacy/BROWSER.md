@@ -1,6 +1,6 @@
 # Browser Setup Guide
 
-This guide explains how to use AT-SMS in web browsers.
+This guide explains how to use ATSMS in web browsers.
 
 ## Requirements
 
@@ -38,7 +38,7 @@ console.log('Has WebCrypto:', platform.hasWebCrypto) // true
 
 ### Using with Bundlers
 
-AT-SMS works with all modern bundlers:
+ATSMS works with all modern bundlers:
 
 **Vite**:
 ```javascript
@@ -56,7 +56,7 @@ export default {
 module.exports = {
   resolve: {
     fallback: {
-      // AT-SMS will use browser crypto, no Node.js fallbacks needed
+      // ATSMS will use browser crypto, no Node.js fallbacks needed
       crypto: false,
       stream: false,
       buffer: false
@@ -105,7 +105,7 @@ Browsers need a storage adapter for local message storage. We recommend IndexedD
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AT-SMS Browser Example</title>
+  <title>ATSMS Browser Example</title>
 </head>
 <body>
   <script type="module">
@@ -135,7 +135,7 @@ Browsers need a storage adapter for local message storage. We recommend IndexedD
         password: 'your-app-password'
       })
 
-      // Create AT-SMS client
+      // Create ATSMS client
       const client = new ATSMSClient(agent, agent.session.did)
 
       // Generate certificates (first time only)
@@ -147,7 +147,7 @@ Browsers need a storage adapter for local message storage. We recommend IndexedD
 
       await client.storeRootCertificate(rootCert)
 
-      console.log('AT-SMS initialized!')
+      console.log('ATSMS initialized!')
     }
 
     init().catch(console.error)
@@ -256,7 +256,7 @@ wsClient.on('message', (msg) => {
 
 ### Content Security Policy (CSP)
 
-AT-SMS uses Web Crypto API which requires these CSP directives:
+ATSMS uses Web Crypto API which requires these CSP directives:
 
 ```html
 <meta http-equiv="Content-Security-Policy"
@@ -289,7 +289,7 @@ Browser storage options for private keys:
 
 ### Code Splitting
 
-Load AT-SMS only when needed:
+Load ATSMS only when needed:
 
 ```typescript
 // Lazy load
@@ -298,7 +298,7 @@ const { ATSMSClient } = await import('@atsms/sms')
 
 ### Tree Shaking
 
-AT-SMS supports tree-shaking. Import only what you need:
+ATSMS supports tree-shaking. Import only what you need:
 
 ```typescript
 // Good - only imports what you use
@@ -310,7 +310,7 @@ import * as ATSMS from '@atsms/sms'
 
 ### Service Workers
 
-Cache AT-SMS bundle for offline support:
+Cache ATSMS bundle for offline support:
 
 ```javascript
 // service-worker.js
@@ -363,7 +363,7 @@ Browser bundle sizes:
 **Solution**:
 - Enable minification
 - Use tree-shaking
-- Load AT-SMS lazily
+- Load ATSMS lazily
 - Check for duplicate dependencies
 
 ## Example Projects

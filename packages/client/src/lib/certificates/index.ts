@@ -1,7 +1,7 @@
 /**
  * Certificate management module
  *
- * Provides abstraction over X.509 certificates for the AT-SMS messaging system.
+ * Provides abstraction over X.509 certificates for the ATSMS messaging system.
  * All certificates use P-256 ECDSA for signing and ECDH for key agreement.
  */
 

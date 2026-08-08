@@ -1,6 +1,6 @@
 # Deterministic DM Conversation IDs
 
-This document describes the changes made to prevent duplicate 1:1 DM conversations in AT-SMS. Use this to implement the same fix in the Flutter port.
+This document describes the changes made to prevent duplicate 1:1 DM conversations in ATSMS. Use this to implement the same fix in the Flutter port.
 
 ## Problem
 

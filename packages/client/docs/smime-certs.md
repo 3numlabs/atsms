@@ -2,7 +2,7 @@
 
 ## Summary
 
-Switching AT-SMS certificates to Ed25519 (signing) and X25519 (key agreement) is feasible at the WebCrypto level but **blocked by pkijs** for CMS/PKCS#7 operations.
+Switching ATSMS certificates to Ed25519 (signing) and X25519 (key agreement) is feasible at the WebCrypto level but **blocked by pkijs** for CMS/PKCS#7 operations.
 
 ## WebCrypto / Browser Support
 

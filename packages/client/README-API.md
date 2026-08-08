@@ -7,7 +7,7 @@
 > [`CLAUDE.md`](./CLAUDE.md) and the umbrella [`docs/sdk-shape.md`](../docs/sdk-shape.md). This file is
 > kept only until it is rewritten against the current shape.
 
-Complete API documentation for the AT-SMS Secure Messaging System library.
+Complete API documentation for the ATSMS Secure Messaging System library.
 
 **Browser & Node.js Support**: This library supports both environments with automatic platform detection and WebCrypto API usage.
 
@@ -64,7 +64,7 @@ constructor(config: ATSMSStorageManagerConfig)
 - `atsmsClient: ATSMSClient` - AT Protocol client for certificate operations
 - `did: string` - User's DID
 - `handle: string` - User's handle (e.g., "alice.bsky.social")
-- `apiUrl: string` - AT-SMS inbox service URL
+- `apiUrl: string` - ATSMS inbox service URL
 - `certSerial: string` - Client certificate serial number for authentication
 - `onSyncCompleted?: () => void` - Optional callback when sync completes
 - `onMessageAdded?: (message: LocalMessage) => void` - Optional callback when message is added (full message object)
@@ -395,7 +395,7 @@ interface ATSMSSendMessageResponse {
 
 ### ATSMSApiClient
 
-REST API client for AT-SMS inbox service (HTTP only).
+REST API client for ATSMS inbox service (HTTP only).
 
 ```typescript
 import { ATSMSApiClient } from '@atsms/sms'
@@ -411,7 +411,7 @@ constructor(config: ATSMSConfig)
 ```
 
 **Config Parameters:**
-- `apiUrl: string` - AT-SMS inbox service URL
+- `apiUrl: string` - ATSMS inbox service URL
 
 #### Methods
 
@@ -474,7 +474,7 @@ async sendMessage(
 
 ### ATSMSWebSocketClient
 
-Real-time WebSocket client for AT-SMS inbox service.
+Real-time WebSocket client for ATSMS inbox service.
 
 ```typescript
 import { ATSMSWebSocketClient } from '@atsms/sms'
@@ -498,7 +498,7 @@ constructor(config: WebSocketClientConfig)
 ```
 
 **Config Parameters:**
-- `apiUrl: string` - AT-SMS inbox service URL (wss:// protocol)
+- `apiUrl: string` - ATSMS inbox service URL (wss:// protocol)
 - `did: string` - User's DID
 - `certSerial: string` - Client certificate serial
 - `getToken: () => Promise<string>` - Function to get JWT token
@@ -874,7 +874,7 @@ async function generateJWT(
   expiresIn?: string
 ): Promise<string>
 ```
-Generates AT-SMS API JWT signed with client certificate.
+Generates ATSMS API JWT signed with client certificate.
 
 **Parameters:**
 - `did: string` - User's DID

@@ -209,7 +209,7 @@ describe("CMS EnvelopedData Encryption/Decryption (P-256 ECDH)", () => {
 
       // Encrypting with no recipients should throw a clear error
       await expect(encryptMessageOAEP(testMessage, [])).rejects.toThrow(
-        "Cannot encrypt message: Recipient has no AT-SMS certificates",
+        "Cannot encrypt message: Recipient has no ATSMS certificates",
       );
     });
 

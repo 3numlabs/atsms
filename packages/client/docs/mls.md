@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-AT-SMS currently requires X.509 certificates stored in a PDS for encryption. We want to:
+ATSMS currently requires X.509 certificates stored in a PDS for encryption. We want to:
 1. Support users without a PDS
 2. Preserve S/MIME for legacy infrastructure
 3. Add modern encryption with forward secrecy

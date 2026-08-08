@@ -142,7 +142,7 @@ export abstract class ATSMSCertificate extends X509Certificate {
   }
 
   /**
-   * Get the domain (alias for commonName in AT-SMS context)
+   * Get the domain (alias for commonName in ATSMS context)
    */
   get domain(): string {
     return this.commonName;

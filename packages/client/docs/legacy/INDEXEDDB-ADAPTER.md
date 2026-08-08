@@ -1,10 +1,10 @@
 # IndexedDB Storage Adapter
 
-Browser-compatible storage adapter for AT-SMS using IndexedDB.
+Browser-compatible storage adapter for ATSMS using IndexedDB.
 
 ## Overview
 
-The `IndexedDBAdapter` provides the same `StorageAdapter` interface as `SQLiteAdapter`, enabling AT-SMS to work seamlessly in browser environments without relying on Node.js-specific APIs.
+The `IndexedDBAdapter` provides the same `StorageAdapter` interface as `SQLiteAdapter`, enabling ATSMS to work seamlessly in browser environments without relying on Node.js-specific APIs.
 
 **Key Benefits:**
 - ✓ Same API as SQLiteAdapter - easy migration from Node.js
@@ -20,7 +20,7 @@ The `IndexedDBAdapter` provides the same `StorageAdapter` interface as `SQLiteAd
 ✓ Same API as SQLiteAdapter for cross-platform compatibility
 ✓ Observable support for reactive UI updates
 ✓ Efficient indexing for fast queries
-✓ Support for all AT-SMS features (messages, conversations, certificates, DIDs)
+✓ Support for all ATSMS features (messages, conversations, certificates, DIDs)
 
 ## Usage
 
@@ -50,7 +50,7 @@ await storageManager.startTransport(did)
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AT-SMS Browser Client</title>
+  <title>ATSMS Browser Client</title>
 </head>
 <body>
   <script type="module">
@@ -73,7 +73,7 @@ await storageManager.startTransport(did)
         password: 'app-password'
       })
 
-      // Create AT-SMS client
+      // Create ATSMS client
       const atsmsClient = new ATSMSClient(agent, agent.session.did)
 
       // Create storage manager
@@ -120,7 +120,7 @@ await storageManager.startTransport(did)
 
     // Initialize on page load
     initializeATSMS().then(({ storageManager }) => {
-      console.log('AT-SMS initialized!')
+      console.log('ATSMS initialized!')
 
       // Example: Start a conversation
       document.getElementById('sendBtn').addEventListener('click', async () => {

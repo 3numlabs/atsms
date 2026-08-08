@@ -35,7 +35,7 @@ export async function encryptMessageOAEP(
   // Validate that we have recipients with certificates
   if (!recipientCerts || recipientCerts.length === 0) {
     throw new Error(
-      "Cannot encrypt message: Recipient has no AT-SMS certificates. " +
+      "Cannot encrypt message: Recipient has no ATSMS certificates. " +
         "The recipient must set up their certificates before they can receive encrypted messages.",
     );
   }

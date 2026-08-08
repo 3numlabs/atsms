@@ -6,7 +6,7 @@
 import { cryptoProvider } from "../crypto-provider";
 
 /**
- * Compute deterministic AT-SMS email from DID and email domain
+ * Compute deterministic ATSMS email from DID and email domain
  *
  * Format by DID method:
  * - PLC: plc.[plc-id]@domain → plc.bq5ygkxmmbae7n6z34neuaih@atsms.email

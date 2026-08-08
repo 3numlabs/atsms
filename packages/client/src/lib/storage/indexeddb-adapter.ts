@@ -1,5 +1,5 @@
 /**
- * AT-SMS IndexedDB Storage Adapter
+ * ATSMS IndexedDB Storage Adapter
  *
  * Browser-compatible storage adapter using IndexedDB
  * Provides the same interface as SQLiteAdapter for cross-platform compatibility

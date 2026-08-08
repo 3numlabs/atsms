@@ -1,6 +1,6 @@
-# Building Browser Clients with AT-SMS
+# Building Browser Clients with ATSMS
 
-This guide explains how to build browser-based AT-SMS clients using the new IndexedDB storage adapter.
+This guide explains how to build browser-based ATSMS clients using the new IndexedDB storage adapter.
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ async function initializeClient(identifier: string, password: string) {
   const agent = new AtpAgent({ service: 'https://bsky.social' })
   await agent.login({ identifier, password })
 
-  // 3. Create AT-SMS client
+  // 3. Create ATSMS client
   const atsmsClient = new ATSMSClient(agent, agent.session.did)
 
   // 4. Create storage manager
@@ -149,7 +149,7 @@ export function ATSMSChat() {
   const [currentConvo, setCurrentConvo] = useState<string | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
 
-  // Initialize AT-SMS
+  // Initialize ATSMS
   useEffect(() => {
     async function init() {
       const storage = new IndexedDBAdapter()
@@ -262,7 +262,7 @@ export function ATSMSChat() {
   }
 
   if (!isInitialized) {
-    return <div>Initializing AT-SMS...</div>
+    return <div>Initializing ATSMS...</div>
   }
 
   return (
@@ -320,7 +320,7 @@ storageManager.observeConversation('convo-123').subscribe(conversation => {
 
 ## Message Content Types
 
-AT-SMS uses structured message content with `contentType` and `content` fields:
+ATSMS uses structured message content with `contentType` and `content` fields:
 
 ### Text Messages
 
@@ -577,6 +577,6 @@ await storageManager.syncMessages()
 ## See Also
 
 - [IndexedDB Adapter API Reference](./INDEXEDDB-ADAPTER.md)
-- [AT-SMS Library Documentation](../README.md)
+- [ATSMS Library Documentation](../README.md)
 - [Message Content Structure](./CLAUDE.md#message-content-structure)
 - [MDN IndexedDB API](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API)

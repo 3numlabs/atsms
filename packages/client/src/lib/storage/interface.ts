@@ -1,5 +1,5 @@
 /**
- * AT-SMS Storage Interface
+ * ATSMS Storage Interface
  *
  * Abstract storage adapter interface that can be implemented
  * by different storage backends (SQLite, IndexedDB, etc.)

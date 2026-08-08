@@ -1,6 +1,6 @@
-# AT-SMS Message Synchronization Architecture
+# ATSMS Message Synchronization Architecture
 
-The AT-SMS library syncs messages with the AT-SMS Inbox Provider through a sophisticated multi-layer architecture with three transport mechanisms and a unified processing pipeline.
+The ATSMS library syncs messages with the ATSMS Inbox Provider through a sophisticated multi-layer architecture with three transport mechanisms and a unified processing pipeline.
 
 ## Architecture Layers
 
@@ -17,7 +17,7 @@ The AT-SMS library syncs messages with the AT-SMS Inbox Provider through a sophi
 
 ### 2. HTTP Client (`ATSMSApiClient`) - REST API Communication
 - **Location**: `src/lib/atsms-api.ts`
-- **Purpose**: Direct HTTP communication with AT-SMS API server
+- **Purpose**: Direct HTTP communication with ATSMS API server
 - **Authentication**: JWT token in `Authorization: Bearer <token>` header
 - **Endpoints**:
   - `GET /messages/{did}/{certSerial}/list?after={seq}&limit={n}`: List messages

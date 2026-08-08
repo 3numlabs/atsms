@@ -1,5 +1,5 @@
 /**
- * AT-SMS Storage Types
+ * ATSMS Storage Types
  *
  * Local message storage over the v2 content format (docs/message-format.md).
  * A stored message row is the authoritative received record: the decoded

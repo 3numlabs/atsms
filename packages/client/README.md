@@ -36,7 +36,7 @@ await agent.login({
   password: 'your-app-password'
 })
 
-// Create AT-SMS client
+// Create ATSMS client
 const client = new ATSMSClient(agent, agent.session!.did)
 
 // Generate certificates (first time only)
@@ -137,7 +137,7 @@ bun src/client/atsms.ts stats --handle alice.bsky.social --client-cert ./client.
 
 ### 2. **api-client.js** - Lightweight API Testing
 
-Simple tool for testing AT-SMS API endpoints with cached credentials.
+Simple tool for testing ATSMS API endpoints with cached credentials.
 
 ```bash
 # List messages (uses cached credentials from chat client)
@@ -297,7 +297,7 @@ bun run chat
 
 ## Security
 
-AT-SMS uses industry-standard cryptographic libraries:
+ATSMS uses industry-standard cryptographic libraries:
 - RSA-2048 or ECDSA (secp256k1) for key generation
 - S/MIME (PKCS#7) for message format
 - X.509 for certificate management
