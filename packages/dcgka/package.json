@@ -2,7 +2,8 @@
   "name": "@atsms/dcgka",
   "version": "0.1.0",
   "description": "ATSMS advanced E2EE engine: BeeKEM tree + ATSMS messaging profile (spec/beekem-core.md)",
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "author": "3NUM",
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {

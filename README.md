@@ -1,21 +1,41 @@
 # atsms-dcgka
 
-**[Protocol] · Status: Phase 0b specs DECIDED · Phases 1–2 BUILT** (engine +
-ordering/auth + fuzz gate; `packages/dcgka`, 67 unit tests + a simulation fuzz
-gate, byte-faithful to the Rust BeeKEM oracle). Phases 3–5 (sealed-sender impl,
-identity/lexicon publish flows, `@atsms/sms` integration) are next.
+Decentralized group key agreement for ATSMS: forward secrecy, post-compromise security, real group
+membership, multi-device, and sealed-sender metadata protection — **with no server ordering anything**.
+No sequencer, no delivery service, no privileged party. Members change the group whenever they like and
+every device converges on the same keys from whatever order the network delivers.
 
-Decentralized group messaging — the planned replacement for the crypto core of `atsms-lib`
-(`@atsms/sms`), delivering forward secrecy, post-compromise security, real group key agreement,
-multi-device, and sealed-sender metadata protection over the existing dumb-mailbox relay model.
-Umbrella roadmap **Phase 7**; supersedes the MLS direction in `atsms-lib/docs/mls.md`.
+This is the crypto core of the ATSMS client SDK (`@atsms/sms`), and it is what makes the group
+messaging in ATSMS work.
 
-**Based on (since D11, 2026-07-22): [BeeKEM](https://github.com/inkandswitch/keyhive)** — Ink & Switch's
-concurrent TreeKEM for local-first systems (paper: `../BeeKEM.pdf`; the `beekem` Rust crate is the
-differential-test oracle) — under an ATSMS messaging profile. The spec set's layering, DGM, ordering,
-sealed-sender, and identity designs carry over from the earlier Weidner-DCGKA phase (CCS 2021,
-[eprint 2020/1281](https://eprint.iacr.org/2020/1281)), whose core specs are retained as superseded
-design records. Pre-BeeKEM state preserved at git tag **`dcgka-classic-v1`**.
+**Status: BUILT and running.** The engine, the ordering and authentication layer, sealed sender,
+identity and lexicon flows, and the SDK integration are all in place, exercised by 138 unit tests plus a
+four-scenario simulation fuzz gate, and live-tested across a browser client and a terminal client
+against a deployed relay.
+
+**Not reviewed.** BeeKEM has no formal security proof, and the composition here — sealed sender over a
+concurrent group key agreement, with the group manager acting as the validity filter for the key tree —
+has not been examined by anyone outside the project. External cryptographic review is a **gating
+requirement** before this carries real traffic. See [`SECURITY.md`](./SECURITY.md),
+[`KNOWN-ISSUES.md`](./KNOWN-ISSUES.md) for what we already know is wrong, and
+[`spec/review-scope.md`](./spec/review-scope.md) for the brief we would hand a reviewer.
+
+**Built on [BeeKEM](https://github.com/inkandswitch/keyhive)**, Ink & Switch's concurrent TreeKEM for
+local-first systems, under an ATSMS messaging profile. Their implementation is in Rust and ours is in
+TypeScript, so we ported it and hold the port to a differential oracle: `oracle/` drives the upstream
+crate and `packages/dcgka/test/oracle.test.ts` requires byte-for-byte agreement on shared scenarios. The
+layering, group management, ordering and identity designs carry over from the earlier Weidner-DCGKA
+phase (CCS 2021, [eprint 2020/1281](https://eprint.iacr.org/2020/1281)), whose core specs are kept as
+superseded design records. Pre-BeeKEM state is preserved at git tag **`dcgka-classic-v1`**.
+
+## Running it
+
+```bash
+bun run test        # everything, including the fuzz gate (a few minutes)
+bun run test:unit   # 138 unit tests, seconds
+bun run test:fuzz   # the four fuzz scenarios only
+bun run typecheck
+```
 
 ## Documents
 

@@ -2,3 +2,6 @@ node_modules/
 target/
 
 packages/dcgka/bun.lock
+
+# Vitest cache
+.vite/

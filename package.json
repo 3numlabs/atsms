@@ -1,0 +1,15 @@
+{
+  "name": "atsms-dcgka",
+  "private": true,
+  "description": "ATSMS advanced E2EE engine (BeeKEM DCGKA) — specs, reference implementation, and differential oracle",
+  "license": "Apache-2.0",
+  "author": "3NUM",
+  "comment": "Entry point only. The implementation lives in packages/dcgka and pins its own toolchain; these scripts run there so a contributor gets the same versions the maintainers do.",
+  "scripts": {
+    "test": "bun run --cwd packages/dcgka test",
+    "test:unit": "bun run --cwd packages/dcgka test:unit",
+    "test:fuzz": "bun run --cwd packages/dcgka test:fuzz",
+    "typecheck": "bun run --cwd packages/dcgka typecheck",
+    "build-types": "bun run --cwd packages/dcgka build-types"
+  }
+}

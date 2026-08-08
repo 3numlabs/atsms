@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-beekem = { path = "../keyhive/beekem"  # clone inkandswitch/keyhive next to beekem-vectors (see ../README.md) }
+# Path dependencies on the upstream crates. Clone inkandswitch/keyhive next to
+# this directory (oracle/keyhive) before building — see ../README.md.
+beekem = { path = "../keyhive/beekem" }
 keyhive_crypto = { path = "../keyhive/keyhive_crypto" }
 ed25519-dalek = "2.1"
 rand = "0.8.5"

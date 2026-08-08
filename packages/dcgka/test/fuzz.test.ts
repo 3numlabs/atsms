@@ -43,31 +43,37 @@ const BASE: SimOptions = {
   maxGroup: 6,
 };
 
+/** These run tens of seconds each — deliberately, they are the quality gate.
+ *  Each declares its own timeout so the suite passes whichever vitest and
+ *  config a contributor happens to invoke, rather than only from this package
+ *  directory. */
+const FUZZ_TIMEOUT_MS = 300_000;
+
 describe('simulation fuzz (Phase 2 quality gate)', () => {
   it('converges across 12 seeded schedules (lossy/reorder/dup/partition + churn)', () => {
     for (let seed = 1; seed <= 12; seed++) {
       assertConverged(seed, BASE);
     }
-  });
+  }, FUZZ_TIMEOUT_MS);
 
   it('static membership, heavy loss + reordering (no churn)', () => {
     const opt: SimOptions = { ...BASE, poolSize: 4, founding: 4, maxGroup: 4, lossProb: 0.3, dupProb: 0.15, steps: 400 };
     for (let seed = 100; seed <= 106; seed++) {
       assertConverged(seed, opt);
     }
-  });
+  }, FUZZ_TIMEOUT_MS);
 
   it('add/remove churn dominant, small groups', () => {
     const opt: SimOptions = { ...BASE, founding: 2, poolSize: 8, maxGroup: 6, steps: 400, offlineProb: 0.25 };
     for (let seed = 200; seed <= 207; seed++) {
       assertConverged(seed, opt);
     }
-  });
+  }, FUZZ_TIMEOUT_MS);
 
   it('long run, larger group', () => {
     const opt: SimOptions = { ...BASE, founding: 4, poolSize: 9, maxGroup: 8, steps: 700 };
     for (const seed of [7777, 9999]) {
       assertConverged(seed, opt);
     }
-  });
+  }, FUZZ_TIMEOUT_MS);
 });

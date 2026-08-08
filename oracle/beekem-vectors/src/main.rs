@@ -212,7 +212,13 @@ fn cipher_samples() -> Value {
 fn main() {
     let mut rng = StdRng::seed_from_u64(0);
     let out = json!({
-        "generator": "beekem-vectors (inkandswitch/keyhive clone @ 2026-07-09)",
+        // Records WHICH upstream revision produced these vectors, so a
+        // reviewer can reproduce them exactly. Pass it in when generating:
+        //   KEYHIVE_COMMIT=$(git -C ../keyhive rev-parse HEAD) cargo run --release
+        "generator": format!(
+            "beekem-vectors (inkandswitch/keyhive @ {})",
+            option_env!("KEYHIVE_COMMIT").unwrap_or("unrecorded; see oracle/README.md")
+        ),
         "scenarios": [
             seq_scenario(1, &[0], &mut rng),
             seq_scenario(2, &[0, 1], &mut rng),
