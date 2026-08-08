@@ -5,7 +5,7 @@
 > with 2SM, so `identityDh` and the OPK layer are removed; the signed prekey's second role is now the
 > BeeKEM admission leaf key.)* [Protocol] · Phase 0 deliverable.
 > Closes gaps **G6** (multi-device model at the group layer) and **G8** (prekeys on a public PDS; lexicon)
-> from [`../gap-analysis.md`](../gap-analysis.md).
+> from [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md).
 > Inputs: spec v1.1 §4/§4.1 (identity/device model, cert profiles — normative text consolidated here),
 > [`dgm.md`](./dgm.md) §2/§4 (DeviceID/Membership, same-DID authorization), [`beekem-core.md`](./beekem-core.md)
 > §4.2/§6 (prekey consumption at admission), decisions D3/D4, the 2026-07-15/16 lexicon decisions.

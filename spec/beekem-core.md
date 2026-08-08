@@ -1,13 +1,13 @@
 # spec/beekem-core.md — BeeKEM Core & ATSMS Messaging Profile
 
 > **Status: DRAFT v0.1 (2026-07-22) — for review.** [Protocol] · Phase 0b deliverable (decision
-> **D11**, [`../beekem-analysis.md`](../beekem-analysis.md)).
+> **D11**, [`../docs/history/beekem-analysis.md`](../docs/history/beekem-analysis.md)).
 > **Supersedes [`dcgka-core.md`](./dcgka-core.md) and [`2sm.md`](./2sm.md)** — re-answers gaps
 > **G1** (dissolved: no pairwise channel exists), **G2** (coverage lifecycle), **G3** (application
 > ratchet), **G7** (welcome/checkpoints), **G11** (concurrency mitigations), **G15** (storage/GC).
 > Inputs: BeeKEM paper (`../BeeKEM.pdf`) + `inkandswitch/keyhive` `beekem` crate (clone 2026-07-09 —
-> the **differential-test oracle**, replacing p2panda), [`../spike-a-messaging-profile.md`](../spike-a-messaging-profile.md)
-> (normative content incorporated), [`../spike-b-dgm-reconciliation.md`](../spike-b-dgm-reconciliation.md)
+> the **differential-test oracle**, replacing p2panda), [`../docs/history/spike-a-messaging-profile.md`](../docs/history/spike-a-messaging-profile.md)
+> (normative content incorporated), [`../docs/history/spike-b-dgm-reconciliation.md`](../docs/history/spike-b-dgm-reconciliation.md)
 > (PR-1..3), [`dgm.md`](./dgm.md), [`ordering-auth.md`](./ordering-auth.md). MUST/SHOULD/MAY per RFC 2119.
 > The ordering layer feeds this machine only **ready, authenticated, deduplicated** frames; the DGM
 > supplies validity judgments (§4.1).

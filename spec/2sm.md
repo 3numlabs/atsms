@@ -9,7 +9,7 @@
 > shape (identity-devices.md §4.2 — `identityDh` removed). Do not implement from this document.
 
 > **Status: DRAFT v0.1 (2026-07-15) — for review.** [Protocol] · Phase 0 deliverable.
-> Closes gap **G1** from [`../gap-analysis.md`](../gap-analysis.md) — the original one-page spec's 2SM
+> Closes gap **G1** from [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md) — the original one-page spec's 2SM
 > recommendation (X3DH + Double Ratchet, or bare HPKE) does not satisfy the DCGKA proof and is replaced by
 > this construction.
 > Inputs: DCGKA paper §5.3 + eprint Appendix B (security notion) + Appendix D (construction, Fig. 13);

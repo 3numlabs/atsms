@@ -1,8 +1,8 @@
 # Quilibrium "channel" (Triple Ratchet) vs. the DCGKA plan
 
 > Analysis of [QuilibriumNetwork/channel](https://github.com/QuilibriumNetwork/channel) (Rust) as an alternative
-> to the DCGKA approach in [`implementation-plan.md`](./implementation-plan.md) /
-> [`gap-analysis.md`](./gap-analysis.md). Based on a full read of the Rust source (all ~3,100 lines), its tests
+> to the DCGKA approach in [`implementation-plan.md`](implementation-plan.md) /
+> [`gap-analysis.md`](gap-analysis.md). Based on a full read of the Rust source (all ~3,100 lines), its tests
 > (pass), the WASM/uniffi bindings, Quilibrium's E2EE docs, and a diff against the canonical copy in
 > `QuilibriumNetwork/monorepo` `crates/channel`. Written 2026-07-14. **[Protocol] research note.**
 
@@ -55,7 +55,7 @@
 | Deniability | Strong (flip side of no signatures) | Weaker (signed control/app messages) — noted in G17 |
 | Metadata protection | Encrypted headers in-group; sealed-sender exists only in monorepo; network anonymity delegated to Quilibrium mixnet | Sealed sender designed into our stack (spec/sealed-sender.md, relay ingress D5) |
 | Security analysis | **No spec, no proof, no audit**; their own docs defer auditing | CCS 2021 paper with game-based proof; our composition still needs review (G18) |
-| Multi-device | None (device = member, no delegation story) | Designed in (G6, `spec/identity-devices.md`) |
+| Multi-device | None (device = member, no delegation story) | Designed in (G6, `../../spec/identity-devices.md`) |
 | Identity | Raw Ed448 key bundles, host-supplied | AT Protocol DIDs + `at.atsms.prekey` lexicon (G8) |
 | Transport assumptions | Mailbox per member; per-sender rough FIFO (skip window 100/2000); DKG rounds phase-ordered by host; **cross-epoch reordering fragile** (only current+next header keys tried) | Explicit causal-buffering predicates; unbounded reordering tolerated by design |
 | Group size | Pitch: beyond sender-keys ~1k pain point (O(1) data msgs); reality: O(n²) creation, n−1 DR states, and a **`u32` overflow in polynomial eval** that silently corrupts shares at threshold ≥ 3 with large member IDs | 150 devices, O(n) ops — matches our stated target (G16) |
@@ -87,7 +87,7 @@
 - **Stateless serialize-in/serialize-out FFI shape** — a good API discipline for our engine module regardless of
   language (pairs well with D3's WASM-swappable seam).
 - Their monorepo's `// SECURITY:` fix — never mutate ratchet state before AEAD verification — goes straight into
-  `spec/dcgka-core.md` as a normative rule.
+  `../../spec/dcgka-core.md` as a normative rule.
 - Encrypted headers (header keys derived from group state) as a cheap in-group metadata measure.
 
 ## Recommendation
@@ -103,4 +103,4 @@ authenticated senders.
 
 The legitimate counter-argument is message volume: if O(n) envelopes per app message at 150 devices proves
 unacceptable in practice, revisit the hybrid above — as a *later optimization inside* the DCGKA framework, not a
-reason to switch frameworks. Track it as an open question in `spec/overview.md` §Performance.
+reason to switch frameworks. Track it as an open question in `../../spec/overview.md` §Performance.

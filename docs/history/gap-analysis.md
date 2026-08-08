@@ -1,6 +1,6 @@
 # atsms-dcgka — Spec Gap Analysis
 
-> Evaluation of [`atsms-dcgka-spec.md`](./atsms-dcgka-spec.md) v1.0 for completeness, against
+> Evaluation of [`atsms-dcgka-spec.md`](atsms-dcgka-spec.md) v1.0 for completeness, against
 > (a) the DCGKA paper it is based on — Weidner, Kleppmann, Hugenroth, Beresford, *"Key Agreement for
 > Decentralized Secure Group Messaging with Strong Security Guarantees"*, CCS 2021,
 > [eprint 2020/1281](https://eprint.iacr.org/2020/1281) (use the **eprint version**, revised May 2021 — it adds
@@ -288,21 +288,21 @@ composed system (sealed sender × DCGKA composition is novel enough to warrant i
 
 | # | Gap | Severity | Owning sub-spec (see implementation plan) |
 |---|-----|----------|-------------------------------------------|
-| G1 | 2SM recommendation wrong (DR/HPKE don't qualify) | BLOCKER | `spec/2sm.md` |
-| G2 | Acks treated as optional; PCS + state-GC lifecycle missing | BLOCKER | `spec/dcgka-core.md` |
-| G3 | App ratchet mis-specified | BLOCKER | `spec/dcgka-core.md` |
-| G4 | Ordering & authentication layer under-specified | BLOCKER | `spec/ordering-auth.md` |
-| G5 | **DGM / group management model absent** | DESIGN | `spec/dgm.md` |
-| G6 | Multi-device model at group layer | DESIGN | `spec/identity-devices.md` |
-| G7 | Welcome/history growth + metadata exposure | DESIGN | `spec/dcgka-core.md` |
-| G8 | Prekeys-on-PDS unworkable as written; no lexicon | DESIGN | `spec/identity-devices.md` |
-| G9 | Sealed sender: anonymous ingress, padding, key separation | DESIGN | `spec/sealed-sender.md` |
-| G10 | No integration story with atsms-lib/worker/dialects | INTEGRATION | `spec/atsms-integration.md` |
-| G11 | Concurrent-remove collusion caveat + normative mitigation | INTEGRATION | `spec/dcgka-core.md` |
-| G12 | Mailbox withholding / liveness / repair | INTEGRATION | `spec/ordering-auth.md` |
-| G13 | Wire formats, versioning, test vectors | INTEGRATION | `spec/wire-format.md` |
-| G14 | Insider DoS detection/recovery | HARDENING | `spec/dgm.md` + core |
-| G15 | Storage/GC bounds | HARDENING | `spec/dcgka-core.md` |
+| G1 | 2SM recommendation wrong (DR/HPKE don't qualify) | BLOCKER | `../../spec/2sm.md` |
+| G2 | Acks treated as optional; PCS + state-GC lifecycle missing | BLOCKER | `../../spec/dcgka-core.md` |
+| G3 | App ratchet mis-specified | BLOCKER | `../../spec/dcgka-core.md` |
+| G4 | Ordering & authentication layer under-specified | BLOCKER | `../../spec/ordering-auth.md` |
+| G5 | **DGM / group management model absent** | DESIGN | `../../spec/dgm.md` |
+| G6 | Multi-device model at group layer | DESIGN | `../../spec/identity-devices.md` |
+| G7 | Welcome/history growth + metadata exposure | DESIGN | `../../spec/dcgka-core.md` |
+| G8 | Prekeys-on-PDS unworkable as written; no lexicon | DESIGN | `../../spec/identity-devices.md` |
+| G9 | Sealed sender: anonymous ingress, padding, key separation | DESIGN | `../../spec/sealed-sender.md` |
+| G10 | No integration story with atsms-lib/worker/dialects | INTEGRATION | `../../spec/atsms-integration.md` |
+| G11 | Concurrent-remove collusion caveat + normative mitigation | INTEGRATION | `../../spec/dcgka-core.md` |
+| G12 | Mailbox withholding / liveness / repair | INTEGRATION | `../../spec/ordering-auth.md` |
+| G13 | Wire formats, versioning, test vectors | INTEGRATION | `../../spec/wire-format.md` |
+| G14 | Insider DoS detection/recovery | HARDENING | `../../spec/dgm.md` + core |
+| G15 | Storage/GC bounds | HARDENING | `../../spec/dcgka-core.md` |
 | G16 | Size/perf envelope (150 = devices) | HARDENING | spec §Performance |
 | G17 | Security-model fine print | HARDENING | spec §Security |
 | G18 | Review/audit pipeline | HARDENING | plan Phase 6 |

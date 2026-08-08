@@ -1,8 +1,8 @@
 # MLS (RFC 9420) with decentralized delivery vs. the DCGKA plan
 
-> Third leg of the alternatives comparison (see [`q-channel-analysis.md`](./q-channel-analysis.md) for
+> Third leg of the alternatives comparison (see [`q-channel-analysis.md`](q-channel-analysis.md) for
 > Quilibrium's Triple Ratchet). Evaluates standard MLS run over our untrusted dumb-mailbox relay network,
-> against [`implementation-plan.md`](./implementation-plan.md) / [`gap-analysis.md`](./gap-analysis.md).
+> against [`implementation-plan.md`](implementation-plan.md) / [`gap-analysis.md`](gap-analysis.md).
 > Based on RFC 9420 + RFC 9750 (architecture), the decentralized-MLS state of the art as of mid-2026
 > (Matrix DMLS, draft-kohbrok-mls-dmls/FREEK, draft-xue-distributed-mls, CoCoA/DeCAF/Key Lattice), shipped
 > systems (Discord DAVE, Wire, XMTP, Nostr Marmot, Cloudflare Orange Meets, IETF MIMI), and the implementation
@@ -114,10 +114,10 @@ Switching to MLS would **dissolve** several of our hardest gaps rather than answ
 
 ## Impact on the implementation plan
 
-If MLS is chosen, the plan restructures substantially: Phase 0's `spec/dcgka-core.md`, `spec/2sm.md`, and
-`spec/dgm.md` are replaced by `spec/mls-profile.md` (ciphersuite, extensions, credential type binding DIDs,
-KeyPackage lifecycle), `spec/sequencing.md` (sequencer DO contract, tie-break, revert window, migration), and
-`spec/group-policy.md`; Phases 1–2 become library integration + the sequencer DO instead of crypto
+If MLS is chosen, the plan restructures substantially: Phase 0's `../../spec/dcgka-core.md`, `../../spec/2sm.md`, and
+`../../spec/dgm.md` are replaced by `../../spec/mls-profile.md` (ciphersuite, extensions, credential type binding DIDs,
+KeyPackage lifecycle), `../../spec/sequencing.md` (sequencer DO contract, tie-break, revert window, migration), and
+`../../spec/group-policy.md`; Phases 1–2 become library integration + the sequencer DO instead of crypto
 implementation; D3 (language) becomes "OpenMLS-WASM vs ts-mls" — and the relay (`atsms-worker`) gains a small
 **per-group sequencer duty**, which must be reconciled with the "Relay Nodes are permissionless and dumb"
 doctrine in `docs/architecture.md` §2. Decisions D1 (X509 floor layering), D2 (package split), D4–D6 carry

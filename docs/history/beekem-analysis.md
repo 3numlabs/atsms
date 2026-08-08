@@ -4,11 +4,11 @@
 > currently specified in `spec/`. Sources: the BeeKEM paper (`../BeeKEM.pdf`), the crate README
 > (canonical algorithm description), and a source read of `keyhive/beekem/src` (~3.5k lines Rust,
 > clone at commit 2026-07-09 "Improve API for access levels (#209)").
-> Companion to [`mls-analysis.md`](./mls-analysis.md), [`p2panda-analysis.md`](./p2panda-analysis.md),
-> [`q-channel-analysis.md`](./q-channel-analysis.md).
+> Companion to [`mls-analysis.md`](mls-analysis.md), [`p2panda-analysis.md`](p2panda-analysis.md),
+> [`q-channel-analysis.md`](q-channel-analysis.md).
 > **D11 SIGNED OFF 2026-07-22** (both spike gates passed); **Phase 0b executed same day** — see
-> [`spec/beekem-core.md`](./spec/beekem-core.md) and the D11/D8 entries in
-> [`implementation-plan.md`](./implementation-plan.md) §1.
+> [`../../spec/beekem-core.md`](../../spec/beekem-core.md) and the D11/D8 entries in
+> [`implementation-plan.md`](implementation-plan.md) §1.
 
 ## 1. What BeeKEM is
 
@@ -119,13 +119,13 @@ derivation change. D10 survives with an updated joint-use argument. **D8 must be
 before any spec rewrite):
 
 - **Spike A — messaging profile** — ✅ **COMPLETE 2026-07-22, PASS**
-  ([`spike-a-messaging-profile.md`](./spike-a-messaging-profile.md)): eviction/deletion schedule,
+  ([`spike-a-messaging-profile.md`](spike-a-messaging-profile.md)): eviction/deletion schedule,
   per-sender chains over `PcsKey`, coverage-replaces-acks (PCS latency *improves* — no ack
   round-trip), checkpoint frontier reconciling replay with GC, and a new `rootCommit` check that
   upgrades seed-equivocation handling from detect to reject. FS parity table at §7: parity or
   better on every row.
 - **Spike B — DGM reconciliation** — ✅ **COMPLETE 2026-07-22, PASS**
-  ([`spike-b-dgm-reconciliation.md`](./spike-b-dgm-reconciliation.md)): DGM survives as the pure
+  ([`spike-b-dgm-reconciliation.md`](spike-b-dgm-reconciliation.md)): DGM survives as the pure
   validity filter gating tree application (P1–P5 lift through); SR2 cascades ride BeeKEM's own
   replay trigger; the concurrent-remove collusion window is not reopened (it narrows on the
   processing side); checkpoint-cascade safety proven (frontier lemma, §6). Port requirements

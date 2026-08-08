@@ -6,7 +6,7 @@
 > control-plane repair in §8 is BUILT; app-message loss recovery is not yet in the reference impl).)*
 > [Protocol] · Phase 0 deliverable.
 > Closes gaps **G4** (authenticated-causal-broadcast substitute) and **G12** (mailbox liveness/repair) from
-> [`../gap-analysis.md`](../gap-analysis.md).
+> [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md).
 > Inputs: BeeKEM causal-delivery assumption (`beekem/src/cgka.rs` — "We assume that all operations are
 > received in causal order"), Cremers et al. signing-key rotation, spec v1.1 §§4, 6, 7.
 > This layer sits **below the BeeKEM core** (it feeds `process()` only ready, authenticated messages) and

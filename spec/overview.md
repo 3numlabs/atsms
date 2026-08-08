@@ -4,8 +4,8 @@
 > dcgka-core/2sm superseded by [`beekem-core.md`](./beekem-core.md); doctrine #4, §5 performance, and
 > §6 limitations re-based.)* [Protocol] · Phase 0/0b deliverable.
 > Closes gaps **G16** (size/performance envelope) and **G17** (security-model fine print) from
-> [`../gap-analysis.md`](../gap-analysis.md).
-> **This document supersedes [`../atsms-dcgka-spec.md`](../atsms-dcgka-spec.md) (v1.1) as the entry point**
+> [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md).
+> **This document supersedes [`../docs/history/atsms-dcgka-spec.md`](../docs/history/atsms-dcgka-spec.md) (v1.1) as the entry point**
 > to the specification; where the one-page spec and the `spec/` set conflict, the `spec/` set wins. The
 > one-page spec remains as design history (its §4.1 cert-profile and §6–§9 design notes are consolidated
 > into the sub-specs listed below). MUST/SHOULD/MAY per RFC 2119.
@@ -15,7 +15,7 @@
 This is the advanced end-to-end encryption layer of the Bourbon Protocol (umbrella roadmap Phase 7):
 **decentralized secure group messaging with sealed-sender metadata protection over untrusted
 store-and-forward mailboxes**, based on **BeeKEM** (Ink & Switch's concurrent TreeKEM variant for
-local-first systems — decision **D11**, 2026-07-22, [`../beekem-analysis.md`](../beekem-analysis.md))
+local-first systems — decision **D11**, 2026-07-22, [`../docs/history/beekem-analysis.md`](../docs/history/beekem-analysis.md))
 under an ATSMS messaging profile ([`beekem-core.md`](./beekem-core.md)). The DGM, ordering, sealed-sender,
 and identity layers carry over from the Weidner-DCGKA design phase (eprint 2020/1281 — its
 proof-shaped layering remains this spec set's skeleton; dcgka-core.md/2sm.md are retained as superseded

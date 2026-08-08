@@ -1,9 +1,9 @@
 # p2panda-encryption vs. the DCGKA plan
 
-> Fourth research note (see [`q-channel-analysis.md`](./q-channel-analysis.md),
-> [`mls-analysis.md`](./mls-analysis.md)). Evaluates **p2panda-encryption** — the only shipped DCGKA
+> Fourth research note (see [`q-channel-analysis.md`](q-channel-analysis.md),
+> [`mls-analysis.md`](mls-analysis.md)). Evaluates **p2panda-encryption** — the only shipped DCGKA
 > implementation besides the academic Java prototype — for **adopt (bind via WASM) vs. port-as-reference vs.
-> ignore**, against [`implementation-plan.md`](./implementation-plan.md). Context: the per-group-sequencer
+> ignore**, against [`implementation-plan.md`](implementation-plan.md). Context: the per-group-sequencer
 > question (D0) is now resolved — **sequencers are rejected; transport varies; local-first is a hard
 > constraint** — which rules out MLS-with-sequencer and confirms the DCGKA family. p2panda made the same call
 > for the same reason.
@@ -46,7 +46,7 @@ piece for us anyway — around a pre-1.0 WASM core we'd have to patch and be the
 - **2SM** (`two_party/`): the paper's App. D rotating-key discipline, but with the abstract PKE instantiated
   as **X3DH for the first round + RFC 9180 HPKE (X25519/HKDF-SHA256/ChaCha20-Poly1305) for subsequent
   rounds**, XEdDSA-signed prekeys. A strict upgrade over the paper's bare PKE — exactly what our
-  `spec/2sm.md` should specify (this supersedes the plan's "implement App. D exactly" wording).
+  `../../spec/2sm.md` should specify (this supersedes the plan's "implement App. D exactly" wording).
 - **App ratchet** (`message_scheme/ratchet.rs`): sender-keys-style HKDF chains with single-use keys and a
   bounded out-of-order window (`GroupConfig { maximum_forward_distance: 1000, out_of_order_tolerance: 100 }`)
   — a concrete answer to our G3, worth adopting numbers and all.
@@ -69,11 +69,11 @@ piece for us anyway — around a pre-1.0 WASM core we'd have to patch and be the
    invalidation) — is genuinely good design **but implements a different trait and has never been bridged to
    the message scheme**. The only bridge (`p2panda-spaces`) is a data-scheme-only `HashSet` placeholder. Our
    G5 design work remains ours; `p2panda-auth`'s resolver rules are the best available input to
-   `spec/dgm.md` (better documented than the Java `StrongRemoveDgm`).
+   `../../spec/dgm.md` (better documented than the Java `StrongRemoveDgm`).
 2. **No production orderer.** The crate requires the host to deliver control messages causally ordered; the
    `ForwardSecureOrdering` trait's rustdoc is an excellent **ordering spec** (dependency rules for control
    messages, acks, epoch-first app messages, welcome semantics — directly usable input to our
-   `spec/ordering-auth.md`), but the shipped orderers are test-only (one literally makes every message depend
+   `../../spec/ordering-auth.md`), but the shipped orderers are test-only (one literally makes every message depend
    on all prior messages). Our G4/G12 work remains ours.
 3. **No JS/WASM path.** No bindings exist (their FFI work targets uniffi/GObject, not JS; "WASM planned, not
    the priority" — June 2026). The crate is sync, pure-Rust, and should compile to wasm32, but
@@ -101,10 +101,10 @@ The plan's shape survives; its contents get significantly de-risked:
   implementation test vectors (2SM transcripts, ratchet chains, full group scenarios) from the Rust side and
   assert byte-equality in TS. That is a far stronger Phase 1–2 quality gate than the Java prototype
   (which was our previous plan for test vectors) — supersedes that reference.
-- **Phase 0 spec inputs upgraded**: `spec/2sm.md` specifies X3DH + HPKE with rotating-key discipline (their
-  instantiation) rather than bare App. D PKE; `spec/ordering-auth.md` starts from their
-  `ForwardSecureOrdering` rustdoc spec; `spec/dgm.md` draws on `p2panda-auth`'s StrongRemove resolver rules
-  (with our authorization model on top); `spec/dcgka-core.md` adopts welcome-carries-DGM-state (G7) and their
+- **Phase 0 spec inputs upgraded**: `../../spec/2sm.md` specifies X3DH + HPKE with rotating-key discipline (their
+  instantiation) rather than bare App. D PKE; `../../spec/ordering-auth.md` starts from their
+  `ForwardSecureOrdering` rustdoc spec; `../../spec/dgm.md` draws on `p2panda-auth`'s StrongRemove resolver rules
+  (with our authorization model on top); `../../spec/dcgka-core.md` adopts welcome-carries-DGM-state (G7) and their
   out-of-order window config (G3). Port their module boundaries (`two_party` / `dcgka` / `ratchet` / `group`
   + host-supplied DGM/Orderer/PKI/KeyManager traits) as our module architecture — it's exactly the
   decomposition our plan sketched, now proven in code.

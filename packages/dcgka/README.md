@@ -5,7 +5,7 @@ The ATSMS advanced-E2EE engine: a byte-faithful TypeScript port of **BeeKEM**
 layer. Implements [`spec/beekem-core.md`](../../spec/beekem-core.md),
 [`spec/dgm.md`](../../spec/dgm.md), [`spec/ordering-auth.md`](../../spec/ordering-auth.md),
 and [`spec/wire-format.md`](../../spec/wire-format.md). Decision **D11** /
-Phases 1–2 of [`../../implementation-plan.md`](../../implementation-plan.md).
+Phases 1–2 of [`../../docs/history/implementation-plan.md`](../../docs/history/implementation-plan.md).
 
 ## Layout
 

@@ -39,26 +39,29 @@ bun run typecheck
 
 ## Documents
 
+**Start here:** [`spec/overview.md`](./spec/overview.md) — goals, threat model, honest limitations, and a
+map of the layers.
+
 | Doc | What |
 |---|---|
-| [`beekem-dcgka-vs-mls.md`](./beekem-dcgka-vs-mls.md) | Plain-language explainer: how our BeeKEM DCGKA works and the important ways it differs from MLS (start here for the "why not MLS" intuition) |
-| [`beekem-analysis.md`](./beekem-analysis.md) | The D11 evaluation: BeeKEM vs DCGKA, what survives, risks, plan update |
-| [`spike-a-messaging-profile.md`](./spike-a-messaging-profile.md) · [`spike-b-dgm-reconciliation.md`](./spike-b-dgm-reconciliation.md) | The two D11 gate spikes (both PASS): messaging profile over BeeKEM; DGM/strong-remove reconciliation |
-| [`implementation-plan.md`](./implementation-plan.md) | Decision log D1–D11, parity inventory, Phases 0–6 |
-| [`gap-analysis.md`](./gap-analysis.md) | Completeness evaluation vs the DCGKA paper + the existing stack — gaps G1–G18 (historical baseline; G1 dissolved by D11) |
-| [`mls-analysis.md`](./mls-analysis.md) · [`p2panda-analysis.md`](./p2panda-analysis.md) · [`q-channel-analysis.md`](./q-channel-analysis.md) | Alternatives evaluated and rejected (MLS: sequencer vs D0; p2panda: adopted as oracle then retired; Q-channel: no membership layer) |
-| [`atsms-dcgka-spec.md`](./atsms-dcgka-spec.md) | The original one-page spec, v1.1 — design history; where it conflicts with `spec/`, `spec/` wins |
-| `spec/` | Normative spec set. **Entry point:** [`overview.md`](./spec/overview.md) (goals, threat model, honest limitations, layer/doc map). Core: [`beekem-core.md`](./spec/beekem-core.md) (BeeKEM tree + messaging profile: DGM-filtered ops, `rootCommit`, per-sender chains, coverage, eviction, checkpoints), [`dgm.md`](./spec/dgm.md) (membership, roles, strong remove — also the tree's validity filter), [`ordering-auth.md`](./spec/ordering-auth.md) (causal delivery: deps/readiness, key rotation, repair). Around it: [`identity-devices.md`](./spec/identity-devices.md) (DID/device model, `at.atsms.x509`, `at.atsms.prekey`, revocation), [`sealed-sender.md`](./spec/sealed-sender.md) (two envelope modes; padding buckets, anonymous ingress/D5), [`wire-format.md`](./spec/wire-format.md) (deterministic CBOR schemas, label registry, test vectors), [`atsms-integration.md`](./spec/atsms-integration.md) (capability discovery, `@atsms/sms` + `atsms-worker` change lists, migration), [`parameters.md`](./spec/parameters.md) (every tunable constant). **Superseded design records:** [`dcgka-core.md`](./spec/dcgka-core.md), [`2sm.md`](./spec/2sm.md) |
+| [`spec/`](./spec/) | The normative spec set. Core: [`beekem-core.md`](./spec/beekem-core.md) (tree + messaging profile: DGM-filtered ops, `rootCommit`, per-sender chains, coverage, eviction, checkpoints), [`dgm.md`](./spec/dgm.md) (membership, roles, strong remove — also the tree's validity filter), [`ordering-auth.md`](./spec/ordering-auth.md) (causal delivery: deps and readiness, key rotation, repair, re-invitation). Around them: [`identity-devices.md`](./spec/identity-devices.md), [`sealed-sender.md`](./spec/sealed-sender.md), [`group-state.md`](./spec/group-state.md), [`wire-format.md`](./spec/wire-format.md), [`atsms-integration.md`](./spec/atsms-integration.md), [`parameters.md`](./spec/parameters.md) |
+| [`beekem-dcgka-vs-mls.md`](./beekem-dcgka-vs-mls.md) | Plain-language explainer: how this works and where it differs from MLS. The best on-ramp if you want the intuition before the specs |
+| [`KNOWN-ISSUES.md`](./KNOWN-ISSUES.md) | What we know is broken or unfinished, from live testing |
+| [`spec/review-scope.md`](./spec/review-scope.md) | The brief we would hand a security reviewer, including the questions we cannot answer ourselves |
+| [`spec/loss-and-reordering.md`](./spec/loss-and-reordering.md) | Every message type audited against "what if this is dropped" and "what if this arrives out of order" |
+| [`docs/history/`](./docs/history/) | How the design was arrived at: the BeeKEM decision, the two gate spikes, the alternatives rejected, and the earlier plans. Not normative |
 
-## Read this first
+## Two things worth knowing before you read the specs
 
-1. The layering is the survivor: ordering/DGM/sealed-sender/identity were designed as separable layers
-   around an abstract group-key core, which is what made the D11 core swap a bounded rewrite instead of
-   a restart.
-2. BeeKEM has **no formal security proof** (unlike the DCGKA paper it replaced). Doctrine #4 is now:
-   byte-equivalence to the `beekem` Rust oracle below the `PcsKey` seam + frozen vectors above it, with
-   **external cryptographic review as a gating requirement** before v1 alpha carries real traffic
-   (overview §6.1/§6.13). The proven DCGKA specs remain on file as the documented fallback.
-3. Keyhive built BeeKEM for document sync (history stays decryptable); messaging FS required the
-   profile deviations in beekem-core §5–§8 (eviction, coverage, checkpoints, `rootCommit`) — read
-   Spike A for why each exists.
+**The layers are separable, and that is why the core could be replaced.** Ordering, group management,
+sealed sender and identity were each designed against an abstract group-key core rather than against a
+particular one. When the core changed — the original DCGKA construction swapped out for BeeKEM — it was a
+bounded rewrite rather than a restart. If you are reading one layer, you can mostly ignore the others.
+
+**BeeKEM was built for document sync, and messaging wants the opposite.** In a shared document, anyone
+who gains access should be able to read the whole history, so nothing is ever thrown away. Messaging
+needs old keys to die. That difference is the source of every deviation in the messaging profile —
+eviction, coverage, checkpoints, and the root commitment — and
+[`spike-a-messaging-profile.md`](./docs/history/spike-a-messaging-profile.md) works through why each one
+exists. Where the port must match upstream exactly, the differential oracle enforces it; above that
+boundary, our own frozen test vectors do.

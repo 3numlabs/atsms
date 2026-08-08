@@ -1,7 +1,7 @@
 # Spike B — DGM / Strong-Remove Reconciliation with BeeKEM
 
 > **Status: SPIKE COMPLETE (2026-07-22) — verdict PASS.** Gate 2 of decision D11
-> ([`beekem-analysis.md`](./beekem-analysis.md) §5). Answers: do dgm.md's P1–P5 and SR1–SR5
+> ([`beekem-analysis.md`](beekem-analysis.md) §5). Answers: do dgm.md's P1–P5 and SR1–SR5
 > survive when the key-agreement executor is BeeKEM's tree instead of DCGKA's seed fan-out, and
 > does the removes-applied-last merge rule reopen the concurrent-remove collusion window beyond
 > what dcgka-core §10 accepted?

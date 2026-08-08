@@ -2,11 +2,11 @@
 
 > **Status: DRAFT v0.2 (2026-07-22) — for review.** *(v0.2: D11 reconciliation — the key-agreement
 > executor is now the BeeKEM tree; the DGM is unchanged as policy and additionally acts as the
-> validity filter gating tree application ([`../spike-b-dgm-reconciliation.md`](../spike-b-dgm-reconciliation.md));
+> validity filter gating tree application ([`../docs/history/spike-b-dgm-reconciliation.md`](../docs/history/spike-b-dgm-reconciliation.md));
 > ack-tracking in §6 re-based on coverage; §8 digests narrowed by `rootCommit`.)*
 > [Protocol] · Phase 0 deliverable.
 > Closes gaps **G5** (group-management model) and **G14** (insider-divergence detection) from
-> [`../gap-analysis.md`](../gap-analysis.md).
+> [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md).
 > Inputs: DCGKA paper §5.2/§6.2 (required DGM properties), prototype `StrongRemoveDgm.java`,
 > p2panda-auth `StrongRemove` resolver semantics, spec v1.1 §4 identity/device model.
 > Terminology: MUST/SHOULD/MAY per RFC 2119. "Ordering layer" = [`ordering-auth.md`](./ordering-auth.md).
@@ -117,7 +117,7 @@ result MUST equal batch evaluation (P5).
 invalidated `add`'s leaf may sit in a surviving root's resolutions). After any retroactive invalidation the
 client MUST schedule a PCS `update` before its next application message (beekem-core §10 — the one case the
 no-root-→-update rule does not absorb). Mechanically, retroactive invalidation rides the replay BeeKEM
-already performs on concurrent membership changes (PR-3, [`../spike-b-dgm-reconciliation.md`](../spike-b-dgm-reconciliation.md) §4).
+already performs on concurrent membership changes (PR-3, [`../docs/history/spike-b-dgm-reconciliation.md`](../docs/history/spike-b-dgm-reconciliation.md) §4).
 
 ## 6. Coverage tracking and `members_view(viewer)` *(re-based 2026-07-22 — acks retired by D11)*
 

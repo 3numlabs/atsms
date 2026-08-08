@@ -1,8 +1,8 @@
 # atsms-dcgka — Implementation Plan
 
-> Plan to grow [`atsms-dcgka-spec.md`](./atsms-dcgka-spec.md) v1.0 into a complete specification set and a
+> Plan to grow [`atsms-dcgka-spec.md`](atsms-dcgka-spec.md) v1.0 into a complete specification set and a
 > production library that replaces the crypto core of `atsms-lib` (`@atsms/sms`). Companion to
-> [`gap-analysis.md`](./gap-analysis.md) (gaps G1–G18 referenced throughout).
+> [`gap-analysis.md`](gap-analysis.md) (gaps G1–G18 referenced throughout).
 >
 > Layer tag: **[Protocol]** — this is open-source 3NUM Labs territory; nothing here is Haiven-specific.
 > Umbrella fit: this is roadmap **Phase 7** ("Advanced encryption + real group encryption"), and it supersedes
@@ -34,7 +34,7 @@ primary platform from day one, so **v1 is a TypeScript implementation** with `@n
 covering bun/browser/RN/CF-Workers with one artifact. Performance is not a factor at n≤150 (O(n) ops,
 ~40 kB/update).
 
-Consequences kept from the evaluation (see [`p2panda-analysis.md`](./p2panda-analysis.md) §Addendum):
+Consequences kept from the evaluation (see [`p2panda-analysis.md`](p2panda-analysis.md) §Addendum):
 - **p2panda-encryption is the porting reference and differential-testing oracle** — its seedable RNG makes
   whole-protocol runs deterministic; generate cross-implementation test vectors from the Rust side and
   assert byte-equality in TS (fix the known `process_ack` &&→|| bug in our port; file it upstream anyway).
@@ -165,16 +165,16 @@ standalone. This is the bulk of the *design* work — treat these as the real de
 
 | Doc | Contents | Closes |
 |---|---|---|
-| `spec/overview.md` — **DRAFTED v0.2** | Rewritten master spec: goals, threat model (incl. honest limitations — no formal proof post-D11, insider DoS, liveness dependence, PQ regression), layer diagram, normative-language conventions | G16, G17 |
-| `spec/beekem-core.md` — **DRAFTED v0.1 (Phase 0b, D11)** | BeeKEM tree + ATSMS messaging profile: DGM-filtered ops (PR-1..3), `rootCommit`, per-sender chains over `PcsKey`, coverage lifecycle, eviction schedule, checkpoint frontier, oracle-keyed test obligations. **Supersedes dcgka-core.md + 2sm.md** | G1 (dissolved), G2, G3, G7, G11, G15 |
-| ~~`spec/dcgka-core.md`~~ — **SUPERSEDED 2026-07-22 (D11)** | State machine per paper Fig. 4 with deviations marked (MessageID op-IDs, DGM-state welcomes, process-ack OR fix); byte-exact HKDF labels (`atsms-dcgka:v1:*`); ack lifecycle normative (T_ACK, batching/piggyback, GC coupling); skipped-key app ratchet with p2panda constants; dominating-update rule (G11); storage/GC table; copy-on-success mutation discipline | G2, G3, G7, G11, G15 |
-| ~~`spec/2sm.md`~~ — **SUPERSEDED 2026-07-22 (D11)** | App. D rotation discipline over HPKE (p2panda instantiation); X3DH bootstrap against `at.atsms.prekey/<fingerprint>` (identity-DH key + weekly signed prekey, one `bundleSig`); **interim mode is signed-prekey-only — OPK design being formulated, ships before v1 release**; `inviteAddress` moved to the x509 endpoint record (identity layer); mandatory post-join update heals; key-index GC via cross-layer ack optimization; Remark 11 + post-impersonation caveats documented | G1 |
-| `spec/dgm.md` — **DRAFTED v0.1** | **The group-management model** (the flagged gap): strong-remove semantics (SR1–SR5), admin/member roles evaluated purely from history, user-vs-device op expansion, re-add nonces (= add-op MessageID), eviction policy hook, determinism test obligations, insider-divergence digest + recovery | G5, G14 |
-| `spec/identity-devices.md` — **DRAFTED v0.1** | Identity model per spec v1.1 §4/§4.1: device identity **is** the `at.atsms.x509` endpoint-cert keypair (delegation = publication in the DID repo); ~~medium-lived sealing cert as second cert type~~ (removed 2026-07-22, D10 — `signedPrekey` is the sealed-asym target, joint-use analysis §3.1); **`at.atsms.prekey`** lexicon (rkey = **device fingerprint**, re-keyed from cert serial 2026-07-17 — structural pairing; identity-DH key + weekly signed prekey + `bundleSig` only — E2EE-session material; canonical shape lives here); reachability = the per-DID `at.atsms.inbox` singleton (D13 2026-07-25 — supersedes+retires the per-device `inviteAddress`; serves S/MIME, one-shot sealed, and DCGKA alike; inbound-delivery.md §3); **OPK layer being formulated — deferred during prototyping, ships before v1** (serve-once checkout endpoint candidate); multi-device model (`DeviceID` + `Membership(admittedBy)` split, 2026-07-17; rotation/loss/compromise = remove(+add)); revocation tombstones | G6, G8 |
-| `spec/ordering-auth.md` — **DRAFTED v0.1** | The ACB substitute: content-addressed MessageIDs (signature covers seq/deps), dependency rules per message class, readiness predicates (FIFO, referent-before-ack, welcome-first, instance-based add-ready), bounded buffering, protocol-signing-key rotation chained to the device identity cert, replay rules, membership gating incl. removed-member race, end-to-end repair, stale-member surfacing | G4, G12 |
-| `spec/sealed-sender.md` | Envelope format (no cleartext recipient-device ID), signed-prekey sealed-asym target (D10), HPKE suite, padding buckets sized so ack storms are indistinguishable, envelope-level idempotency, anonymous ingress + abuse control per D5, Tor note | G9 |
-| `spec/wire-format.md` | Deterministic CBOR schemas for every message; version negotiation; the canonical **test-vector suite** definition (cross-checked against the Java prototype) | G13 |
-| `spec/atsms-integration.md` | D1/D2/D6 outcomes; capability discovery & X509 fallback rules; dialect layering; `atsms-worker` change list; migration & coexistence sequencing | G10 |
+| `../../spec/overview.md` — **DRAFTED v0.2** | Rewritten master spec: goals, threat model (incl. honest limitations — no formal proof post-D11, insider DoS, liveness dependence, PQ regression), layer diagram, normative-language conventions | G16, G17 |
+| `../../spec/beekem-core.md` — **DRAFTED v0.1 (Phase 0b, D11)** | BeeKEM tree + ATSMS messaging profile: DGM-filtered ops (PR-1..3), `rootCommit`, per-sender chains over `PcsKey`, coverage lifecycle, eviction schedule, checkpoint frontier, oracle-keyed test obligations. **Supersedes dcgka-core.md + 2sm.md** | G1 (dissolved), G2, G3, G7, G11, G15 |
+| ~~`../../spec/dcgka-core.md`~~ — **SUPERSEDED 2026-07-22 (D11)** | State machine per paper Fig. 4 with deviations marked (MessageID op-IDs, DGM-state welcomes, process-ack OR fix); byte-exact HKDF labels (`atsms-dcgka:v1:*`); ack lifecycle normative (T_ACK, batching/piggyback, GC coupling); skipped-key app ratchet with p2panda constants; dominating-update rule (G11); storage/GC table; copy-on-success mutation discipline | G2, G3, G7, G11, G15 |
+| ~~`../../spec/2sm.md`~~ — **SUPERSEDED 2026-07-22 (D11)** | App. D rotation discipline over HPKE (p2panda instantiation); X3DH bootstrap against `at.atsms.prekey/<fingerprint>` (identity-DH key + weekly signed prekey, one `bundleSig`); **interim mode is signed-prekey-only — OPK design being formulated, ships before v1 release**; `inviteAddress` moved to the x509 endpoint record (identity layer); mandatory post-join update heals; key-index GC via cross-layer ack optimization; Remark 11 + post-impersonation caveats documented | G1 |
+| `../../spec/dgm.md` — **DRAFTED v0.1** | **The group-management model** (the flagged gap): strong-remove semantics (SR1–SR5), admin/member roles evaluated purely from history, user-vs-device op expansion, re-add nonces (= add-op MessageID), eviction policy hook, determinism test obligations, insider-divergence digest + recovery | G5, G14 |
+| `../../spec/identity-devices.md` — **DRAFTED v0.1** | Identity model per spec v1.1 §4/§4.1: device identity **is** the `at.atsms.x509` endpoint-cert keypair (delegation = publication in the DID repo); ~~medium-lived sealing cert as second cert type~~ (removed 2026-07-22, D10 — `signedPrekey` is the sealed-asym target, joint-use analysis §3.1); **`at.atsms.prekey`** lexicon (rkey = **device fingerprint**, re-keyed from cert serial 2026-07-17 — structural pairing; identity-DH key + weekly signed prekey + `bundleSig` only — E2EE-session material; canonical shape lives here); reachability = the per-DID `at.atsms.inbox` singleton (D13 2026-07-25 — supersedes+retires the per-device `inviteAddress`; serves S/MIME, one-shot sealed, and DCGKA alike; inbound-delivery.md §3); **OPK layer being formulated — deferred during prototyping, ships before v1** (serve-once checkout endpoint candidate); multi-device model (`DeviceID` + `Membership(admittedBy)` split, 2026-07-17; rotation/loss/compromise = remove(+add)); revocation tombstones | G6, G8 |
+| `../../spec/ordering-auth.md` — **DRAFTED v0.1** | The ACB substitute: content-addressed MessageIDs (signature covers seq/deps), dependency rules per message class, readiness predicates (FIFO, referent-before-ack, welcome-first, instance-based add-ready), bounded buffering, protocol-signing-key rotation chained to the device identity cert, replay rules, membership gating incl. removed-member race, end-to-end repair, stale-member surfacing | G4, G12 |
+| `../../spec/sealed-sender.md` | Envelope format (no cleartext recipient-device ID), signed-prekey sealed-asym target (D10), HPKE suite, padding buckets sized so ack storms are indistinguishable, envelope-level idempotency, anonymous ingress + abuse control per D5, Tor note | G9 |
+| `../../spec/wire-format.md` | Deterministic CBOR schemas for every message; version negotiation; the canonical **test-vector suite** definition (cross-checked against the Java prototype) | G13 |
+| `../../spec/atsms-integration.md` | D1/D2/D6 outcomes; capability discovery & X509 fallback rules; dialect layering; `atsms-worker` change list; migration & coexistence sequencing | G10 |
 
 Exit criteria: every G1–G13 gap has a normative answer; specs cross-reviewed against paper sections cited in the
 gap analysis (keep local copies of the eprint PDF + prototype sources for reference).
@@ -211,7 +211,7 @@ detector (soft signal for now — sound defenses are rootCommit + signatures).
 - `beekem-core`: op graph, epochs/topsort, merge/replay with the **DGM validity filter** (PR-1..3),
   checkpoints, `rootCommit`, per-sender chains + skipped-key store, coverage tracking, eviction schedule
   (beekem-core §4–§8).
-- `dgm`: strong-remove DGM per `spec/dgm.md` + authorization + device-expansion rules (unchanged scope).
+- `dgm`: strong-remove DGM per `../../spec/dgm.md` + authorization + device-expansion rules (unchanged scope).
 - `ordering-auth`: seq/FIFO enforcement, rotating signatures, delivery predicates, buffer, repair requests.
 - **Simulation harness** (the key quality gate): N in-memory clients over a lossy/reordering/withholding
   fake mailbox; fuzzed op schedules; asserts — identical member views AND identical filtered-tree hashes
@@ -229,7 +229,7 @@ add/heal all over envelopes). (4) **In-band delivery addressing (D13):** `FrameE
 endpointOf`; `SealLayer` emits `{to, url, envelope}` resolving the recipient's in-band-advertised URL — welcome
 routes via the public `at.atsms.inbox` record, non-welcome via the in-band endpoint. Remaining: the receive-
 side reference binding (per-DID intake → per-device fanout) lives in `atsms-worker`. (5) **Inbound-delivery
-contract DRAFTED** (`spec/inbound-delivery.md` v0.1, common ATSMS — payload-agnostic, serves the stateless
+contract DRAFTED** (`../../spec/inbound-delivery.md` v0.1, common ATSMS — payload-agnostic, serves the stateless
 one-shot email semantics too): inbox discovery via the per-DID `at.atsms.inbox` singleton (rkey `self`; ordered
 `endpoints`, transport = URI scheme, `mailto:` floor / `https:` upgrade), SMTP⇄HTTPS byte-convergence, sender
 group-by-destination fan-out, receiver intake→per-device fanout + forward-unmanaged. **Sign-off DONE
@@ -385,7 +385,7 @@ already clean (atsms-lib `3992019`, atsms-cli `1731aac`); "facade" is likewise r
 - G14 insider-divergence detection (epoch-hash gossip) or documented recovery; G15 GC bounds enforced; padding &
   batching tuned against the G16 budget (state the 150-device cap in docs).
 - External cryptographic review of the composed system (sealed sender × DCGKA is a novel composition the paper
-  does not analyze) — G18. **The brief lives in [`spec/review-scope.md`](spec/review-scope.md)** — a living
+  does not analyze) — G18. **The brief lives in [`../../spec/review-scope.md`](../../spec/review-scope.md)** — a living
   document listing what is novel, what is unfinished, and the specific questions to answer. Add to it as
   design decisions raise new ones; the bullets below are its standing focus.
 - **Malicious-insider attack surface (explicit review focus):** treat a validly-admitted group member running
@@ -409,7 +409,7 @@ already clean (atsms-lib `3992019`, atsms-cli `1731aac`); "facade" is likewise r
 - **Scope creep toward MLS-class features** (O(log n), server-aided concurrency): out of scope — the follow-up
   literature (CoCoA, DeCAF, Key Lattice, eprint 2023/1123) shows you can't have decentralized + concurrent +
   sublinear at once; we chose decentralized + concurrent at O(n), n ≤ 150 devices.
-- **Cross-repo coupling** (`atsms-worker` D5 changes): keep the envelope contract in `spec/sealed-sender.md`
+- **Cross-repo coupling** (`atsms-worker` D5 changes): keep the envelope contract in `../../spec/sealed-sender.md`
   versioned so worker and lib can ship independently.
 
 ## 11. Sequencing summary

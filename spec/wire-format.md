@@ -5,7 +5,7 @@
 > is still free. v0.3: **D12** — base wire pinned to the strict deterministic **DRISL** CBOR profile and
 > made **map-free**; `ext` is now opaque bytes with a positional `ExtBody` (§1/§1.1/§3.2). Postcard and
 > protobuf evaluated and rejected — §1.1.)* [Protocol] · Phase 0 deliverable.
-> Closes gap **G13** (wire formats, versioning, test vectors) from [`../gap-analysis.md`](../gap-analysis.md).
+> Closes gap **G13** (wire formats, versioning, test vectors) from [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md).
 > Inputs: [`ordering-auth.md`](./ordering-auth.md) §2 (canonical bytes / MessageID contract),
 > [`beekem-core.md`](./beekem-core.md) §3 (key-schedule labels) + the `beekem` crate's op/tree shapes
 > (differential-oracle alignment), [`sealed-sender.md`](./sealed-sender.md) §3–§5, [`dgm.md`](./dgm.md)

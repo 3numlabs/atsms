@@ -1,8 +1,8 @@
 # Spike A — ATSMS Messaging Profile over BeeKEM
 
 > **Status: SPIKE COMPLETE (2026-07-22) — verdict PASS.** Gate 1 of decision D11
-> ([`beekem-analysis.md`](./beekem-analysis.md) §5). This is the §-level draft of the future
-> `spec/beekem-core.md`; nothing here is normative until Phase 0b lands it.
+> ([`beekem-analysis.md`](beekem-analysis.md) §5). This is the §-level draft of the future
+> `../../spec/beekem-core.md`; nothing here is normative until Phase 0b lands it.
 > Problem being solved: Keyhive built BeeKEM for encrypted **document sync** (history stays
 > decryptable forever); ATSMS needs **messaging FS** (history becomes *undecryptable by schedule*).
 > Sources: `beekem/src/{cgka,tree,pcs_key,keys}.rs` (clone 2026-07-09), dcgka-core.md §7/§8

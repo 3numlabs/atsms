@@ -1,7 +1,7 @@
 # spec/dcgka-core.md — DCGKA State Machine & Key Schedule
 
 > ## ⚠️ SUPERSEDED (2026-07-22, decision D11) by [`beekem-core.md`](./beekem-core.md)
-> The CGKA core is now BeeKEM (concurrent TreeKEM, Ink & Switch — [`../beekem-analysis.md`](../beekem-analysis.md)).
+> The CGKA core is now BeeKEM (concurrent TreeKEM, Ink & Switch — [`../docs/history/beekem-analysis.md`](../docs/history/beekem-analysis.md)).
 > This document is retained as the design record of the Weidner-DCGKA phase (through D10): the
 > acks-are-PCS mechanism, the outer/inner two-ratchet schedule, and the 2SM seed fan-out it
 > specifies are no longer part of the protocol. Constructions that survived — the per-sender
@@ -10,10 +10,10 @@
 
 > **Status: DRAFT v0.1 (2026-07-15) — for review.** [Protocol] · Phase 0 deliverable.
 > Closes gaps **G2** (ack lifecycle), **G3** (application ratchet), **G7** (welcome contents/compaction),
-> **G11** (concurrency mitigations), **G15** (storage/GC) from [`../gap-analysis.md`](../gap-analysis.md).
+> **G11** (concurrency mitigations), **G15** (storage/GC) from [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md).
 > Inputs: DCGKA paper §4–§6 + Fig. 4 (eprint 2020/1281, May 2021 revision), p2panda-encryption
 > `message_scheme` (porting reference & differential-test oracle, see
-> [`../p2panda-analysis.md`](../p2panda-analysis.md)), [`dgm.md`](./dgm.md), [`ordering-auth.md`](./ordering-auth.md).
+> [`../docs/history/p2panda-analysis.md`](../docs/history/p2panda-analysis.md)), [`dgm.md`](./dgm.md), [`ordering-auth.md`](./ordering-auth.md).
 > The ordering layer feeds this machine only **ready, authenticated, deduplicated** messages; the DGM supplies
 > `members_view`. MUST/SHOULD/MAY per RFC 2119.
 

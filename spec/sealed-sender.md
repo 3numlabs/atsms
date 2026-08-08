@@ -4,7 +4,7 @@
 > v0.3: D9/D10 — `sealed-asym` targets the signed prekey; sealing cert removed. v0.4: D11 — sym envKey
 > derived from `PcsKey_e` with the sender in the info; ack references retired.)* [Protocol] · Phase 0 deliverable.
 > Closes gap **G9** (anonymous ingress, padding, key separation, envelope dedup) from
-> [`../gap-analysis.md`](../gap-analysis.md); implements decision **D5** (anonymous relay ingress).
+> [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md); implements decision **D5** (anonymous relay ingress).
 > Inputs: spec v1.1 §6 (construction + envelope-FS and X509-unification design notes), Signal sealed-sender
 > design (inspiration only), [`identity-devices.md`](./identity-devices.md) §3.1/§4.2 (signed prekey, joint use),
 > [`ordering-auth.md`](./ordering-auth.md) (the signed frame this layer wraps),

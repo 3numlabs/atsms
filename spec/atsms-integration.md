@@ -1,7 +1,7 @@
 # spec/atsms-integration.md — Integration with the ATSMS Stack
 
 > **Status: DRAFT v0.1 (2026-07-16) — for review.** [Protocol] with flagged [Node] items · Phase 0
-> deliverable. Closes gap **G10** (no integration story) from [`../gap-analysis.md`](../gap-analysis.md);
+> deliverable. Closes gap **G10** (no integration story) from [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md);
 > applies decisions **D1** (layer over the X509 floor), **D2** (`@atsms/dcgka` consumed by `@atsms/sms`),
 > **D5** (anonymous relay ingress — relay side in [`sealed-sender.md`](./sealed-sender.md) §7), **D6**
 > (DMs = 2-member groups).
