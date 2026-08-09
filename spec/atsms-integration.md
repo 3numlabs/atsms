@@ -62,7 +62,7 @@ events, "sent before removal was known").
 - Floor conversations keep today's scheme (`dm_<16hex>` via `generateDMConvoId`, messages.ts:28; nanoid
   groups). The two id spaces are disjoint by construction; `isDMConvoId` remains floor-only.
   > **Superseded (2026-07-31):** conversation IDs are now 33-byte context-tagged values
-  > (`0x01` one-shot / `0x02` group) per the umbrella `docs/message-format.md` §8 — disjointness is
+  > (`0x01` one-shot / `0x02` group) per the `spec/message-format.md` §8 — disjointness is
   > structural, and `isDMConvoId`/`dm_` ids are deleted with the v1 format.
 - The storage layer maps both into the existing `conversations`/`messages` tables (sqlite-adapter.ts:33-97)
   unchanged; a `protocol: "dcgka" | "x509"` field in `LocalConversation.metadata` records the path.

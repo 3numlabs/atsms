@@ -301,8 +301,10 @@ requires a fresh `add` (remove + re-add), and is the same limitation as lost loc
 §4.2). A host SHOULD detect it rather than sealing into the void — compare the admitted prekey against what
 the device publishes now — and MUST route the repair to the device's OWNER, not to a group admin: the
 authorization line (same-DID needs no admin) is also the judgement line, since only the owner knows whether
-that device is still theirs and still wanted. The owner-driven re-admission API is specified in the umbrella
-[`docs/sdk-shape.md`](../../docs/sdk-shape.md) ("Device lifecycle").
+that device is still theirs and still wanted. Re-admission is therefore an owner-driven act: the
+owner's other device removes the stale membership and adds the device again against its current published
+key, in one round. The reference implementation exposes it on the client rather than on a conversation
+handle, since it is something you do to your own device rather than to a member.
 
 ## 9. Stale-member surfacing
 

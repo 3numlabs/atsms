@@ -93,7 +93,7 @@ to some users.
 
 ### 5.1 The group-info document (DESIGNED)
 
-An ordinary v2 message (docs/message-format.md) whose content carries a group-info part: description, and
+An ordinary v2 message (message-format.md) whose content carries a group-info part: description, and
 an **inline icon**, capped at **16 KiB encoded** and sized for avatar display (96–128 px WebP/AVIF is
 typically 3–8 KB). Inline rather than a blob reference because at that size it fits a seal bucket, needs no
 blob store, and keeps v1 free of an availability dependency; when attachments land, the same document can

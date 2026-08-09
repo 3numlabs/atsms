@@ -29,3 +29,4 @@ asking why a decision went the way it did, or for anyone considering the same al
 | [`implementation-plan.md`](implementation-plan.md) | Decision log D1–D11, parity inventory, and the phase plan. Phase 6 is still live: it holds the external-review scope, now expanded in [`spec/review-scope.md`](../../spec/review-scope.md) |
 | [`gap-analysis.md`](gap-analysis.md) | Completeness evaluation against the DCGKA paper and the existing stack — gaps G1–G18. A historical baseline; G1 dissolved with D11 |
 | [`atsms-dcgka-spec.md`](atsms-dcgka-spec.md) | The original one-page spec, v1.1, before the spec set was written |
+| [`webrtc-over-atsms.md`](webrtc-over-atsms.md) | Lessons from running call signalling as persisted messages, and why the ephemeral message class exists |
