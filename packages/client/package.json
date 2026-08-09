@@ -18,8 +18,9 @@
   },
   "files": [
     "dist",
-    "README-NPM.md",
-    "LICENSE"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "clean": "rm -rf dist .build-tmp",
