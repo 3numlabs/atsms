@@ -182,7 +182,8 @@ at.atsms.prekey (rkey = device fingerprint)
 }
 ```
 
-*(Lexicon: [`lexicons/at/atsms/prekey.json`](../lexicons/at/atsms/prekey.json). Record codec + `bundleSig`
+*(Lexicon: [`lexicons/at/atsms/prekey.json`](../lexicons/at/atsms/prekey.json); the endpoint
+certificate's is [`lexicons/at/atsms/x509.json`](../lexicons/at/atsms/x509.json). Record codec + `bundleSig`
 sign/verify: `@atsms/dcgka` `records.ts`; frozen KAT in `test-vectors/records.json`.)*
 
 Two consumer classes: **admission** — an `add` op pins the verified `signedPrekey` as the joiner's

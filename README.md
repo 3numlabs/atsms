@@ -49,6 +49,7 @@ map of the layers.
 | [`KNOWN-ISSUES.md`](./KNOWN-ISSUES.md) | What we know is broken or unfinished, from live testing |
 | [`spec/review-scope.md`](./spec/review-scope.md) | The brief we would hand a security reviewer, including the questions we cannot answer ourselves |
 | [`spec/loss-and-reordering.md`](./spec/loss-and-reordering.md) | Every message type audited against "what if this is dropped" and "what if this arrives out of order" |
+| [`lexicons/`](./lexicons/) | The three AT Protocol record schemas the protocol defines: `at.atsms.x509` (a device's endpoint certificate), `at.atsms.prekey` (its bootstrap key), `at.atsms.inbox` (where to reach an identity) |
 | [`docs/history/`](./docs/history/) | How the design was arrived at: the BeeKEM decision, the two gate spikes, the alternatives rejected, and the earlier plans. Not normative |
 
 ## Two things worth knowing before you read the specs
