@@ -273,7 +273,7 @@ simultaneously; document the choice and move on.
 ### G17. Security-model fine print to document
 
 Non-adaptive adversary only; HKDF as random oracle; no post-impersonation security; no deniability treatment; no
-post-quantum story (note: 2SM's PKE is the swap point for a PQ KEM later). These go in the spec's §12 as honest
+post-quantum story (note: 2SM's PKE is the swap point for a PQ KEM later). These go in the spec's §12 as
 limitations.
 
 ### G18. Formal review pipeline

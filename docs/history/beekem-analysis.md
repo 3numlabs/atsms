@@ -62,7 +62,7 @@ non-negotiable-ish (proof, PQ posture). Note the overview §5 lower-bound statem
 BeeKEM does **not** beat the decentralized-concurrency lower bounds — it degrades to O(n) under
 concurrency and heals; it buys the good *common case*, which the lower bound permits.
 
-## 3. What survives of Phase 0 (the honest inventory)
+## 3. What survives of Phase 0 (the inventory)
 
 The spec set was deliberately layered; that pays off now.
 
@@ -110,8 +110,7 @@ derivation change. D10 survives with an updated joint-use argument. **D8 must be
    encapsulation (MLS-shape) — i.e., forking from upstream. Position to record: v1 classical
    (unchanged), PQ-hybrid lands on the *bootstrap + envelope* surface as before, and the tree's
    HNDL exposure is accepted-and-documented until a KEM-tree fork or upstream support exists.
-   HNDL now covers group key material rather than only bootstraps — this must go into overview §6
-   honestly.
+   HNDL now covers group key material rather than only bootstraps — this must go into overview §6.
 
 ## 5. Verdict
 

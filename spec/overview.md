@@ -126,7 +126,7 @@ key. Nothing else is trusted for confidentiality or authenticity — relays and 
 - Bandwidth shaping: padding buckets add ≤ 2× on small frames (sealed-sender §5); media rides blob offload
   (upload once), so fan-out cost is envelopes only.
 
-## 6. Honest limitations (G17 — document, don't hide)
+## 6. Limitations (G17 — document, don't hide)
 
 1. **No formal security proof** *(re-based 2026-07-22, D11 — the largest limitation, accepted with
    eyes open)*: BeeKEM has design rationale and informal security argument, not a game-based proof;

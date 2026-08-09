@@ -125,7 +125,7 @@ over nearly unchanged.
 
 ## Recommendation — revised three-way framing
 
-The Q-channel analysis reaffirmed DCGKA; **this analysis genuinely weakens it.** Honest scorecard:
+The Q-channel analysis reaffirmed DCGKA; **this analysis genuinely weakens it.** Scorecard:
 
 - **Quilibrium Triple Ratchet: out** (see q-channel-analysis.md — no membership layer, no sender auth, no
   analysis, AGPL).

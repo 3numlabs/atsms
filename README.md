@@ -39,7 +39,7 @@ bun run typecheck
 
 ## Documents
 
-**Start here:** [`spec/overview.md`](./spec/overview.md) — goals, threat model, honest limitations, and a
+**Start here:** [`spec/overview.md`](./spec/overview.md) — goals, threat model, limitations, and a
 map of the layers.
 
 | Doc | What |

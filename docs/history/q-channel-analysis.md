@@ -92,7 +92,7 @@
 
 ## Recommendation
 
-**Stay on the DCGKA path.** The honest summary of Q-channel: it is a *group encryption* library with production
+**Stay on the DCGKA path.** The summary of Q-channel: it is a *group encryption* library with production
 mileage, but it is not a *group messaging protocol* — membership management, concurrency semantics, sender
 authentication, and any security argument are all missing, and those are precisely the items our gap analysis
 identified as the actual work (G5 chief among them). Adopting it would trade our known, provable design work for
