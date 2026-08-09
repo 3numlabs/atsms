@@ -1,4 +1,4 @@
-# atsms-dcgka
+# atsms
 
 Decentralized group key agreement for ATSMS: forward secrecy, post-compromise security, real group
 membership, multi-device, and sealed-sender metadata protection — **with no server ordering anything**.
