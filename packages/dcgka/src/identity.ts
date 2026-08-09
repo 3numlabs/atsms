@@ -17,6 +17,7 @@ import {
   buildInboxRecord,
   buildPrekeyRecord,
   inboxRecordError,
+  inboxRecordNonConformance,
   verifyPrekeyRecord,
   type InboxEndpoint,
   type InboxRecord,
@@ -88,12 +89,12 @@ export async function resolvePrekey(
 
 /** Publish/replace the per-DID inbox singleton (rkey = `self`). */
 export function publishInbox(pds: PdsClient, record: InboxRecord): Promise<PutResult> {
-  const err = inboxRecordError(record);
+  const err = inboxRecordNonConformance(record);
   if (err !== null) return Promise.reject(new Error(`invalid inbox record: ${err}`));
   return pds.putRecord(COLLECTION_INBOX, INBOX_RKEY, record);
 }
 
-/** Build + publish an inbox record from an ordered endpoint list (mailto: floor enforced).
+/** Build + publish an inbox record from an ordered endpoint list (https: requirement enforced).
  *  `async` so an invalid list surfaces as a rejected promise, not a sync throw. */
 export async function publishInboxEndpoints(pds: PdsClient, endpoints: InboxEndpoint[]): Promise<PutResult> {
   return publishInbox(pds, buildInboxRecord(endpoints));

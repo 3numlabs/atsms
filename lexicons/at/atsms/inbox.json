@@ -12,7 +12,7 @@
         "properties": {
           "endpoints": {
             "type": "array",
-            "description": "Delivery endpoints ordered by preference (most-preferred first). A sender uses the first URI scheme it understands. At least one mailto: endpoint MUST be present (the SMTP interop floor).",
+            "description": "Delivery endpoints ordered by preference (most-preferred first). A sender uses the first URI scheme it understands. At least one https: endpoint MUST be present, so that every conforming DID is reachable by a sender that speaks only HTTPS; a mailto: endpoint SHOULD also be present as the mail interop binding.",
             "minLength": 1,
             "items": {
               "type": "ref",
@@ -24,7 +24,7 @@
     },
     "endpoint": {
       "type": "object",
-      "description": "One delivery endpoint. The URI scheme is the transport: mailto: = SMTP floor (deliver as an application/atsms-envelope attachment), https: = POST the payload. Unknown schemes are ignored by senders that don't understand them.",
+      "description": "One delivery endpoint. The URI scheme is the transport: https: = POST the payload (required), mailto: = SMTP (deliver as an application/atsms-envelope attachment, recommended). Unknown schemes are ignored by senders that don't understand them.",
       "required": ["uri"],
       "properties": {
         "uri": {

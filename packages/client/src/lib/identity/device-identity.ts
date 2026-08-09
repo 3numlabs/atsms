@@ -86,8 +86,9 @@ export class ATSMSDeviceIdentity {
     return this.prekeys.currentRecord()!;
   }
 
-  /** Publish the per-DID `at.atsms.inbox` singleton (ordered by preference;
-   *  a mailto: fallback is mandatory, inbound-delivery §3). */
+  /** Publish the per-DID `at.atsms.inbox` singleton (ordered by preference; the
+   *  record MUST carry an https: endpoint, and SHOULD carry a mailto: one —
+   *  inbound-delivery §3, D15). */
   publishInbox(pds: PdsClient, endpoints: InboxEndpoint[]): Promise<unknown> {
     return publishInboxEndpoints(pds, endpoints);
   }
@@ -129,7 +130,7 @@ export class ATSMSDeviceIdentity {
   }
 }
 
-/** The `mailto:` fallback address for a DID (inbound-delivery §3; the worker's
+/** The `mailto:` delivery address for a DID (inbound-delivery §3; the worker's
  *  encoded-DID local part: `:` → `!`, `.` → `#`). */
 export function didMailtoUri(did: string, emailDomain: string): string {
   return `mailto:${did.replace(/:/g, "!").replace(/\./g, "#")}@${emailDomain}`;

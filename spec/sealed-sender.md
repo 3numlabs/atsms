@@ -290,7 +290,7 @@ per-recipient rules exist to avoid. Documented trade, not an accident.
 *no* secret with the recipient yet (they are adding the recipient to a group the recipient is not in), so
 its delivery address MUST be **publicly discoverable** from the recipient's DID — the per-DID
 `at.atsms.inbox` record (singleton rkey `self`; an ordered `endpoints` list where each URI's scheme is its
-transport, `mailto:` = the required interop floor, `https:` an optional upgrade;
+transport, `https:` = required, `mailto:` = recommended (D15);
 [`inbound-delivery.md`](./inbound-delivery.md) §3). Code receiving at that address MAY be helpful — deliver
 to the `at.atsms.x509` certs it manages and forward to the SANs it does not — but that helpfulness is an
 implementation detail, **not a protocol actor** ("provider" is deliberately *not* a protocol concept).
@@ -363,7 +363,7 @@ only delayed.
   tokens.
 - ~~Non-welcome delivery addressing~~ **decided 2026-07-25 (user sign-off)**: advertised **in-band** in
   the signed frame `ext` (§12), not a public record; welcome stays the only public address
-  (`at.atsms.inbox`, singleton `self`, `mailto:` floor). "Provider" dropped as a protocol concept.
+  (`at.atsms.inbox`, singleton `self`; its transport floor later inverted to `https:` by D15). "Provider" dropped as a protocol concept.
 - **Group drop-point sealing** (spec v1.1 §9 profile 2, optional post-v1 mode): deferred; will build on
   §11's derivation machinery (see §11.6).
 - ~~Symmetric envelope mode~~ **decided 2026-07-20 (user sign-off)**: `sealed-sym` for all

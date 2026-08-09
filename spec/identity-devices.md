@@ -127,7 +127,7 @@ retired with it.)*
   the EKU set alone — the EKUs remain the domain-separation guard should a second cert type ever return.
 - **Reachability is no longer on this record (D13, 2026-07-25).** The Welcome/invite destination used to be
   a per-device **`inviteAddress`** field here; it is **retired and relocated** to the per-DID
-  **`at.atsms.inbox`** singleton (rkey `self`; ordered `endpoints`, transport = URI scheme, `mailto:` floor
+  **`at.atsms.inbox`** singleton (rkey `self`; ordered `endpoints`, transport = URI scheme, required `https:`
   — [`inbound-delivery.md`](./inbound-delivery.md) §3), which serves classic S/MIME, one-shot sealed, and
   DCGKA welcomes alike. Its integrity model carries over unchanged: an ordinary DID-signed commit,
   liveness-only (a tampered address can only misroute a sealed envelope, never break confidentiality), not

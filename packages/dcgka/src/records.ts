@@ -110,36 +110,59 @@ export function uriScheme(uri: string): string | null {
 
 /**
  * Build a validated inbox record. `endpoints` are kept in the given preference
- * order (most-preferred first). Requires at least one `mailto:` endpoint — the
- * SMTP interop floor (inbound-delivery §3).
+ * order (most-preferred first). Requires at least one `https:` endpoint, so that
+ * every conforming DID is reachable by a sender that speaks only HTTPS
+ * (inbound-delivery §3, D15).
  */
 export function buildInboxRecord(endpoints: InboxEndpoint[]): InboxRecord {
-  const err = inboxRecordError({ $type: 'at.atsms.inbox', endpoints });
+  const err = inboxRecordNonConformance({ $type: 'at.atsms.inbox', endpoints });
   if (err !== null) throw new Error(`invalid inbox record: ${err}`);
   return { $type: 'at.atsms.inbox', endpoints: endpoints.map((e) => ({ uri: e.uri })) };
 }
 
-/** Validate a decoded inbox record; returns a reason string, or null if valid. */
+/**
+ * Structural validation of a decoded inbox record: returns a reason string, or
+ * null if the record is well formed. Deliberately does NOT check the `https:`
+ * requirement — that is a conformance rule on what we PUBLISH
+ * (`inboxRecordNonConformance`), not a reason to refuse what we READ.
+ *
+ * Strict on write, lenient on read. §3 says a sender MAY treat a DID with no
+ * `https:` endpoint as unreachable, not MUST, and endpoint selection already
+ * produces exactly that outcome: no scheme the sender speaks means nothing to
+ * deliver to. Rejecting the whole record instead would let another
+ * implementation's imperfect record fail harder than it needs to, and buys no
+ * safety — the record's integrity is liveness-only, so the worst a bad one can
+ * do is misroute a sealed envelope.
+ */
 export function inboxRecordError(record: InboxRecord): string | null {
   if (record.$type !== 'at.atsms.inbox') return 'wrong $type';
   if (!Array.isArray(record.endpoints) || record.endpoints.length === 0) return 'endpoints must be a non-empty array';
-  let hasMailto = false;
   for (const e of record.endpoints) {
     if (e === null || typeof e !== 'object' || typeof e.uri !== 'string') return 'endpoint must be { uri: string }';
-    const scheme = uriScheme(e.uri);
-    if (scheme === null) return `endpoint uri has no scheme: ${e.uri}`;
-    if (scheme === 'mailto') hasMailto = true;
+    if (uriScheme(e.uri) === null) return `endpoint uri has no scheme: ${e.uri}`;
   }
-  if (!hasMailto) return 'at least one mailto: endpoint required (SMTP floor)';
   return null;
 }
 
 /**
- * Pick the highest-preference endpoint whose scheme the caller supports
- * (inbound-delivery §3 selection). `supported` defaults to `['mailto']` — the
- * floor every implementation can hit. Returns null if none match.
+ * The publishing rule (inbound-delivery §3, D15): a record we publish MUST
+ * carry at least one `https:` endpoint, so that every DID we speak for is
+ * reachable by a sender that speaks only HTTPS. A `mailto:` endpoint is
+ * RECOMMENDED and its absence is not an error. Returns a reason, or null.
  */
-export function pickEndpoint(record: InboxRecord, supported: string[] = ['mailto']): InboxEndpoint | null {
+export function inboxRecordNonConformance(record: InboxRecord): string | null {
+  const structural = inboxRecordError(record);
+  if (structural !== null) return structural;
+  const hasHttps = record.endpoints.some((e) => uriScheme(e.uri) === 'https');
+  return hasHttps ? null : 'at least one https: endpoint required';
+}
+
+/**
+ * Pick the highest-preference endpoint whose scheme the caller supports
+ * (inbound-delivery §3 selection). `supported` defaults to `['https']` — the
+ * scheme every conforming record carries (D15). Returns null if none match.
+ */
+export function pickEndpoint(record: InboxRecord, supported: string[] = ['https']): InboxEndpoint | null {
   const set = new Set(supported.map((s) => s.toLowerCase()));
   for (const e of record.endpoints) {
     const scheme = uriScheme(e.uri);

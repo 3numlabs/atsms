@@ -11,6 +11,7 @@ import {
   buildInboxRecord,
   buildPrekeyRecord,
   inboxRecordError,
+  inboxRecordNonConformance,
   pickEndpoint,
   prekeyBundleSigInput,
   uriScheme,
@@ -97,9 +98,19 @@ describe('at.atsms.inbox', () => {
     expect(inboxRecordError(rec)).toBeNull();
   });
 
-  it('requires at least one mailto: endpoint (the SMTP floor)', () => {
-    expect(() => buildInboxRecord([https])).toThrow(/mailto/);
-    expect(inboxRecordError({ $type: 'at.atsms.inbox', endpoints: [https] })).toMatch(/mailto/);
+  it('publishing requires at least one https: endpoint (D15)', () => {
+    expect(() => buildInboxRecord([mailto])).toThrow(/https/);
+    expect(inboxRecordNonConformance({ $type: 'at.atsms.inbox', endpoints: [mailto] })).toMatch(/https/);
+  });
+
+  it('reading is lenient — a mailto-only record is unreachable, not malformed', () => {
+    expect(inboxRecordError({ $type: 'at.atsms.inbox', endpoints: [mailto] })).toBeNull();
+  });
+
+  it('accepts an https-only record — mailto: is recommended, not required (D15)', () => {
+    const rec = buildInboxRecord([https]);
+    expect(rec.endpoints.map((e) => e.uri)).toEqual([https.uri]);
+    expect(inboxRecordError(rec)).toBeNull();
   });
 
   it('rejects an empty endpoints list and schemeless URIs', () => {
@@ -110,8 +121,8 @@ describe('at.atsms.inbox', () => {
   it('pickEndpoint honors preference and supported schemes', () => {
     const rec = buildInboxRecord([https, mailto]);
     expect(pickEndpoint(rec, ['https', 'mailto'])?.uri).toBe(https.uri); // https preferred
-    expect(pickEndpoint(rec, ['mailto'])?.uri).toBe(mailto.uri); // floor-only sender
+    expect(pickEndpoint(rec, ['mailto'])?.uri).toBe(mailto.uri); // mail-only sender
     expect(pickEndpoint(rec, ['sip'])).toBeNull();
-    expect(pickEndpoint(rec)?.uri).toBe(mailto.uri); // default = floor
+    expect(pickEndpoint(rec)?.uri).toBe(https.uri); // default = https (D15)
   });
 });

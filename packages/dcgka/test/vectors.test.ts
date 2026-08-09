@@ -289,7 +289,7 @@ function buildRecordVectors(): unknown {
     { uri: 'mailto:did!plc!abc123@haiven.mobile' },
   ]);
   return {
-    note: 'at.atsms.prekey bundleSig = ECDSA-P256 (RFC 6979 deterministic) over SHA-256 of cbor([signedPrekey, signingPk, createdAt, expiresAt]); at.atsms.inbox = ordered endpoints, mailto floor (identity-devices §4.2 / inbound-delivery §3).',
+    note: 'at.atsms.prekey bundleSig = ECDSA-P256 (RFC 6979 deterministic) over SHA-256 of cbor([signedPrekey, signingPk, createdAt, expiresAt]); at.atsms.inbox = ordered endpoints, required https: endpoint (identity-devices §4.2 / inbound-delivery §3, D15).',
     prekey: {
       identityPubHex: bytesToHex(identityPub),
       signedPrekeyHex: bytesToHex(signedPrekey),

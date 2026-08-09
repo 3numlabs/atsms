@@ -1,6 +1,6 @@
 # spec/inbound-delivery.md — ATSMS Inbound Delivery Contract
 
-> **Status: DRAFT v0.1 (2026-07-25) — for review.** [Common ATSMS — protocol-neutral, NOT DCGKA-specific]
+> **Status: DRAFT v0.2 (2026-08-09) — for review.** [Common ATSMS — protocol-neutral, NOT DCGKA-specific]
 > The receive half of delivery: *how a message reaches a DID.* It is **payload-agnostic** — it carries a
 > stateful DCGKA `SealedEnvelope` ([`sealed-sender.md`](./sealed-sender.md)) and a **stateless one-shot**
 > (classic S/MIME / P7M, [`atsms-integration.md`](./atsms-integration.md) §… floor) identically, as opaque
@@ -60,13 +60,30 @@ is a DCGKA packet class, and this record also serves the stateless one-shot path
 ```
 
 - **`endpoints` — ordered by preference**, most-preferred first. A sender walks the list and uses the first
-  URI **scheme** it understands, so `https:` is the fast path and `mailto:` the universal fallback.
+  URI **scheme** it understands. Every sender understands `https:` (it is required to be present, below),
+  so the walk always terminates; further schemes are preference, not reachability.
 - **The scheme *is* the transport** — no separate `mode`/`transport` field to keep in sync, and nothing
-  baked into the NSID. `mailto:` = the SMTP floor (deliver the payload as an email attachment to that
-  address); `https:` = POST to that URL. Future transports are new schemes; a consumer ignores schemes it
+  baked into the NSID. `https:` = POST to that URL; `mailto:` = SMTP (deliver the payload as an email
+  attachment to that address). Future transports are new schemes; a consumer ignores schemes it
   does not understand.
-- **Floor (normative):** an `at.atsms.inbox` record MUST contain **at least one `mailto:` endpoint** — the
-  SMTP interop floor every ATSMS app can hit. `https:` and other schemes are optional upgrades.
+- **Floor (normative, D15):** an `at.atsms.inbox` record MUST contain **at least one `https:` endpoint**.
+  A record without one is **non-conforming** and a sender MAY treat the DID as unreachable.
+  An `at.atsms.inbox` record **SHOULD** also contain a `mailto:` endpoint. Other schemes are optional.
+
+  *Why this way round.* The obligation created by an endpoint falls on the **receiver**, and receiving mail
+  is the expensive half: MX records, spam handling, deliverability, a parser. Serving an HTTPS `POST` is a
+  few lines behind any web server. Requiring the cheaper binding is what keeps the barrier to running a
+  destination low, which is the point of a network with many independent ones.
+
+  It also settles reachability in one place. Either every destination is reachable by an `https:`-only
+  sender, or every sender must speak SMTP; there is no third option that avoids senders who silently cannot
+  reach some recipients. Browsers cannot speak SMTP at all, so guaranteeing the receiving side is far
+  cheaper than obliging every sender.
+
+  `mailto:` stays a SHOULD rather than dropping to MAY because it carries properties `https:` does not: it
+  hides the sender behind a mail server rather than exposing a network address to the destination (§7), and
+  it is much harder to block wholesale on a hostile network. Transport diversity is worth keeping available
+  without taxing everyone who wants to run a destination.
 - **Endpoints are objects (`{ uri }`)**, not bare strings, to leave room for per-endpoint hints (max size,
   PQ support) without a breaking change; v1 uses only `uri`. Provider-wide capabilities, if ever wanted,
   belong at a domain `.well-known`, not per-user.
@@ -78,6 +95,14 @@ is a DCGKA packet class, and this record also serves the stateless one-shot path
   device-signed: a tampered address can only *misroute a sealed envelope*, never break confidentiality (the
   payload is E2E-sealed regardless of transport). Rotation/multi-homing = update the singleton's list.
 
+> **Floor inverted (D15, decided 2026-08-09 — amends the 2026-07-25 decision).** The `mailto:` floor
+> became an `https:` floor with `mailto:` recommended, for the reasons above. What this removes is a whole
+> unbuilt subsystem: while a conforming DID could advertise only `mailto:`, a browser client had to hand
+> outbound mail to some SMTP submission service, and that service needed to authorize callers without
+> learning who they were — an anonymous-credential design nobody had built. Guaranteeing an `https:`
+> endpoint means the case never arises. A destination that is genuinely mail-only is no longer conforming;
+> that trade is deliberate, and it is the reason `mailto:` remains a SHOULD.
+>
 > **Reconciliation with `inviteAddress` (D13, decided 2026-07-25 — amends 2026-07-16).** This record
 > **supersedes and retires** the per-device `inviteAddress` field on the `at.atsms.x509` endpoint record
 > ([`identity-devices.md`](./identity-devices.md) §4.1). Its liveness-only integrity model carries over
@@ -90,14 +115,15 @@ The same message reaches a DID by either binding; both MUST converge on **byte-i
 dedup works across transports (a copy that arrived by SMTP and one by HTTPS MUST collide on content identity,
 §1).
 
-- **SMTP (floor).** Deliver the opaque payload as a minimal email with the payload as a single attachment of
-  media type **`application/atsms-envelope`** (base64 transfer-encoded), to a `mailto:` endpoint's address.
-  The receiver extracts the attachment bytes and stores them exactly as the HTTPS path stores its posted
-  bytes — so the two bindings byte-converge and dedup collides (content identity is hashed over the decoded
-  envelope bytes, not the transfer encoding). Universal, slow, always available.
-- **HTTPS (upgrade).** `POST` the opaque payload to an `https:` endpoint (an `at.atsms.inbox` entry for
-  welcomes; the in-band `FrameExt.endpoint` for non-welcome, sealed-sender §12). "SMTP without the SMTP
-  tax."
+- **HTTPS (required, §3).** `POST` the opaque payload to an `https:` endpoint (an `at.atsms.inbox` entry
+  for welcomes; the in-band `FrameExt.endpoint` for non-welcome, sealed-sender §12). Every conforming DID
+  advertises one, so this binding always exists. "SMTP without the SMTP tax."
+- **SMTP (recommended).** Deliver the opaque payload as a minimal email with the payload as a single
+  attachment of media type **`application/atsms-envelope`** (base64 transfer-encoded), to a `mailto:`
+  endpoint's address. The receiver extracts the attachment bytes and stores them exactly as the HTTPS path
+  stores its posted bytes — so the two bindings byte-converge and dedup collides (content identity is
+  hashed over the decoded envelope bytes, not the transfer encoding). Slow, and reachable from networks
+  and senders that HTTPS is not.
 - **Anonymous, like SMTP.** SMTP is inherently "anyone can drop." The HTTPS binding SHOULD be equally
   sender-anonymous (no sender auth), consistent with sealed sender; rate-/size-limits (sealed-sender §7) are
   the only abuse control. *(A receiver's fetch side stays authenticated — that is implementation, §1.)*
@@ -109,7 +135,7 @@ A DID MAY be reachable at **several** addresses at once (multi-homing — "try p
 
 1. Resolve the recipient's reachability (its `at.atsms.inbox` `endpoints`, and for members its in-band endpoints).
 2. Group destinations by endpoint **host** (the `mailto:`/`https:` authority).
-3. Deliver **one copy per distinct destination** (a `mailto:` floor, or an `https:` upgrade where advertised).
+3. Deliver **one copy per distinct destination**, over the first advertised scheme the sender speaks — for any conforming destination `https:` is available (§3).
 
 Intra-destination device fan-out is **not** the sender's job (§6). The sender addresses *destinations*, never
 individual devices across destinations.
@@ -123,8 +149,9 @@ Code receiving at a per-DID `at.atsms.inbox` destination is where the "helpfulne
    **host** matches this destination's own. *(Reference realization: one per-device inbox keyed by the
    device fingerprint — the worker's `inbox-{did}-{fingerprint}` — one x509 cert = one device.)*
 3. **Forward** to any SAN / delivery address it does **not** manage (e.g. a device homed at a different
-   destination), over the floor binding. This is what makes multi-homing work without the sender enumerating
-   every device.
+   destination), over a binding that destination advertises — its `https:` endpoint is guaranteed to exist
+   (§3) and is the default choice, `mailto:` where that is what the address gives. This is what makes
+   multi-homing work without the sender enumerating every device.
 
 A non-welcome envelope is already per-device (the engine seals one per recipient device, sealed-sender §11);
 such a destination receives one envelope for its device(s) and stores it — devices trial-decrypt by tag
@@ -138,20 +165,39 @@ opaque; an endpoint's host reveals only what the email address already reveals.
 
 ## 8. v1 scope & open questions
 
-**v1 delivers:** the `at.atsms.inbox` record — singleton `self`, ordered `endpoints`, `mailto:` floor +
-optional `https:` upgrade, scheme-as-transport (§3); the two bindings with byte-convergence (§4); sender
-group-by-destination fan-out (§5); receiver intake→per-device fan-out with forward-to-unmanaged (§6).
+**v1 delivers:** the `at.atsms.inbox` record — singleton `self`, ordered `endpoints`, required `https:`
+endpoint + recommended `mailto:`, scheme-as-transport (§3); the two bindings with byte-convergence (§4);
+sender group-by-destination fan-out (§5); receiver intake→per-device fan-out with forward-to-unmanaged (§6).
 Non-welcome addressing is already built in-band (sealed-sender §12).
 
 **Decided (2026-07-25):** record = single `at.atsms.inbox` collection, rkey `self`, transport carried as the
 endpoint URI **scheme** (not the NSID, not a field); `inviteAddress` relocated here and retired (§3).
 
+**Decided (D15, 2026-08-09):** the floor is `https:` (MUST), `mailto:` is RECOMMENDED (SHOULD) — inverting
+the 2026-07-25 rule. The obligation an endpoint creates falls on the receiver, and HTTPS is the cheaper
+binding to serve, so requiring it keeps the barrier to running a destination low. It also guarantees every
+conforming DID is reachable by a browser, which retires the need for an SMTP submission service with
+anonymous authorization (see *Closed* below).
+
+**Closed by D15:**
+- **SMTP submission for HTTPS-only senders** — no longer needed. A browser client could previously meet a
+  conforming DID advertising only `mailto:` and have no way to deliver; the reference client says so
+  explicitly (`this transport cannot deliver to mailto:-only inboxes`). With an `https:` endpoint
+  guaranteed the case cannot arise, and the anonymous-credential design such a submission service would
+  have required is not needed. *(Receiver-side forwarding, §6.3, still needs outbound mail for `mailto:`
+  destinations — a different obligation, and it remains.)*
+
 **Open:**
+- **Mail-only destinations** — D15 makes a destination advertising only `mailto:` non-conforming, which
+  forecloses participating with no server at all (a client polling its own mailbox for
+  `application/atsms-envelope` attachments). Whether that deserves a defined exemption, or whether "run a
+  small HTTPS endpoint" is a low enough bar, is not settled.
 - **Spec home** — this contract is common ATSMS (serves stateless one-shot too); promoting it out of the
   DCGKA spec set (to `packages/client` or a shared spec) is tracked, not yet done.
 - **Per-endpoint hints** — the `{ uri }` object leaves room for max-size / PQ-support fields; deferred until
   a consumer needs them (provider-wide capability discovery via a domain `.well-known` is the alternative).
-- **Reference binding** — BUILT in `atsms-worker` (branch `dcgka-inbound-delivery`): the HTTPS binding
-  (`POST /inbox/{did}`) and the SMTP `mailto:` floor (an `application/atsms-envelope` attachment → the same
-  `atsms-envelope` per-device inboxes, byte-convergent) both realize §4/§6. Deferred there: managed-cert filtering for
-  the multi-provider case (§6), and real anonymous-ingress rate limiting (§4, sealed-sender §7).
+- **Reference binding** — BUILT in `atsms-worker`: the HTTPS binding (`POST /inbox/{did}`) and the SMTP
+  `mailto:` binding (an `application/atsms-envelope` attachment → the same `atsms-envelope` per-device
+  inboxes, byte-convergent) both realize §4/§6. Deferred there: managed-device filtering and
+  forward-to-unmanaged for the multi-destination case (§6.2–6.3), and real anonymous-ingress rate limiting
+  (§4, sealed-sender §7).

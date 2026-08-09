@@ -32,6 +32,7 @@ import {
   payloadFromCbor,
   type PdsClient,
   pickEndpoint,
+  uriScheme,
   resolveInbox,
   sealAsymTo,
 } from "@atsms/dcgka";
@@ -79,9 +80,10 @@ export interface ATSMSConfig {
   transport: EnvelopeTransport;
   pds: PdsClient;
   rng: Csprng;
-  /** Publish the `at.atsms.inbox` record on create: the transport's ingress URL
-   *  plus this `mailto:` fallback address — the universally supported delivery
-   *  route the record must always include (skipped when undefined — e.g. in tests). */
+  /** An additional `mailto:` delivery address to publish in the `at.atsms.inbox`
+   *  record, alongside the transport's `https:` ingress URL. Recommended, not
+   *  required — the `https:` endpoint is the one the record MUST carry
+   *  (inbound-delivery §3, D15). Omit to publish an HTTPS-only record. */
   mailtoAddress?: string;
   /** Dispatcher diagnostics (envelope drops, bootstraps, joins). Default: silent. */
   onEvent?: (kind: string, detail: string) => void;
@@ -434,10 +436,18 @@ export class ATSMS {
     );
 
     await config.identity.ensurePrekeyPublished(pds);
-    if (config.mailtoAddress !== undefined) {
+    // The `https:` endpoint is what makes the record conforming (inbound-delivery
+    // §3, D15), so publication is gated on having one — not, as it was when
+    // `mailto:` was the floor, on having a mailto address. A transport whose
+    // ingress is not publicly reachable over HTTPS (a `loop://` fixture, a plain
+    // http: dev server) has nothing worth advertising, and publishing a record
+    // without an https: endpoint would only advertise a DID that HTTPS-only
+    // senders cannot reach.
+    const ingress = config.transport.ingressUrl;
+    if (ingress !== null && uriScheme(ingress) === "https") {
       const endpoints = [
-        ...(config.transport.ingressUrl !== null ? [{ uri: config.transport.ingressUrl }] : []),
-        { uri: config.mailtoAddress },
+        { uri: ingress },
+        ...(config.mailtoAddress !== undefined ? [{ uri: config.mailtoAddress }] : []),
       ];
       await config.identity.publishInbox(pds, endpoints);
     }

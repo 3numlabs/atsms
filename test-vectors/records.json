@@ -1,5 +1,5 @@
 {
-  "note": "at.atsms.prekey bundleSig = ECDSA-P256 (RFC 6979 deterministic) over SHA-256 of cbor([signedPrekey, signingPk, createdAt, expiresAt]); at.atsms.inbox = ordered endpoints, mailto floor (identity-devices §4.2 / inbound-delivery §3).",
+  "note": "at.atsms.prekey bundleSig = ECDSA-P256 (RFC 6979 deterministic) over SHA-256 of cbor([signedPrekey, signingPk, createdAt, expiresAt]); at.atsms.inbox = ordered endpoints, required https: endpoint (identity-devices §4.2 / inbound-delivery §3, D15).",
   "prekey": {
     "identityPubHex": "03959edcd0e9cfea425d25b0b0d1d1bd6ab647a7525e6cf13eedc8a97b2caad318",
     "signedPrekeyHex": "24dca30645f5386782b1b5603f1e19bd2a24fe3b3fe68d6d60db993c37e6f154",
