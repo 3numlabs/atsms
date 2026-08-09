@@ -4,7 +4,7 @@
  * The crypto package stays free of `@atproto/api` (RN-safe): PDS access is a
  * thin injected {@link PdsClient} seam, and the publish/rotate/revoke logic +
  * {@link PrekeyManager} are pure over it. The real `@atproto/api` adapter lives
- * at the integration edge (Phase 5, reusing atsms-lib's `ATSMSClient` plumbing);
+ * at the integration edge (Phase 5, reusing packages/client's `ATSMSClient` plumbing);
  * an adapter MUST preserve `bytes` ⇄ `Uint8Array` round-trips (dag-cbor byte
  * strings), so `signedPrekey`/`bundleSig` survive a fetch.
  */

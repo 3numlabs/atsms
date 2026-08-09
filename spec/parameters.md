@@ -8,7 +8,7 @@
 | Parameter | Value | Status | What it does | Owner |
 |---|---|---|---|---|
 | Group size (typical / max) | 25 / 150 devices | DECIDED | Design envelope; "max" counts **devices**, not users. Drives O(n) cost budgets and test sizes. | spec v1.1 |
-| Endpoint-cert validity | ~10 years | DECIDED (carried from atsms-lib) | Device identity lifetime; rotation = remove+add device. | spec v1.1 §4.1 |
+| Endpoint-cert validity | ~10 years | DECIDED (carried from packages/client) | Device identity lifetime; rotation = remove+add device. | spec v1.1 §4.1 |
 | Sealed-asym recipient key | = signed prekey (weekly rotation, one-period grace) | DECIDED (2026-07-22) | D9/D10: sealing cert deleted; `sealed-asym` envelopes seal to `at.atsms.prekey.signedPrekey`; recipients trial-decrypt ≤ 2 live secrets; envelope metadata-FS window ≤ 2 weeks (was 30–97 d). | identity-devices §3.1 / sealed-sender §2 |
 | Signed-prekey rotation | weekly | DECIDED | Bounds the admission-window exposure (published leaf key until the joiner's first self-update) and the sealed-asym metadata-FS window. | identity-devices §4.2 |
 | Signed-prekey grace | one rotation period (retain current + previous secret) | DECIDED | Lets adds pinning a just-superseded prekey complete and grace-window envelopes open; each rotation promotes current→previous, deletes old previous. | identity-devices §4.2 |

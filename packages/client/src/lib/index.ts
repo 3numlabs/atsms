@@ -1,5 +1,5 @@
 /**
- * @atsms/sms - AT SMS Secure Messaging System Library
+ * @atsms/client - AT SMS Secure Messaging System Library
  *
  * This library provides cryptographic operations, message handling,
  * storage management, and API client functionality for the AT SMS secure messaging system.

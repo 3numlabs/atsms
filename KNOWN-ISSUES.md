@@ -16,7 +16,7 @@ implicated. Input for the Phase 6 external crypto review; fix ordering TBD.
 > **FIXED (2026-08-01):** the three symptoms below are one bug — a merge that blanks the tree root
 > leaves each side holding a private live epoch, and `sealEpochFor` sealed the repair frame under
 > it. Fixed via the sealable-epoch predicate (4.1) + genesis-wait (4.2) + loud unopenable envelopes
-> (4.3); regression suite `atsms-lib/src/tests/partition.test.ts` (5) green, dcgka unit (117) + fuzz
+> (4.3); regression suite `atsms/packages/client/src/tests/partition.test.ts` (5) green, dcgka unit (117) + fuzz
 > (4) green. Full analysis, fix, and test plan:
 > [`spec/concurrent-update-partition.md`](spec/concurrent-update-partition.md). Existing partitioned
 > conversations are not repairable (recreate them). The sections below are the original symptom
@@ -38,7 +38,7 @@ repro scripts below: 2–5 leaves, with the advert, all green). The failure
 needs the concurrent-update interleaving.
 
 **Repro scripts** (from the session's diagnostics, runnable under
-`atsms-lib/src/tests/`):
+`atsms/packages/client/src/tests/`):
 - `tree-size-diagnostic.test.ts` — serialized genesis, sizes 2–5: PASSES.
 - `concurrent-update-diagnostic.test.ts` — joiner update racing creator
   update: FAILS (see issue 2, which it hits first).
@@ -121,12 +121,12 @@ per-message analysis, with enough background to read it cold, is
 
 > **Built:** re-invitation, specified as [`ordering-auth.md` §8.2](./spec/ordering-auth.md) and
 > implemented across `@atsms/dcgka` (`Session.pendingMembers()` / `reinvite()`, `SealLayer.reinvite()`)
-> and `@atsms/sms` (`convo.pendingMembers` / `convo.reinvite(did)`), with `/members` and `/reinvite` in
+> and `@atsms/client` (`convo.pendingMembers` / `convo.reinvite(did)`), with `/members` and `/reinvite` in
 > the reference CLI. A founding member gets the identical `create` frame back (its id is the group id, so
 > a rebuild would found a second group); a later joiner gets a welcome rebuilt against the same `add` op,
 > which lands them on current state. Any member can do it, not only the adder. Tests:
 > `packages/dcgka/test/reinvite.test.ts` and the re-invite scenario in
-> `atsms-lib/src/tests/membership-churn.test.ts`.
+> `atsms/packages/client/src/tests/membership-churn.test.ts`.
 >
 > **What remains open** is detection, and it is open by choice: the only signal is silence, which covers a
 > lost invitation, a quiet member, and a refusal alike. Keeping those indistinguishable is a requirement
@@ -181,7 +181,7 @@ re-served but is undecryptable by design, and the client must then say so rather
 
 `coverage()` / `advertiseHeads()` exist in the engine — a frame whose dependencies are the sender's
 current frontier, carrying a consistency digest, so a peer missing anything buffers it and repairs.
-Nothing in `@atsms/sms` ever schedules one.
+Nothing in `@atsms/client` ever schedules one.
 
 Consequence: gaps are discovered only because *later* traffic depends on the missing operation. That
 covers a busy conversation, but in one that has gone quiet a trailing control gap sits undetected — a

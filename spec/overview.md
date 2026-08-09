@@ -19,7 +19,7 @@ local-first systems — decision **D11**, 2026-07-22, [`../docs/history/beekem-a
 under an ATSMS messaging profile ([`beekem-core.md`](./beekem-core.md)). The DGM, ordering, sealed-sender,
 and identity layers carry over from the Weidner-DCGKA design phase (eprint 2020/1281 — its
 proof-shaped layering remains this spec set's skeleton; dcgka-core.md/2sm.md are retained as superseded
-design records). It replaces the crypto core of `atsms-lib` (`@atsms/sms`) while layering **over** — not
+design records). It replaces the crypto core of `packages/client` (`@atsms/client`) while layering **over** — not
 replacing — the X509/S-MIME interop floor (decision D1; [`atsms-integration.md`](./atsms-integration.md)).
 
 Properties delivered (each with its owning sub-spec):
@@ -81,7 +81,7 @@ Identity (vertical): DID → endpoint cert → {prekey record,
      protocol signing keys}; PDS records                                    — identity-devices.md
 Bytes (vertical): deterministic CBOR, every schema, labels, test vectors    — wire-format.md
 Constants: every tunable in one registry                                    — parameters.md
-Integration: @atsms/sms + atsms-worker changes, migration                   — atsms-integration.md
+Integration: @atsms/client + atsms-worker changes, migration                   — atsms-integration.md
 Superseded design records (D11): dcgka-core.md, 2sm.md
 ```
 

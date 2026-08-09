@@ -1,7 +1,7 @@
 # spec/add-member-flow.md — Adding a member: the end-to-end flow
 
 > **Status: DOCUMENTATION v1 (2026-08-02)** — an operational walkthrough of the BUILT flow
-> (`ATSMS.addMember` in atsms-lib + `ConversationSession.addMember` here), written after the live
+> (`ATSMS.addMember` in packages/client + `ConversationSession.addMember` here), written after the live
 > add-flow debugging arc. Normative material lives in the referenced specs; this doc records **what
 > actually happens, in order**, flags **every network fetch and whether it is cacheable**, and analyzes
 > **how multi-device DIDs and multi-user adds scale**. §6 lists optimization candidates (PROPOSED);

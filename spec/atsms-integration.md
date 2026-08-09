@@ -2,10 +2,10 @@
 
 > **Status: DRAFT v0.1 (2026-07-16) — for review.** [Protocol] with flagged [Node] items · Phase 0
 > deliverable. Closes gap **G10** (no integration story) from [`../docs/history/gap-analysis.md`](../docs/history/gap-analysis.md);
-> applies decisions **D1** (layer over the X509 floor), **D2** (`@atsms/dcgka` consumed by `@atsms/sms`),
+> applies decisions **D1** (layer over the X509 floor), **D2** (`@atsms/dcgka` consumed by `@atsms/client`),
 > **D5** (anonymous relay ingress — relay side in [`sealed-sender.md`](./sealed-sender.md) §7), **D6**
 > (DMs = 2-member groups).
-> Inputs: atsms-lib survey 2026-07-16 (file:line refs below are to `atsms-lib`/`atsms-worker` at that
+> Inputs: packages/client survey 2026-07-16 (file:line refs below are to `packages/client`/`atsms-worker` at that
 > date), implementation plan §2 parity inventory. MUST/MAY per RFC 2119.
 
 ## 1. Shape of the integration (D1/D2/D6 applied)
@@ -16,9 +16,9 @@
 - **Package boundary** (D2): this repo ships **`@atsms/dcgka`** — the protocol engine (2SM, DGM, DCGKA
   core, ordering, sealing) behind a **serialize-in/serialize-out boundary** (bytes and JSON-safe state in,
   bytes and events out; no I/O, no storage, injectable RNG/clock — the p2panda-style seam that keeps a
-  later Rust core swappable and the simulation harness trivial). `@atsms/sms` consumes it and keeps
+  later Rust core swappable and the simulation harness trivial). `@atsms/client` consumes it and keeps
   everything app-facing: `ATSMSStorageManager`, storage adapters, transport clients, PDS resolution.
-  Consumers (`atsms-demo`, future Haiven app) keep importing `@atsms/sms`.
+  Consumers (`atsms-demo`, future Haiven app) keep importing `@atsms/client`.
 - **DMs are 2-member DCGKA groups** (D6): one code path; bare 2SM remains engine-internal.
 
 ## 2. Engine ↔ host contract (the `@atsms/dcgka` API shape)
@@ -27,7 +27,7 @@ The engine exposes, per group: `create/add/remove/update/leave` (op builders ret
 to send), `ingest(envelopeBytes)` (returns readiness-resolved events: decrypted app payloads, membership
 changes, coverage due, repair requests due, security events — `rootCommit` mismatch, digest mismatch),
 `sendApp(plaintextBytes)`, and serializable state (tree + op graph + checkpoint + chain states + ordering
-buffers — beekem-core §2). The host (`@atsms/sms`) owns: persistence of engine
+buffers — beekem-core §2). The host (`@atsms/client`) owns: persistence of engine
 state and retained frames (encrypted at rest), all network I/O, PDS resolution
 ([`identity-devices.md`](./identity-devices.md) §4), timers (`T_COVER`, `T_REPAIR`, staleness — the engine
 reports *deadlines*, the host schedules them), and the UX surfacing duties (stale members, security
@@ -136,9 +136,9 @@ SignedFrames (repair store), pending-envelope buffer, processed-EnvelopeID windo
    worst case.
 4. **Email worker**: classify the new MIME part type for sealed envelopes (alongside the pkcs7 paths,
    email-worker.js:390-415) → `/store` as `atsms-sealed`.
-5. **Fingerprint re-keying (breaking change, pre-alpha) — EXECUTED 2026-07-27** (atsms-lib `4d6ac55`,
+5. **Fingerprint re-keying (breaking change, pre-alpha) — EXECUTED 2026-07-27** (packages/client `4d6ac55`,
    worker `e310bb6`): DO names, JWT `kid`/`sub` rkey, and record rkeys moved from cert serial to the
-   **device fingerprint**, lowercase hex (identity-devices §4.1). atsms-lib: `generateJWT` claims,
+   **device fingerprint**, lowercase hex (identity-devices §4.1). packages/client: `generateJWT` claims,
    `ATSMSClient` record writes, the cert SAN URI, `getDeviceFingerprint()` on the cert class, transport/
    WS config renames. Worker: `getActiveClientCertificates` keys on the record RKEY, lowercased **at the
    source** — closing the old serial-case drift (API worker lowercased DO names, email worker didn't)
@@ -169,7 +169,7 @@ sealed-sender.md §7** so lib and worker ship independently (implementation-plan
 
 Aligned with implementation-plan Phases 1–5; the coexistence invariants:
 
-1. **Ship dark** (lib): `@atsms/dcgka` lands inside `@atsms/sms` behind capability discovery that finds no
+1. **Ship dark** (lib): `@atsms/dcgka` lands inside `@atsms/client` behind capability discovery that finds no
    capable peers (no prekey records published yet) — zero behavior change, floor untouched.
 2. **Relay ingress** (worker): anonymous `POST /envelope` + `atsms-sealed` type deploy independently
    (contract §8.1) — inert until clients push. The §8 item-5 fingerprint re-keying completes across

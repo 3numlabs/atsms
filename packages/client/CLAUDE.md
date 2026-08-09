@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for Claude Code working in **atsms-lib** (`@atsms/sms`).
+Guidance for Claude Code working in **packages/client** (`@atsms/client`).
 
 ## What this is
 
@@ -24,7 +24,7 @@ bun run build-types         # just tsc (type-check + emit .d.ts, lib only)
 bun run lint  / lint:fix
 ```
 
-`tsc` is **`strict: true`**. `@atsms/dcgka` ships built `.d.ts` (so atsms-lib's tsc uses declarations, not
+`tsc` is **`strict: true`**. `@atsms/dcgka` ships built `.d.ts` (so the client package's tsc uses declarations, not
 dcgka source); runtime (bun) still runs dcgka source.
 
 **Two tsconfigs, on purpose.** `tsconfig.json` is the EMIT config: `src/lib` only, `rootDir` set,
@@ -67,7 +67,7 @@ The target API (built, mostly): `ATSMS.create({ identity, storage, transport, pd
   SPKI, untruncated. It is the `at.atsms.x509` **and** `at.atsms.prekey` rkey, the per-device worker inbox key,
   and the JWT `sub`/`kid` (the serial→fingerprint re-keying is executed — integration §8.5). Distinct from
   `getFingerprint()` (whole-cert display hash).
-- **`AtpAgent` must be imported from `@atsms/sms`** (re-exported) by `file:` consumers, never a direct
+- **`AtpAgent` must be imported from `@atsms/client`** (re-exported) by `file:` consumers, never a direct
   `@atproto/api` dep — a second copy's `AtpAgent` is a nominally different class (tsc `#private` mismatch).
   `ATSMSPdsClient`/`ATSMSClient` accept the base `Agent` (so an OAuth session agent works too).
 - **`WebSocket`/`ws`** is only dynamically imported on the Node path; browser/RN use the global. Consumers
@@ -126,7 +126,7 @@ layers treat the encoded bytes as opaque. The pre-v2 JSON payload (`ATSMSMessage
 - **`ATSMS`** — everywhere: prose, docs, commits, and code identifiers (`ATSMSClient`, `window.ATSMS`,
   `import * as ATSMS`). **Never hyphenated.** `AT-SMS` is the old spelling and was swept out on
   2026-08-08; do not reintroduce it.
-- **`atsms`** — AT Protocol collections (`at.atsms.x509`) and npm scope (`@atsms/sms`). Don't "correct" these.
+- **`atsms`** — AT Protocol collections (`at.atsms.x509`) and npm scope (`@atsms/client`). Don't "correct" these.
 - Avoid in-group jargon in docs/comments/APIs (no "floor"/"facade"); prefer plain terms.
 
 ## Code style

@@ -5,7 +5,7 @@
 > stateful DCGKA `SealedEnvelope` ([`sealed-sender.md`](./sealed-sender.md)) and a **stateless one-shot**
 > (classic S/MIME / P7M, [`atsms-integration.md`](./atsms-integration.md) §… floor) identically, as opaque
 > bytes. Because it serves both semantics, this contract is **common ATSMS** and does not belong to the
-> DCGKA spec set alone; its eventual home (this repo vs a shared spec / `atsms-lib`) is an open item (§8).
+> DCGKA spec set alone; its eventual home (this repo vs a shared spec / `packages/client`) is an open item (§8).
 > MUST/SHOULD/MAY per RFC 2119.
 
 ## 1. Role, scope, and the boundary that matters
@@ -148,7 +148,7 @@ endpoint URI **scheme** (not the NSID, not a field); `inviteAddress` relocated h
 
 **Open:**
 - **Spec home** — this contract is common ATSMS (serves stateless one-shot too); promoting it out of the
-  DCGKA spec set (to `atsms-lib` or a shared spec) is tracked, not yet done.
+  DCGKA spec set (to `packages/client` or a shared spec) is tracked, not yet done.
 - **Per-endpoint hints** — the `{ uri }` object leaves room for max-size / PQ-support fields; deferred until
   a consumer needs them (provider-wide capability discovery via a domain `.well-known` is the alternative).
 - **Reference binding** — BUILT in `atsms-worker` (branch `dcgka-inbound-delivery`): the HTTPS binding

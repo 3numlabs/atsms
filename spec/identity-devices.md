@@ -118,7 +118,7 @@ envelopes now target the prekey bundle's `signedPrekey` (§3.1, §4.2), so the c
 again; the ATSMS-sealing EKU OID, the `deviceCert` pairing field, and the AKI/SKI pairing rules are all
 retired with it.)*
 
-**Endpoint (device identity) cert** — unchanged from today's atsms-lib profile:
+**Endpoint (device identity) cert** — unchanged from today's packages/client profile:
 
 - Self-signed ECDSA P-256, `CN = DID`, SAN routing info, `CA = false`; EKUs unchanged (clientAuth,
   emailProtection, …). Validity ~10 years. The SAN's record-pointer URI follows the rkey change:

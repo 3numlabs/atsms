@@ -3,7 +3,7 @@
 > **Status: survey of the built system, 2026-08-05.** Every message type the protocol sends, what happens
 > when one is lost for good, what happens when one arrives out of order, and whether we recover. Read
 > alongside [`ordering-auth.md`](./ordering-auth.md) (§4 buffering, §8 repair) — that document specifies the
-> mechanisms; this one audits them against the implementation in `@atsms/dcgka` and its host `@atsms/sms`.
+> mechanisms; this one audits them against the implementation in `@atsms/dcgka` and its host `@atsms/client`.
 > The four holes it identifies are filed as issues 5–8 in [`../KNOWN-ISSUES.md`](../KNOWN-ISSUES.md), and the
 > forward-secrecy finding as issue 9. **Updated 2026-08-06:** first-contact recovery (issue 5) is now built —
 > see [`ordering-auth.md` §8.2](./ordering-auth.md) — so the `create` and `welcome` entries below record

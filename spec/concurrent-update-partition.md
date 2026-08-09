@@ -188,13 +188,13 @@ with the adder's own post-add heal (triggered by the adder's next send). Two con
 a freshly-changed membership produce different merged trees on different members — a fork that never
 heals. (The synchronous-delivery e2e "add carol" test never caught this because it serializes.)
 
-Fix (`atsms-lib` `ConversationSession.addMember`, orchestration only): **add → update → buildWelcome**.
+Fix (`packages/client` `ConversationSession.addMember`, orchestration only): **add → update → buildWelcome**.
 The adder establishes the post-add epoch as part of the add (its own update, encrypted to
 resolutions that include the new leaf), and the welcome's op log now carries that update. The joiner
 derives the post-add epoch directly on welcome replay — no heal race — and its own FS heal then lands
 cleanly on top of the shared epoch. This is the same "born with an epoch" orchestration as the
 genesis fix (§4.2), applied to membership changes; the serialized-delivery path already proved the
-machinery. Reproduced + verified in `atsms-lib/src/tests/add-concurrency.test.ts` (a controllable
+machinery. Reproduced + verified in `packages/client/src/tests/add-concurrency.test.ts` (a controllable
 buffered hub makes the race deterministic, unlike the synchronous loopback).
 
 ## 5. What this does *not* fix
@@ -204,7 +204,7 @@ never derived and cannot be reconstructed. There is no repair for existing poiso
 recreate them. A general "I cannot read your traffic, re-bootstrap me" repair protocol is the
 proper long-term answer and remains open work for the identity/recovery phase.
 
-## 6. Test plan — DONE (`atsms-lib/src/tests/partition.test.ts`)
+## 6. Test plan — DONE (`packages/client/src/tests/partition.test.ts`)
 
 All five pass; they exercise the real sealed path (`deliverEnvelope` → seal layer → `sealEpochFor`),
 which is where the bug lived. The engine unit suite (117) and the convergence fuzz (4, real timeout)
@@ -232,7 +232,7 @@ immediately on bootstrap) — to run against the deployed worker.
   Stateless; no wire change. *(Note: an earlier "ancestor of all heads" predicate was wrong — a
   merged sibling makes an orphaned epoch an ancestor of the later heal — corrected to the
   concurrency test.)*
-- **4.2** `atsms-lib` `ATSMSConversation.send` — on `NoRootKey` at genesis
+- **4.2** `packages/client` `ATSMSConversation.send` — on `NoRootKey` at genesis
   (`Conversation.awaitingFirstEpoch`), waits `genesisWaitMs` (default 4000; `ATSMSConfig` field, 0
   for synchronous tests) for the creator's update before self-healing.
 - **4.3** `packages/dcgka/src/seal-layer.ts` — per-envelope retry counter; emits `unopenable-envelope`
