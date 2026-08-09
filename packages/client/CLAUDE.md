@@ -5,10 +5,10 @@ Guidance for Claude Code working in **packages/client** (`@atsms/client`).
 ## What this is
 
 `packages/client` is the **app-facing SDK** for ATSMS: end-to-end encrypted messaging/calling on AT Protocol
-identities. It is an **unreleased prototype** being reshaped in place into **`@atsms/client`** — a clean
-two-surface API (a stateless `send()` verb + a stateful `conversations` noun) over the advanced-E2EE engine
-`@atsms/dcgka`. Build in place toward that shape; the SDK-monorepo move is a later migration. See the umbrella
-the repository [`README.md`](../../README.md) and the specs in [`spec/`](../../spec/).
+identities. **Unreleased** — nothing is on npm — and it is `@atsms/client`: a two-surface API (a stateless
+`send()` verb and a stateful `conversations` noun) over the group key agreement engine `@atsms/dcgka`, its
+sibling in this workspace. For the protocol it implements, see the repository
+[`README.md`](../../README.md) and the specs in [`spec/`](../../spec/).
 
 Layer: **[Protocol]** — this is the open ATSMS core, not Haiven-operator product.
 

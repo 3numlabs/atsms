@@ -12,7 +12,7 @@
 
 ## 1. What this protocol is
 
-This is the advanced end-to-end encryption layer of the Bourbon Protocol (umbrella roadmap Phase 7):
+This is the advanced end-to-end encryption layer of the Bourbon Protocol:
 **decentralized secure group messaging with sealed-sender metadata protection over untrusted
 store-and-forward mailboxes**, based on **BeeKEM** (Ink & Switch's concurrent TreeKEM variant for
 local-first systems — decision **D11**, 2026-07-22, [`../docs/history/beekem-analysis.md`](../docs/history/beekem-analysis.md))

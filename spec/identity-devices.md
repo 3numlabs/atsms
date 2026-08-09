@@ -21,8 +21,8 @@
 - **Delegation = publication.** A device is delegated by publishing its endpoint certificate as a record in
   the DID's repo. `DID → verificationKey → signed commit → MST inclusion → at.atsms.x509/<fingerprint> →
   cert public key` **is** the cryptographic delegation proof. Verifiers SHOULD check commit signature + MST
-  inclusion; the alpha resolver's trust-the-PDS mode is a documented interim relaxation (umbrella
-  architecture, multi-polar-trust phase).
+  inclusion; the alpha resolver's trust-the-PDS mode is a documented interim relaxation, to be closed when
+  verifiable lookups land.
 - **PDS write access is account-level** — any logged-in device can write or delete any record. Every
   "only this device" property below therefore rests on **signature validity under a device-held key**,
   never on PDS access control. This asymmetry (account-level writes, device-level authority) drives the
