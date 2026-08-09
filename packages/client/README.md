@@ -1,22 +1,22 @@
-# @atsms/sms
+# @atsms/client
 
 The client SDK for **ATSMS**, an open protocol for end-to-end encrypted messaging and calling on AT
 Protocol identities. It handles the cryptography, the storage, and the delivery, and gives an
 application two things to work with: a way to send a one-off message, and a conversation object.
 
-Group encryption comes from [`@atsms/dcgka`](../atsms-dcgka), which reaches agreement on keys with **no
+Group encryption comes from [`@atsms/dcgka`](../dcgka), which reaches agreement on keys with **no
 server ordering anything** — no sequencer, no delivery service, no privileged party.
 
 > **Proof of concept.** The cryptography has not been through an independent security review, which is a
 > gating requirement before any of this carries real traffic. See
-> [`SECURITY.md`](./SECURITY.md), and the protocol's
-> [`KNOWN-ISSUES.md`](../atsms-dcgka/KNOWN-ISSUES.md) for what we already know is unfinished.
+> [`SECURITY.md`](../../SECURITY.md), and the protocol's
+> [`KNOWN-ISSUES.md`](../../KNOWN-ISSUES.md) for what we already know is unfinished.
 > Unreleased: the package is not on npm and the API is still moving.
 
 ## Install
 
 ```bash
-bun add @atsms/sms
+bun add @atsms/client
 ```
 
 Developed and tested with bun. Runs in Node and in browsers; a browser bundle must alias `ws` to a stub.
@@ -33,7 +33,7 @@ twice returns the same one; a group is something you *make*, and the same people
 them.
 
 ```typescript
-import { ATSMS } from "@atsms/sms";
+import { ATSMS } from "@atsms/client";
 
 const atsms = await ATSMS.create({ identity, storage, transport, pds, rng });
 
@@ -74,16 +74,17 @@ Optional: `onEvent` for diagnostics, `onSignal` for call signalling, `onMetric` 
 
 ## Reading the code
 
-Start with [`atsms-cli`](../atsms-cli), a terminal client that is a thin layer over this API and small
-enough to read in one sitting. [`atsms-demo`](../atsms-demo) is the browser equivalent, including calls.
+Start with `atsms-cli`, a terminal client in its own repository that is a thin layer over this API and small
+enough to read in one sitting. `atsms-demo` is the browser equivalent, including calls.
 
 Inside this repository, [`CLAUDE.md`](./CLAUDE.md) is the accurate map of the modules and the load-bearing
 facts about them.
 
 ## Where things live
 
-The protocol itself — specifications, the group-encryption engine, the record schemas, and the review
-brief — is in [`atsms-dcgka`](../atsms-dcgka). This repository is the client library that implements it.
+The protocol itself — [specifications](../../spec/), the [record schemas](../../lexicons/), the
+[group-encryption engine](../dcgka), and the [review brief](../../spec/review-scope.md) — lives at the
+root of this repository. This package is the client library that implements it.
 
 ## License
 

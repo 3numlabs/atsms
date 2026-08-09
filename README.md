@@ -5,8 +5,8 @@ membership, multi-device, and sealed-sender metadata protection — **with no se
 No sequencer, no delivery service, no privileged party. Members change the group whenever they like and
 every device converges on the same keys from whatever order the network delivers.
 
-This is the crypto core of the ATSMS client SDK (`@atsms/sms`), and it is what makes the group
-messaging in ATSMS work.
+This repository holds the protocol — its specifications and record schemas — together with the
+TypeScript reference implementation: the key agreement engine and the client SDK applications build on.
 
 **Status: BUILT and running.** The engine, the ordering and authentication layer, sealed sender,
 identity and lexicon flows, and the SDK integration are all in place, exercised by 138 unit tests plus a
@@ -31,11 +31,17 @@ superseded design records. Pre-BeeKEM state is preserved at git tag **`dcgka-cla
 ## Running it
 
 ```bash
-bun run test        # everything, including the fuzz gate (a few minutes)
-bun run test:unit   # 138 unit tests, seconds
+bun install         # one workspace; the client links the engine as a sibling
+bun run test        # both packages, including the fuzz gate (a few minutes)
+bun run test:unit   # 138 engine + 256 client tests, seconds
 bun run test:fuzz   # the four fuzz scenarios only
 bun run typecheck
+bun run build
 ```
+
+The specifications and record schemas at the root are the protocol. The packages are one implementation
+of it — a second implementation, in another language, would read `spec/` and `lexicons/` and need
+nothing from `packages/`.
 
 ## Documents
 
@@ -49,6 +55,8 @@ map of the layers.
 | [`KNOWN-ISSUES.md`](./KNOWN-ISSUES.md) | What we know is broken or unfinished, from live testing |
 | [`spec/review-scope.md`](./spec/review-scope.md) | The brief we would hand a security reviewer, including the questions we cannot answer ourselves |
 | [`spec/loss-and-reordering.md`](./spec/loss-and-reordering.md) | Every message type audited against "what if this is dropped" and "what if this arrives out of order" |
+| [`packages/client`](./packages/client) | **`@atsms/client`** — the TypeScript SDK an application uses: `send()`, `conversations`, storage adapters, transport, AT Protocol plumbing |
+| [`packages/dcgka`](./packages/dcgka) | **`@atsms/dcgka`** — the group key agreement engine the client builds on |
 | [`lexicons/`](./lexicons/) | The three AT Protocol record schemas the protocol defines: `at.atsms.x509` (a device's endpoint certificate), `at.atsms.prekey` (its bootstrap key), `at.atsms.inbox` (where to reach an identity) |
 | [`docs/history/`](./docs/history/) | How the design was arrived at: the BeeKEM decision, the two gate spikes, the alternatives rejected, and the earlier plans. Not normative |
 

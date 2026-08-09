@@ -4,11 +4,11 @@ Guidance for Claude Code working in **atsms-lib** (`@atsms/sms`).
 
 ## What this is
 
-`atsms-lib` is the **app-facing SDK** for ATSMS: end-to-end encrypted messaging/calling on AT Protocol
+`packages/client` is the **app-facing SDK** for ATSMS: end-to-end encrypted messaging/calling on AT Protocol
 identities. It is an **unreleased prototype** being reshaped in place into **`@atsms/client`** — a clean
 two-surface API (a stateless `send()` verb + a stateful `conversations` noun) over the advanced-E2EE engine
 `@atsms/dcgka`. Build in place toward that shape; the SDK-monorepo move is a later migration. See the umbrella
-[`docs/sdk-shape.md`](../docs/sdk-shape.md) and [`docs/architecture.md`](../docs/architecture.md).
+[`docs/sdk-shape.md`](../../../docs/sdk-shape.md) and [`docs/architecture.md`](../../../docs/architecture.md).
 
 Layer: **[Protocol]** — this is the open ATSMS core, not Haiven-operator product.
 
@@ -111,7 +111,7 @@ phase. (First seen live 2026-07-27; write-up moved here from atsms-web at its EO
 ## Message content structure (v2)
 
 The application message is the **v2 content format** — deterministic CBOR, MIMI-congruent — defined in the
-umbrella [`docs/message-format.md`](../docs/message-format.md) and implemented in `src/lib/format/`:
+umbrella [`docs/message-format.md`](../../../docs/message-format.md) and implemented in `src/lib/format/`:
 `MessageContent` (envelope fields `replaces`/`topicId`/`inReplyTo`/`expires`/`ephemeral`/`fallback` +
 `body: Part[]`), a part-kind registry with handling classes (render/apply/signal), **derived** message IDs
 (sender + convoId + content + salt — never carried), and 33-byte context-tagged conversation IDs. Build
