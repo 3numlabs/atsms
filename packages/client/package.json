@@ -85,8 +85,8 @@
     "x509",
     "pki"
   ],
-  "author": "AT SMS Team",
-  "license": "MIT",
+  "author": "3NUM",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/atsms/at-sms.git"

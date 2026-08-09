@@ -22,7 +22,7 @@ describe("ATSMSWebSocketClient", () => {
   describe("URL Encoding", () => {
     test("should URL-encode DIDs with colons in WebSocket URL", () => {
       // Test the URL construction logic directly
-      const apiUrl = "https://inbox.atsms.at";
+      const apiUrl = "https://relay.example.com";
       const did = "did:plc:gbkt44wmk7k3h3dm2dlqhcoj";
       const deviceFingerprint = "a34e16bf51aec7ef";
 
@@ -36,7 +36,7 @@ describe("ATSMSWebSocketClient", () => {
 
       // Verify the full URL structure
       expect(wsUrl).toBe(
-        "wss://inbox.atsms.at/ws/did%3Aplc%3Agbkt44wmk7k3h3dm2dlqhcoj/a34e16bf51aec7ef",
+        "wss://relay.example.com/ws/did%3Aplc%3Agbkt44wmk7k3h3dm2dlqhcoj/a34e16bf51aec7ef",
       );
 
       // Verify protocol conversion (https -> wss)
@@ -91,7 +91,7 @@ describe("ATSMSWebSocketClient", () => {
 
     test("should fail without URL encoding (regression test)", () => {
       // This test demonstrates the bug that was fixed
-      const apiUrl = "https://inbox.atsms.at";
+      const apiUrl = "https://relay.example.com";
       const did = "did:plc:gbkt44wmk7k3h3dm2dlqhcoj";
       const deviceFingerprint = "a34e16bf51aec7ef";
 
@@ -101,7 +101,7 @@ describe("ATSMSWebSocketClient", () => {
       // The buggy URL contains unencoded colons
       expect(buggyUrl).toContain("did:plc:");
       expect(buggyUrl).toBe(
-        "wss://inbox.atsms.at/ws/did:plc:gbkt44wmk7k3h3dm2dlqhcoj/a34e16bf51aec7ef",
+        "wss://relay.example.com/ws/did:plc:gbkt44wmk7k3h3dm2dlqhcoj/a34e16bf51aec7ef",
       );
 
       // NEW WAY (correct - with encoding)

@@ -1,323 +1,90 @@
 # @atsms/sms
 
-AT SMS (AT Protocol Secure Messaging System) - A TypeScript library for end-to-end encrypted messaging using AT Protocol.
+The client SDK for **ATSMS**, an open protocol for end-to-end encrypted messaging and calling on AT
+Protocol identities. It handles the cryptography, the storage, and the delivery, and gives an
+application two things to work with: a way to send a one-off message, and a conversation object.
 
-## Features
+Group encryption comes from [`@atsms/dcgka`](../atsms-dcgka), which reaches agreement on keys with **no
+server ordering anything** — no sequencer, no delivery service, no privileged party.
 
-- 🔐 **End-to-end encryption** using S/MIME standards
-- 🆔 **Decentralized identity** via AT Protocol
-- 🔑 **X.509 certificate management** for cryptographic operations
+> **Proof of concept.** The cryptography has not been through an independent security review, which is a
+> gating requirement before any of this carries real traffic. See
+> [`SECURITY.md`](./SECURITY.md), and the protocol's
+> [`KNOWN-ISSUES.md`](../atsms-dcgka/KNOWN-ISSUES.md) for what we already know is unfinished.
+> Unreleased: the package is not on npm and the API is still moving.
 
-## Installation
+## Install
 
 ```bash
 bun add @atsms/sms
-# or these *may* work
-npm install @atsms/sms
-# or
-yarn add @atsms/sms
 ```
-Has only been tested with bun.
 
-## Quick Start
+Developed and tested with bun. Runs in Node and in browsers; a browser bundle must alias `ws` to a stub.
+
+## The two surfaces
+
+**`send()` is a verb.** One message to someone you have no conversation with — the "certified mail"
+surface. It carries no ongoing state and reaches anyone with a published certificate, including devices
+that do not speak the group-encryption layer.
+
+**`conversations` is a noun.** It holds keys and membership over time. Two ways in, because they are two
+different acts: a direct conversation with someone always conceptually exists, so you open it and asking
+twice returns the same one; a group is something you *make*, and the same people may share any number of
+them.
 
 ```typescript
-import { ATSMSClient, ATSMSRootCertificate, ATSMSEndpointCertificate } from '@atsms/sms'
-import { AtpAgent } from '@atproto/api'
+import { ATSMS } from "@atsms/sms";
 
-// Initialize AT Protocol agent
-const agent = new AtpAgent({
-  service: 'https://bsky.social'
-})
+const atsms = await ATSMS.create({ identity, storage, transport, pds, rng });
 
-// Login to AT Protocol
-await agent.login({
-  identifier: 'your-handle.bsky.social',
-  password: 'your-app-password'
-})
+// Stateless: one message, no conversation.
+await atsms.send({ to: theirDid, text: "hello" });
 
-// Create ATSMS client
-const client = new ATSMSClient(agent, agent.session!.did)
+// Stateful: a direct conversation, or a group.
+const dm = await atsms.conversations.with(theirDid);
+const group = await atsms.conversations.createGroup({
+  members: [aDid, anotherDid],
+  title: "Trip to Kyoto",
+});
 
-// Generate certificates (first time only)
-const rootCert = await ATSMSRootCertificate.generate(
-  agent.session!.did,
-  'bsky.social',  // domain
-  365  // valid for 1 year
-)
-await client.storeRootCertificate(rootCert)
+await group.send("we land at six");
+group.messages$.subscribe((messages) => render(messages));
 
-// Generate endpoint certificate signed by root
-// Note: did and domain are extracted from root cert automatically
-const endpointCert = await rootCert.generateSignedEndpointCertificate(
-  'user@example.com',  // Email address (validated)
-  365  // validity days
-)
-await client.storeEndpointCertificate(endpointCert)
-
-// Send encrypted message to a recipient
-// First, get recipient's certificates
-const recipientDid = 'did:plc:recipient123'
-const { endpointCerts } = await client.getUserCertificates(recipientDid)
-const recipientCert = endpointCerts[0]  // Use first available cert
-
-// Encrypt and send
-import { prepareMessageForSending } from '@atsms/sms'
-
-const encrypted = await prepareMessageForSending(
-  'Hello, secure world!',
-  endpointCert,
-  [recipientCert]
-)
-
-// Send via API (requires API client setup - see API documentation)
+await group.addMember(someoneElse);   // admin only
+await group.rename("Kyoto 2027");     // shared: every member sees it
+await group.leave();
 ```
 
-## Documentation
+Messages arrive fully processed — decrypted, verified, ordered, deduplicated, and persisted — through
+`messages$`. Nothing above this layer touches a key.
 
-- [API Reference](./README-API.md) - Complete API documentation
-- [NPM Package Guide](./README-NPM.md) - Package usage details
-- [Browser Client Guide](./docs/BROWSER-CLIENT-GUIDE.md) - Building browser-based clients
-- [IndexedDB Adapter](./docs/INDEXEDDB-ADAPTER.md) - Browser storage adapter reference
-- [Architecture](./arch.md) - Technical architecture
-- [Marketing Overview](./MARKETING-ARCH.md) - Non-technical overview
+## What you supply
 
-## CLI Tools
+`ATSMS.create()` takes five things, so the library never assumes a platform:
 
-The package includes three command-line tools for different use cases:
+| | |
+|---|---|
+| `identity` | this device's certificate and keys (`ATSMSDeviceIdentity`) |
+| `storage` | a `StorageAdapter` — `SQLiteAdapter`, `IndexedDBAdapter`, or your own, optionally wrapped in `EncryptedStorageAdapter` for encryption at rest |
+| `transport` | an `EnvelopeTransport` — how sealed envelopes reach a relay. `ATSMSWorkerEnvelopeTransport` speaks to the reference relay |
+| `pds` | an AT Protocol agent, for publishing and resolving records |
+| `rng` | a source of randomness |
 
-### 1. **atsms.ts** - Stateless Testing & Artifact Generation
+Optional: `onEvent` for diagnostics, `onSignal` for call signalling, `onMetric` for timing samples.
 
-A comprehensive tool for end-to-end testing with explicit file paths (no persistent state).
+## Reading the code
 
-```bash
-# Generate certificates (no PDS publishing)
-bun src/client/atsms.ts init --handle alice.bsky.social \
-  --root-cert ./root.pem --root-key ./root-key.pem \
-  --client-cert ./client.pem --client-key ./client-key.pem \
-  --email alice@example.com
+Start with [`atsms-cli`](../atsms-cli), a terminal client that is a thin layer over this API and small
+enough to read in one sitting. [`atsms-demo`](../atsms-demo) is the browser equivalent, including calls.
 
-# Generate and publish to PDS
-bun src/client/atsms.ts init --handle alice.bsky.social \
-  --root-cert ./root.pem --root-key ./root-key.pem \
-  --client-cert ./client.pem --client-key ./client-key.pem \
-  --email alice@example.com --publish-to-pds
+Inside this repository, [`CLAUDE.md`](./CLAUDE.md) is the accurate map of the modules and the load-bearing
+facts about them.
 
-# Send encrypted message
-bun src/client/atsms.ts send --handle alice.bsky.social \
-  --sender-cert ./client.pem --sender-key ./client-key.pem \
-  --recipient bob.bsky.social --message "Hello Bob!"
+## Where things live
 
-# Send with P7M artifact
-bun src/client/atsms.ts send --handle alice.bsky.social \
-  --sender-cert ./client.pem --sender-key ./client-key.pem \
-  --recipient bob.bsky.social --message "Hello!" --save-p7m ./msg.p7m
-
-# Receive and decrypt messages
-bun src/client/atsms.ts receive --handle alice.bsky.social \
-  --client-cert ./client.pem --client-key ./client-key.pem \
-  --output-dir ./messages
-
-# Create P7M file offline (testing)
-bun src/client/atsms.ts create-p7m \
-  --sender-cert ./alice-client.pem --sender-key ./alice-key.pem \
-  --recipient-cert ./bob-client.pem --message "Test" --output ./test.p7m
-
-# List, delete, stats
-bun src/client/atsms.ts list --handle alice.bsky.social --client-cert ./client.pem --client-key ./client-key.pem
-bun src/client/atsms.ts delete --handle alice.bsky.social --client-cert ./client.pem --client-key ./client-key.pem --message-id msg123
-bun src/client/atsms.ts stats --handle alice.bsky.social --client-cert ./client.pem --client-key ./client-key.pem
-```
-
-**Use when:**
-- Testing the library end-to-end
-- Generating test certificates and artifacts
-- CI/CD pipelines (stateless, reproducible)
-- You need explicit control over file locations
-
-### 2. **api-client.js** - Lightweight API Testing
-
-Simple tool for testing ATSMS API endpoints with cached credentials.
-
-```bash
-# List messages (uses cached credentials from chat client)
-bun src/client/api-client.ts list alice.bsky.social
-
-# Get specific message
-bun src/client/api-client.ts get alice.bsky.social msg-123
-
-# Delete message
-bun src/client/api-client.ts delete alice.bsky.social msg-123
-
-# Get inbox statistics
-bun src/client/api-client.ts stats alice.bsky.social
-
-# Real-time WebSocket monitoring
-bun src/client/api-client.ts watch alice.bsky.social
-
-# Check API health
-bun src/client/api-client.ts health alice.bsky.social
-```
-
-**Use when:**
-- Quick API testing after using chat client
-- Real-time WebSocket message monitoring
-- Debugging API endpoints
-- You already have cached credentials in `~/.atsms`
-
-**Note:** Reads certificates from `~/.atsms/messages.db` and DIDs from `~/.atsms/auth-cache.json`
-
-### 3. **atsms-chat.ts** - Interactive Chat Interface
-
-Full-featured chat application with persistent storage.
-
-```bash
-# Launch interactive chat
-bun src/client/atsms-chat.ts alice.bsky.social
-
-# Or use the npm script
-bun run chat
-```
-
-**Use when:**
-- Interactive messaging and testing
-- You need persistent message storage
-- Managing conversations and contacts
-- End-user experience testing
-
-**Storage:** Uses `~/.atsms/` directory for certificates, messages, and cache
-
-## Browser Usage
-
-```html
-<script src="https://unpkg.com/@atsms/sms/dist/browser/index.js"></script>
-<script>
-  const { ATSMSClient } = window.ATSMS
-  // Use the client
-</script>
-```
-
-Or with ES modules:
-
-```typescript
-import { ATSMSClient } from '@atsms/sms'
-```
-
-## Core Components
-
-### Certificate Management
-
-```typescript
-// Generate root certificate (one time)
-const rootCert = await ATSMSRootCertificate.generate(
-  did,
-  domain,
-  365  // valid for 1 year
-)
-
-// Generate endpoint certificate signed by root
-// did and domain are automatically extracted from root certificate
-const endpointCert = await rootCert.generateSignedEndpointCertificate(
-  'user@example.com',  // Email address (validated - see below)
-  365  // validity days
-)
-
-// For certificates loaded from PEM, you can optionally provide did/domain:
-const endpointCertFromPEM = await rootCert.generateSignedEndpointCertificate(
-  'user@example.com',
-  365,
-  did,     // optional - extracted from root cert if not provided
-  domain   // optional - extracted from root cert if not provided
-)
-
-// Store in AT Protocol
-await client.storeRootCertificate(rootCert)
-await client.storeEndpointCertificate(endpointCert)
-```
-
-**Email Address Validation**: The `email` parameter in `generateSignedEndpointCertificate()` is validated to ensure it's a properly formatted email address. The validation checks:
-- Must be a non-empty string
-- Must contain exactly one `@` symbol
-- Domain part (after `@`) must contain at least one `.` (e.g., `user@example.com`)
-
-Invalid email addresses will throw an error: `Invalid email: must be a valid email address, got: <value>`
-
-### Message Encryption
-
-```typescript
-import { encryptMessage, decryptAndVerifyMessageSignature } from '@atsms/sms'
-
-// Encrypt
-const encrypted = await encryptMessage(
-  plaintext,
-  senderCert,
-  [recipientCert]
-)
-
-// Decrypt
-const { content, verified } = await decryptAndVerifyMessageSignature(
-  encryptedMessage,
-  recipientCert,
-  senderCert
-)
-```
-
-## Testing
-
-```bash
-# Run all tests
-bun test
-
-# Run with watch mode
-bun test:watch
-
-# Lint code
-bun run lint
-
-# Format code
-bun run format
-```
-
-## Development
-
-```bash
-# Clone repository
-git clone https://github.com/atsms/at-sms.git
-cd at-sms
-
-# Install dependencies
-bun install
-
-# Build library
-bun run build
-
-# Run CLI chat locally
-bun run chat
-```
-
-## Security
-
-ATSMS uses industry-standard cryptographic libraries:
-- RSA-2048 or ECDSA (secp256k1) for key generation
-- S/MIME (PKCS#7) for message format
-- X.509 for certificate management
-- SHA-256 for hashing
+The protocol itself — specifications, the group-encryption engine, the record schemas, and the review
+brief — is in [`atsms-dcgka`](../atsms-dcgka). This repository is the client library that implements it.
 
 ## License
 
-MIT
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines and code of conduct.
-
-## Support
-
-- Issues: [GitHub Issues](https://github.com/atsms/at-sms/issues)
-- Discussions: [GitHub Discussions](https://github.com/atsms/at-sms/discussions)
-
-## Links
-
-- [AT Protocol](https://atproto.com)
-- [Bluesky](https://bsky.social)
-- [Technical Architecture](./arch.md)
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

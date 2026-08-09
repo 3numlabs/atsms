@@ -31,7 +31,7 @@ export interface EnvelopeTransport {
 }
 
 export interface ATSMSWorkerTransportConfig {
-  /** Worker base URL, e.g. `https://inbox.atsms.at`. */
+  /** Worker base URL, e.g. `https://relay.example.com`. */
   apiUrl: string;
   did: string;
   /** This device's fingerprint (lowercase hex) — the per-device inbox key. */

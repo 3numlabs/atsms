@@ -33,7 +33,7 @@ async function boot(label: string) {
   });
   const atsms = await sms.ATSMS.create({
     identity, storage, transport, pds, rng,
-    mailtoAddress: sms.didMailtoUri(did, "demo.atsms.at"),
+    mailtoAddress: sms.didMailtoUri(did, process.env.ATSMS_EMAIL_DOMAIN ?? "example.com"),
     onEvent: (k, d) => console.log(`[${label}] ${k}: ${d}`),
   });
   return { atsms, storage };
