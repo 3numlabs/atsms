@@ -7,7 +7,7 @@
 
 | Parameter | Value | Status | What it does | Owner |
 |---|---|---|---|---|
-| Group size (typical / max) | 25 / 150 devices | DECIDED | Design envelope; "max" counts **devices**, not users. Drives O(n) cost budgets and test sizes. | spec v1.1 |
+| Group size (typical / max) | 25 / 128 devices | DECIDED (max lowered from 150, 2026-08-10) | Design envelope; "max" counts **devices**, not users. Drives O(n) cost budgets and test sizes. The max is set just under a measured cost cliff: an unhealed re-key frame crosses from the 16 KiB padding bucket into the 32 KiB one at **130 devices**, doubling the sender's fan-out from 2.0 MiB to 4.0 MiB. 128 is the round number below it. `packages/dcgka/scripts/fanout-cost.ts` reproduces this. | spec v1.1 |
 | Endpoint-cert validity | ~10 years | DECIDED (carried from packages/client) | Device identity lifetime; rotation = remove+add device. | spec v1.1 §4.1 |
 | Sealed-asym recipient key | = signed prekey (weekly rotation, one-period grace) | DECIDED (2026-07-22) | D9/D10: sealing cert deleted; `sealed-asym` envelopes seal to `at.atsms.prekey.signedPrekey`; recipients trial-decrypt ≤ 2 live secrets; envelope metadata-FS window ≤ 2 weeks (was 30–97 d). | identity-devices §3.1 / sealed-sender §2 |
 | Signed-prekey rotation | weekly | DECIDED | Bounds the admission-window exposure (published leaf key until the joiner's first self-update) and the sealed-asym metadata-FS window. | identity-devices §4.2 |

@@ -107,5 +107,5 @@ schedule would the harness need to have caught it?
 ## 4. What we are not asking
 
 Not a review of the primitives themselves (X25519, XChaCha20-Poly1305, P-256 ECDSA, HPKE, BLAKE3) beyond
-their composition and domain separation; and not MLS-class scale work — the O(n), n ≤ 150-device design
+their composition and domain separation; and not MLS-class scale work — the O(n), n ≤ 128-device design
 point is deliberate (implementation-plan §10).

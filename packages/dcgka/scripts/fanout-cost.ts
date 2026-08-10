@@ -28,7 +28,7 @@
 
 import { blake3 } from '@noble/hashes/blake3';
 import { x25519 } from '@noble/curves/ed25519';
-import { CONTENT_FRAME, sealSymTo } from '../src/envelope.js';
+import { CONTENT_FRAME, padToBucket, sealSymTo } from '../src/envelope.js';
 import { generateSigningKeypair } from '../src/frames.js';
 import type { DeviceID } from '../src/ids.js';
 import type { Csprng } from '../src/keyhive.js';
@@ -68,6 +68,40 @@ function fanoutBytes(frame: Uint8Array, recipients: number, rng: Csprng): number
     total += sealSymTo(envKey, recipientKey, CONTENT_FRAME, frame, rng).length;
   }
   return total;
+}
+
+/** Where the bytes actually go, for one operation at one group size. */
+function breakdown(devices: number): void {
+  const parties = Array.from({ length: devices }, (_, i) => party(`d${i}`));
+  const author = parties[0]!;
+  const recipients = devices - 1;
+  const session = Session.createGroup(
+    parties.map((p) => ({ device: p.device, leafPk: p.leafPk, signingPk: p.signingPk })),
+    [author.device.did],
+    author.signingSk,
+    author.sks,
+    author.rng,
+  );
+  session.takeOutbox();
+  session.update();
+  const frames = session.takeOutbox();
+  const raw = frames.reduce((n, f) => n + f.length, 0);
+  const padded = frames.reduce((n, f) => n + padToBucket(CONTENT_FRAME, f).length, 0);
+  const rng = rngOf(`bd:${devices}`);
+  const sealed = frames.reduce((n, f) => n + sealSymTo(rng(32), x25519.getPublicKey(rng(32)), CONTENT_FRAME, f, rng).length, 0);
+  const total = sealed * recipients;
+  const pct = (n: number) => `${((n / total) * 100).toFixed(1)}%`;
+
+  console.log(`Re-key on an unhealed tree, ${devices} devices — where the bytes go\n`);
+  console.log(`  update frame, unpadded      ${(raw / 1024).toFixed(1)} KiB   what the protocol actually produces`);
+  console.log(`  padded to a bucket          ${(padded / 1024).toFixed(1)} KiB   +${(((padded - raw) / raw) * 100).toFixed(0)}% so length reveals nothing`);
+  console.log(`  sealed (one copy)           ${(sealed / 1024).toFixed(1)} KiB   +${sealed - padded} B of envelope framing`);
+  console.log(`  x ${String(recipients).padEnd(3)} recipient devices     ${(total / 1024 / 1024).toFixed(2)} MiB   = ${total.toLocaleString()} bytes\n`);
+  console.log(`  Of that total: ${pct(raw * recipients)} is protocol payload,`);
+  console.log(`                 ${pct((padded - raw) * recipients)} is padding,`);
+  console.log(`                 ${pct((sealed - padded) * recipients)} is envelope framing.`);
+  console.log(`  The x${recipients} is sealed sender: every recipient needs a separately`);
+  console.log(`  sealed copy, because one broadcast copy would link them to each other.`);
 }
 
 interface Row {
@@ -171,6 +205,11 @@ const args = process.argv.slice(2);
 const markdown = args.includes('--markdown');
 const sizes = args.filter((a) => !a.startsWith('--')).map(Number).filter((n) => n >= 2);
 const targets = sizes.length > 0 ? sizes : [5, 10, 25, 50, 100, 150];
+
+if (args.includes('--breakdown')) {
+  for (const n of targets) breakdown(n);
+  process.exit(0);
+}
 
 const rows = targets.map(measure);
 

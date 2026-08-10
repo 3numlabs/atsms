@@ -152,7 +152,7 @@ crypto sealed. The relay contract for DCGKA traffic ([Node] — changes to `atsm
   ordering-layer repair recovers stragglers).
 - **Hardening (post-v1, designed-not-specified)**: unlinkable sender tokens (Privacy-Pass-style, or
   Signal-sealed-sender-style certificates) so operators can rate-limit *senders* without identifying them.
-  Tracked as an open item (§14); the v1 position is that per-mailbox caps + the 150-device group envelope
+  Tracked as an open item (§14); the v1 position is that per-mailbox caps + the 128-device group envelope
   keep flood damage bounded and local.
 - **North star check**: the relay stays dumb — after this change it learns *less* than today (mailbox +
   timing + size bucket; no sender identity on any push).
@@ -179,7 +179,7 @@ that role either, identity-devices §3.1). Rotation is the mitigation; a later e
 per-epoch sealing keys from group state so envelope FS approaches ratchet FS (out of scope for v1).
 
 **Cost note** (spec v1.1 §6): one HPKE seal per recipient per message ≈ 50–100 µs native, ~1 ms JS-class;
-at the 150-device max ≲ 0.15 s CPU per send — negligible next to the network fan-out.
+at the 128-device max ≲ 0.15 s CPU per send — negligible next to the network fan-out.
 
 ## 10. X509-floor unification & SMTP transport
 

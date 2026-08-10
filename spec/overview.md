@@ -110,19 +110,24 @@ key. Nothing else is trusted for confidentiality or authenticity — relays and 
 
 ## 5. Performance & size envelope (G16 — normative budget)
 
-- **Group size: typical 25, maximum 150 — counted in DEVICES**, not users (25 users × 3 devices = 75
+- **Group size: typical 25, maximum 128 — counted in DEVICES**, not users (25 users × 3 devices = 75
   members; identity-devices §5). All O(n) statements count devices. Registered in
   [`parameters.md`](./parameters.md).
 - Per-operation cost *(re-based 2026-07-22, D11)*: an `update` is **O(log n) common case** — ~2–3 kB at
-  n = 150 vs ~40 kB under the DCGKA design (wire-format §10) — degrading toward O(n) only when the path
+  n = 128 vs ~40 kB under the DCGKA design (wire-format §10) — degrading toward O(n) only when the path
   crosses heavily blanked/conflicted regions (post-membership-change or concurrency bursts), healing on
   the next update through them. **No per-op acks.** Envelope fan-out remains one seal per recipient
   mailbox per message (sym mode ≈ n symmetric encryptions, negligible; sealed-sender §11.3).
 - **The concurrency lower bounds still stand** (CoCoA, DeCAF, Key Lattice; eprint 2023/1123):
   decentralized + concurrent + worst-case O(log n) cannot be had simultaneously — BeeKEM does not beat
   them; it buys the *common case*, paying O(n) under heavy concurrency exactly as the bounds require.
-  The 150-device max is retained as the design envelope (worst-case budgets are still sized to it);
-  raising it post-v1 is a product decision the protocol no longer forbids. D0 unaffected.
+  The 128-device max is the design envelope (worst-case budgets are still sized to it). It was lowered
+  from 150 on 2026-08-10 for a measured reason rather than a round one: the unhealed re-key frame crosses
+  a padding-bucket boundary at 130 devices, so 130 costs a sender twice what 129 does (4.0 MiB against
+  2.0 MiB, measured — `packages/dcgka/scripts/fanout-cost.ts`). 150 sat on the expensive side of that
+  step and bought 21 devices for double the worst case. Raising it post-v1 is a product decision the
+  protocol no longer forbids, but it should be raised to a number chosen against the buckets, not to a
+  round one. D0 unaffected.
 - Bandwidth shaping: padding buckets add ≤ 2× on small frames (sealed-sender §5); media rides blob offload
   (upload once), so fan-out cost is envelopes only.
 
