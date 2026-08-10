@@ -58,6 +58,7 @@ map of the layers.
 |---|---|
 | [`spec/`](./spec/) | The normative spec set. Core: [`beekem-core.md`](./spec/beekem-core.md) (tree + messaging profile: DGM-filtered ops, `rootCommit`, per-sender chains, coverage, eviction, checkpoints), [`dgm.md`](./spec/dgm.md) (membership, roles, strong remove — also the tree's validity filter), [`ordering-auth.md`](./spec/ordering-auth.md) (causal delivery: deps and readiness, key rotation, repair, re-invitation). Around them: [`identity-devices.md`](./spec/identity-devices.md), [`sealed-sender.md`](./spec/sealed-sender.md), [`group-state.md`](./spec/group-state.md), [`wire-format.md`](./spec/wire-format.md), [`atsms-integration.md`](./spec/atsms-integration.md), [`parameters.md`](./spec/parameters.md) |
 | [`KNOWN-ISSUES.md`](./KNOWN-ISSUES.md) | What we know is broken or unfinished, from live testing |
+| [`TODO.md`](./TODO.md) | Work on the repository itself, rather than the protocol — currently what stands between these packages and npm |
 | [`spec/review-scope.md`](./spec/review-scope.md) | The brief we would hand a security reviewer, including the questions we cannot answer ourselves |
 | [`spec/loss-and-reordering.md`](./spec/loss-and-reordering.md) | Every message type audited against "what if this is dropped" and "what if this arrives out of order" |
 | [`packages/client`](./packages/client) | **`@atsms/client`** — the TypeScript SDK an application uses: `send()`, `conversations`, storage adapters, transport, AT Protocol plumbing |
