@@ -5,3 +5,6 @@ packages/dcgka/bun.lock
 
 # Vitest cache
 .vite/
+
+# npm lockfiles — this workspace uses bun (bun.lock)
+package-lock.json
