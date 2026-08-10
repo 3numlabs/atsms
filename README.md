@@ -1,9 +1,15 @@
 # atsms
 
-Decentralized group key agreement for ATSMS: forward secrecy, post-compromise security, real group
-membership, multi-device, and sealed-sender metadata protection — **with no server ordering anything**.
-No sequencer, no delivery service, no privileged party. Members change the group whenever they like and
-every device converges on the same keys from whatever order the network delivers.
+ATSMS is an open, decentralized protocol for secure group messaging. Its defining goal is to be **open
+the way email is open**: any client that follows the protocol can reach any other, across independent
+operators, with **no central or always-on server** in the middle — while still delivering strong
+end-to-end encryption (forward secrecy, post-compromise security, and real multi-party groups),
+self-sovereign identity, and metadata protection. That openness is the constraint everything else
+answers to: a protocol that must run without a privileged, always-on coordinator cannot adopt a design
+that requires one.
+
+So there is no sequencer, no delivery service, no privileged party. Members change the group whenever
+they like, and every device converges on the same keys from whatever order the network delivers.
 
 This repository holds the protocol — its specifications and record schemas — together with the
 TypeScript reference implementation: the key agreement engine and the client SDK applications build on.
@@ -51,7 +57,6 @@ map of the layers.
 | Doc | What |
 |---|---|
 | [`spec/`](./spec/) | The normative spec set. Core: [`beekem-core.md`](./spec/beekem-core.md) (tree + messaging profile: DGM-filtered ops, `rootCommit`, per-sender chains, coverage, eviction, checkpoints), [`dgm.md`](./spec/dgm.md) (membership, roles, strong remove — also the tree's validity filter), [`ordering-auth.md`](./spec/ordering-auth.md) (causal delivery: deps and readiness, key rotation, repair, re-invitation). Around them: [`identity-devices.md`](./spec/identity-devices.md), [`sealed-sender.md`](./spec/sealed-sender.md), [`group-state.md`](./spec/group-state.md), [`wire-format.md`](./spec/wire-format.md), [`atsms-integration.md`](./spec/atsms-integration.md), [`parameters.md`](./spec/parameters.md) |
-| [`beekem-dcgka-vs-mls.md`](./beekem-dcgka-vs-mls.md) | Plain-language explainer: how this works and where it differs from MLS. The best on-ramp if you want the intuition before the specs |
 | [`KNOWN-ISSUES.md`](./KNOWN-ISSUES.md) | What we know is broken or unfinished, from live testing |
 | [`spec/review-scope.md`](./spec/review-scope.md) | The brief we would hand a security reviewer, including the questions we cannot answer ourselves |
 | [`spec/loss-and-reordering.md`](./spec/loss-and-reordering.md) | Every message type audited against "what if this is dropped" and "what if this arrives out of order" |
