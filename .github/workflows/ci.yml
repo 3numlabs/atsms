@@ -21,11 +21,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: packages/dcgka/package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run test:unit
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: bun run typecheck
+      - run: bun run test:unit
 
   fuzz:
     name: simulation fuzz gate
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: packages/dcgka/package-lock.json
-      - run: npm ci
-      - run: npm run test:fuzz
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: bun run test:fuzz
