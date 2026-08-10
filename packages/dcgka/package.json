@@ -27,6 +27,20 @@
   "files": [
     "src",
     "dist",
-    "README.md"
-  ]
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/3numlabs/atsms.git",
+    "directory": "packages/dcgka"
+  },
+  "homepage": "https://atsms.at",
+  "bugs": {
+    "url": "https://github.com/3numlabs/atsms/issues"
+  }
 }
