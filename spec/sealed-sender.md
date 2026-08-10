@@ -354,6 +354,18 @@ only delayed.
 
 - **Padding buckets** (§5): 1–64 KiB powers-of-two are PROPOSED — sign-off needed (registered in
   [`parameters.md`](./parameters.md)).
+- **A larger top bucket** — deferred, decide before the buckets are signed off. Two things currently
+  hit the 64 KiB ceiling and take the oversize path: **welcomes** in a group with any history
+  ([`../KNOWN-ISSUES.md`](../KNOWN-ISSUES.md) #10), and any **in-band image** worth looking at. Both
+  would fit comfortably under a 128 or 256 KiB top bucket.
+  The argument against is the one §5 is built on: every bucket added is an extra size class an observer
+  can distinguish, and the top bucket is the emptiest and therefore the most identifying — an envelope
+  in it would be close to a label reading *welcome, or a picture*.
+  The argument for is that the alternative is not smaller envelopes, it is blob offload, which is a
+  second round trip, a second thing to host, and a second place for metadata to leak.
+  Note that a larger bucket does **not** fix welcome growth: welcomes grow monotonically, so a bigger
+  ceiling buys rounds, not a solution. Checkpointing is the fix; this is about whether the ceiling is
+  in the right place for content that is legitimately large.
 - **Ingress quotas** (§7): 600 envelopes / 20 MB per mailbox-hour are PROPOSED operator defaults.
 - **Unlinkable sender tokens** (§7): post-v1 hardening — design not started; revisit after v1 alpha
   traffic data exists.

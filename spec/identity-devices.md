@@ -221,7 +221,7 @@ transport) reject.
 ## 5. Multi-device at the group layer (G6)
 
 - **The group-membership unit is the device.** 25 users × 3 devices = 75 DCGKA members; the protocol's
-  "max 128" is a **device** budget ([`parameters.md`](./parameters.md)). All O(n) cost statements count
+  "max 128" is a **device** budget for the per-recipient delivery profile ([`parameters.md`](./parameters.md)). All O(n) cost statements count
   devices.
 - **User-level intents expand client-side into per-device ops** (dgm.md §4): "add user U" = one `add` per
   U-device discovered via U's PDS (`at.atsms.x509` + `at.atsms.prekey`, §4 resolution path); "remove user

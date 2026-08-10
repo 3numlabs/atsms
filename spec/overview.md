@@ -110,9 +110,22 @@ key. Nothing else is trusted for confidentiality or authenticity — relays and 
 
 ## 5. Performance & size envelope (G16 — normative budget)
 
-- **Group size: typical 25, maximum 128 — counted in DEVICES**, not users (25 users × 3 devices = 75
-  members; identity-devices §5). All O(n) statements count devices. Registered in
-  [`parameters.md`](./parameters.md).
+- **Group size is a property of the delivery profile, not of the protocol** — and is counted in
+  DEVICES, not users (25 users × 3 devices = 75 members; identity-devices §5). All O(n) statements
+  count devices. Registered in [`parameters.md`](./parameters.md).
+  - **Profile 1 (per-recipient, the built one): recommended 25 devices, maximum 128.** This is a
+    sender-uplink budget. The sender uploads one sealed copy per recipient device, so a message costs
+    ~1.06 KiB × devices — 25 KiB at 25 devices, 134 KiB at 128 — and that is paid on *every* message,
+    which makes it the binding constraint rather than the occasional re-key. The maximum sits just
+    under a measured step at 130 devices where the re-key frame changes padding bucket and the
+    sender's fan-out doubles (2.0 → 4.0 MiB).
+  - **Profile 2 (group drop point): no size-driven limit in the range we test.** The sender uploads
+    once, so group size stops driving sender cost. The update frame still grows (~0.11 KiB per device
+    unhealed) and reaches the largest padding bucket near 560 devices. **Specified, not built.**
+  - Neither figure is a hard protocol limit; both are cost thresholds, and they belong to the profile
+    they describe. The limit that actually binds a real group first is neither — it is welcome growth
+    ([`../KNOWN-ISSUES.md`](../KNOWN-ISSUES.md) #10), which closes a 20-device group to new members
+    after about eight membership changes.
 - Per-operation cost *(re-based 2026-07-22, D11)*: an `update` is **O(log n) common case** — ~2–3 kB at
   n = 128 vs ~40 kB under the DCGKA design (wire-format §10) — degrading toward O(n) only when the path
   crosses heavily blanked/conflicted regions (post-membership-change or concurrency bursts), healing on
@@ -121,13 +134,11 @@ key. Nothing else is trusted for confidentiality or authenticity — relays and 
 - **The concurrency lower bounds still stand** (CoCoA, DeCAF, Key Lattice; eprint 2023/1123):
   decentralized + concurrent + worst-case O(log n) cannot be had simultaneously — BeeKEM does not beat
   them; it buys the *common case*, paying O(n) under heavy concurrency exactly as the bounds require.
-  The 128-device max is the design envelope (worst-case budgets are still sized to it). It was lowered
-  from 150 on 2026-08-10 for a measured reason rather than a round one: the unhealed re-key frame crosses
-  a padding-bucket boundary at 130 devices, so 130 costs a sender twice what 129 does (4.0 MiB against
-  2.0 MiB, measured — `packages/dcgka/scripts/fanout-cost.ts`). 150 sat on the expensive side of that
-  step and bought 21 devices for double the worst case. Raising it post-v1 is a product decision the
-  protocol no longer forbids, but it should be raised to a number chosen against the buckets, not to a
-  round one. D0 unaffected.
+  The 128-device profile-1 maximum is the design envelope for worst-case budgets. It replaced a single
+  150-device figure on 2026-08-10, chosen against a measurement rather than a round number
+  (`packages/dcgka/scripts/fanout-cost.ts`). Raising it is a product decision the protocol no longer
+  forbids — but raise it against the bucket boundaries, and remember it only governs profile 1.
+  D0 unaffected.
 - Bandwidth shaping: padding buckets add ≤ 2× on small frames (sealed-sender §5); media rides blob offload
   (upload once), so fan-out cost is envelopes only.
 
