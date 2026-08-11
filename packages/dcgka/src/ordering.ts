@@ -84,7 +84,7 @@ export class Session {
   private pendingLocal: { raw: Uint8Array; idHex: string; meta: RetainedMeta } | null = null;
   /** Op id that established my current protocol signing key (ordering-auth §5). */
   private myKeyOpId: Uint8Array;
-  /** In-band non-welcome delivery endpoint advert (sealed-sender §12). */
+  /** In-band conversation-address advert (sealed-sender §12). */
   private myEndpoint: string | null = null;
   private endpointDirty = false;
   /** device fingerprint hex → last-writer-wins {url, seq} learned from peers' ext. */
@@ -979,7 +979,7 @@ export class Session {
     }
   }
 
-  /** Learn a peer's non-welcome delivery endpoint from a processed frame's ext
+  /** Learn a peer's conversation address from a processed frame's ext
    *  (sealed-sender §12), last-writer-wins by the author's own seq. */
   private applyEndpoint(frame: ParsedFrame): void {
     const url = decodeExt(frame.body.ext).endpoint;
@@ -992,7 +992,7 @@ export class Session {
   }
 
   /**
-   * Advertise where this device wants its non-welcome envelopes delivered
+   * Advertise where this device wants its in-conversation envelopes delivered
    * (sealed-sender §12). Rides the next authored control frame's signed `ext`
    * (the joiner's healing update is the natural first carrier) and re-adverts on
    * coverage. v1 is a single https URL per device; a per-group token is a later

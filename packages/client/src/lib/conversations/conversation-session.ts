@@ -269,7 +269,7 @@ export class ConversationSession {
     return this.drain();
   }
 
-  /** Advertise this device's non-welcome delivery endpoint in-band
+  /** Advertise this device's conversation address in-band
    *  (sealed-sender §12) — the transport's ingress URL. */
   async advertiseEndpoint(url: string): Promise<void> {
     this.session.setEndpoint(url);

@@ -284,7 +284,77 @@ profile 2) remain deferred; when scheduled, that profile will reuse this section
 with a deliberately *shared* ciphertext — accepting exactly the cross-puller correlation this section's
 per-recipient rules exist to avoid. Documented trade, not an accident.
 
-## 12. In-band non-welcome delivery addressing — decided 2026-07-25 (user sign-off)
+**Scope: the drop point is a sealing change, not a delivery change.** §12's endpoint slot is already
+per-(device, group), so a group that adopts a drop point simply has each device advertise a conversation
+address at that host, and §5 of [`inbound-delivery.md`](./inbound-delivery.md) already collapses a
+sender's fan-out by destination host. No new addressing machinery is required. What the profile needs is
+the shared ciphertext above. Do not scope it as a transport project.
+
+**Collection is by pull (normative, when the profile lands).** A drop point MUST NOT push the shared
+ciphertext to members' conversation addresses. The ciphertext is identical for every member by
+construction, so pushing it would place byte-identical envelopes in *n* different mailboxes, letting any
+two of those receivers correlate their users as co-members — the linkage §11.3's per-recipient tags,
+nonces and re-encryption exist to prevent. A drop point holds no keys and cannot re-seal on the way out.
+Under pull, the correlation stays at the one host the group chose, which is the trade the group made
+knowingly.
+
+#### 11.6.1 Waking a device that cannot hold a subscription
+
+Pull assumes a device can subscribe or poll. Phones cannot, so a device MAY register a **callback** with
+the drop point.
+
+- **The callback is an opaque URL, one per (device, group), carrying no payload.** Calling it means "this
+  group has something." The URL *is* the message, so no group identifier travels in the clear, and the
+  token contains no DID and no mailbox. A distinct token per group also denies two drop points the
+  ability to correlate one device across its groups — the same unlinkability §12 reaches for with
+  per-group tokens.
+- **The callback need not be hosted by the device's own relay.** It can be any endpoint that can wake the
+  device. Keep the protocol agnostic about it.
+- **The device sets the nudge policy; the drop point MUST NOT infer it.** Every efficient policy an
+  implementer will reach for — "only if they have not collected", "only when they are offline" — requires
+  linking a token to a collector, which destroys the opacity that made the token worth having. Instead a
+  device MAY register a minimum interval, and MAY declare a pause with a short TTL that lapses on its own
+  rather than requiring a clean disconnect.
+- **Coalescing is free, not a tradeoff.** A contentless nudge is idempotent: one and fifty carry identical
+  information. There is no missed-message risk in debouncing, because the nudge was never the message.
+
+**Normative requirements on a drop point that accepts callbacks.**
+
+1. **`https:` only, with private address ranges refused.** Accepting a callback makes the drop point an
+   HTTP client, and an unfiltered one is a request proxy into whatever it can reach.
+2. **Rate-limit per token.** An unauthenticated wake-up URL is a battery attack on whoever holds it.
+3. **Expire tokens; require periodic re-registration.** A forcibly removed member never deregisters, and
+   the drop point cannot detect this — it cannot read group state. Without expiry it holds live wake-up
+   URLs for non-members indefinitely. Expiry also bounds a leaked token.
+4. **Back off, then expire, when a token is nudged repeatedly and nothing is collected.**
+5. The **sender is nudged for its own message**; sealed sender means the drop point cannot identify or
+   exclude them. Harmless — the device recognises its own content — but stated so it is not read as a bug.
+
+**Residual exposure, documented rather than fixed.** Nudge frequency at the callback host traces group
+activity to anyone watching it; debouncing blunts this and jitter would blunt it further, but neither
+removes it. And a device's own relay sees which hosts nudge it, so it can infer which hosts carry the
+groups that device belongs to — weaker than a correspondent graph, the same shape, and accumulating at
+the party that already knows who the device is.
+
+**Rejected alternative — nudge by sealed one-shot (considered 2026-08-11).** Rather than a callback, the
+drop point could send each member a sealed one-shot as the nudge. Its one genuine advantage: a one-shot
+arrives as an ordinary envelope in an ordinary inbox, so the member's own relay sees only traffic it
+already sees, whereas a callback needs a distinct endpoint that its host can always recognise. Rejected
+because (a) sending one-shots requires each member's DID, prekey and inbox record, converting the drop
+point's knowledge from a set of anonymous pullers into a **named roster** that is publicly linkable and
+worth compelling; (b) the only address the drop point can discover is the introduction address, so every
+nudge would land on the one address deliberately kept public and quiet, inverting §12's rationale; (c)
+one-shots authenticate their sender, so the drop point would need an identity, making it a named protocol
+actor contrary to [`inbound-delivery.md`](./inbound-delivery.md) §1; and (d) it recreates the *n* fan-out
+the profile exists to remove, with asymmetric crypto per recipient, where a callback is *n* plain POSTs.
+
+## 12. The conversation address — in-band delivery addressing (decided 2026-07-25, user sign-off)
+
+**Naming (normative).** The two addresses are the **introduction address** (the public
+[`at.atsms.inbox`](./inbound-delivery.md) record) and the **conversation address** (the in-band
+`FrameExt.endpoint` specified here). Name them for their purpose, not by the packet class that uses them —
+"welcome" and "non-welcome" describe a frame, not an address. Do not call the conversation address
+*ephemeral*: it is durable last-writer-wins state inside signed group history, merely unpublished.
 
 **The asymmetry that drives this (normative rationale).** A **welcome** is sent by a party that shares
 *no* secret with the recipient yet (they are adding the recipient to a group the recipient is not in), so
@@ -295,12 +365,12 @@ transport, `https:` = required, `mailto:` = recommended (D15);
 to the `at.atsms.x509` certs it manages and forward to the SANs it does not — but that helpfulness is an
 implementation detail, **not a protocol actor** ("provider" is deliberately *not* a protocol concept).
 
-A **non-welcome** frame, by contrast, is only ever sent by a party that **already shares group state** with
+An **in-conversation** frame, by contrast, is only ever sent by a party that **already shares group state** with
 the recipient. Its delivery address therefore need **not** be public: it is advertised **in-band**, inside
 the authenticated group channel, so the high-volume/linkable address never appears in a public record. The
 public footprint stays exactly one thing — the `at.atsms.inbox` record.
 
-**Mechanism (normative).** A device advertises its non-welcome delivery endpoint in the **signed frame
+**Mechanism (normative).** A device advertises its conversation address in the **signed frame
 `ext`** (wire-format §3.2; `FrameExt.endpoint`) — the same self-authored, last-writer-wins, in-band advert
 shape as signing-key rotation (ordering-auth §5). It is authored by the device itself (so the device
 controls its own address; the natural first carrier is the joiner's mandatory post-join healing update),
@@ -323,10 +393,34 @@ policy:
   cannot correlate a device's group memberships and cross-group members cannot discover each other's
   mailboxes. **No wire change** — purely what the device writes into the same `endpoint` slot.
 
+**Why the split matters for abuse (normative rationale).** The tempting claim — "the conversation address
+is unpublished, so it cannot be spammed" — is wrong twice, and implementers should not repeat it.
+
+First, it is not true under the v1 reuse policy: both addresses are the same string, derivable from the
+DID, so there is no abuse benefit until per-group tokens land. Second, even then it is *scoping*, not
+immunity — every member of a group knows your conversation address for that group, so the property is
+"only parties you admitted can reach it," which is admission control rather than anti-abuse.
+
+The real benefit is this: **the split concentrates the anonymous-ingress surface onto one low-volume
+address, and low volume is what makes expensive controls affordable.** Proof-of-work, a rate limit that
+actually bites, or a micropayment cannot be imposed on every message in a conversation — any control
+strong enough to deter spam would tax all legitimate traffic. It can be imposed on *first contact*,
+because first contact is rare. So the split does not make spam impossible; it makes spam controls
+affordable, by isolating the one channel that must accept traffic from strangers and keeping it quiet
+enough to price. Admission-control mechanisms belong on the introduction address for exactly this reason
+(§7 ingress quotas; inbound admission control is tracked separately).
+
+**Known gap — a removed member keeps a working conversation address.** Changing the address is a
+group-visible event (below), so it does not rotate on removal, and the removed device retains a usable
+address for every member. It cannot inject anything: it no longer holds the epoch key, so recipients
+fetch and drop. But it can still *make you fetch*. This is the same shape as the callback-token problem
+in §11.6 and likely wants the same answer — expiry with re-advertisement, rather than explicit
+revocation. Unresolved.
+
 **Accepted tradeoffs.** (1) The endpoint lives in *signed group state*, so changing it is a group-visible
 (authenticated) event — normally desirable (the people who message you learn your address changed).
 (2) **Recovery** relies on re-`welcome` (a member that loses group state re-bootstraps via the public
-`at.atsms.inbox` record), so **no public non-welcome record is required**. (3) `url` may be `null` transiently
+`at.atsms.inbox` record), so **no public conversation-address record is required**. (3) `url` may be `null` transiently
 (recipient's advert not yet processed); the transport holds/retries — envelopes are never mis-delivered,
 only delayed.
 
@@ -394,7 +488,9 @@ only delayed.
   the signed frame `ext` (§12), not a public record; welcome stays the only public address
   (`at.atsms.inbox`, singleton `self`; its transport floor later inverted to `https:` by D15). "Provider" dropped as a protocol concept.
 - **Group drop-point sealing** (spec v1.1 §9 profile 2, optional post-v1 mode): deferred; will build on
-  §11's derivation machinery (see §11.6).
+  §11's derivation machinery. The *delivery* half is now specified (§11.6: pull, callback nudges, and the
+  requirements on a drop point that accepts them); what remains open is the shared-ciphertext sealing
+  itself.
 - ~~Symmetric envelope mode~~ **decided 2026-07-20 (user sign-off)**: `sealed-sym` for all
   in-conversation traffic (§11); asym reserved for bootstrap-class. Per-recipient PRF tags, full-width
   (mod-P truncation dial considered and rejected for simplicity); per-recipient fresh-nonce re-encryption

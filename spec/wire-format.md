@@ -143,7 +143,7 @@ ExtBody = [ version:  uint,                                   ; 1
             digest:   [ bstr32, [ * bstr32 ] ] / null,        ; consistency digest + heads (dgm §8)
             rotation: bstr32 / null,                          ; nextSigningPubKey (ordering-auth §5)
             appHW:    [ * [ epochId: bstr32, hiGen: uint ] ] / null,  ; app high-water (§8.1, DESIGNED)
-            endpoint: tstr / null ]                           ; in-band non-welcome delivery URL (sealed-sender §12)
+            endpoint: tstr / null ]                           ; in-band conversation address (sealed-sender §12)
 ```
 
 - **Fixed positional array** — exactly one encoding per set of extensions, by construction (absent fields

@@ -26,21 +26,27 @@ implementation.
   content identity (DCGKA: `EnvelopeID`, sealed-sender §3; one-shot: content hash). It MUST NOT require
   parsing the payload to route or store it.
 
-## 2. Two reception channels
+## 2. Two addresses
 
-A DID advertises **two** ways to be reached, because two situations differ in what the sender already knows:
+A DID is reachable at **two** addresses, because two situations differ in what the sender already knows.
+They are named for what they are *for*, not for the packet class that happens to use them:
 
-| Channel | When | Sender knows | Discovery | Spec |
+| Address | Who reaches you there | Sender holds | Discovery | Spec |
 |---|---|---|---|---|
-| **Welcome** (bootstrap) | Adding a DID to a group it is not yet in | Nothing shared with the recipient | **Public** `at.atsms.inbox` record (§3) | this doc §3 |
-| **Non-welcome** (in-conversation) | Between established members | Shared group state | **In-band** advert (`FrameExt.endpoint`) | sealed-sender §12 |
+| **Introduction address** | someone adding you to a group you are not in; a stateless one-shot | *nothing* shared with you | **public** `at.atsms.inbox` record | this doc §3 |
+| **Conversation address** | members you already share group state with | group keys | **in-band** advert (`FrameExt.endpoint`) | sealed-sender §12 |
 
-The **welcome** (bootstrap) address MUST be publicly discoverable: a party adding you shares no secret with
-you yet, so it can only find you via your DID — that public address is the `at.atsms.inbox` record (§3), which
-also serves the stateless one-shot path (§1). The **non-welcome** address need not be public and is advertised
-in-band (sealed-sender §12) — it is the high-volume, linkable address, kept off the public record. **This
-document specifies the public `at.atsms.inbox` record and the transport/fan-out mechanics both channels share;
-it does not redefine the in-band advert.**
+**The distinction is how the address is discovered, not how long it lives.** The introduction address MUST
+be publicly discoverable: a party adding you shares no secret with you yet, so your DID is all they have to
+go on. That is its purpose and also its whole liability. The conversation address need not be public, and
+is not: it is advertised inside the authenticated group channel, so the high-volume, linkable address never
+appears in a public record.
+
+Neither is ephemeral. The conversation address is durable last-writer-wins state inside signed group
+history (sealed-sender §12); it is simply unpublished. Avoid describing it as temporary.
+
+**This document specifies the public `at.atsms.inbox` record and the transport and fan-out mechanics both
+addresses share; it does not redefine the in-band advert.**
 
 ## 3. Inbox discovery — `at.atsms.inbox` (per-DID singleton)
 
@@ -116,7 +122,7 @@ dedup works across transports (a copy that arrived by SMTP and one by HTTPS MUST
 §1).
 
 - **HTTPS (required, §3).** `POST` the opaque payload to an `https:` endpoint (an `at.atsms.inbox` entry
-  for welcomes; the in-band `FrameExt.endpoint` for non-welcome, sealed-sender §12). Every conforming DID
+  for introductions; the in-band `FrameExt.endpoint` for conversations, sealed-sender §12). Every conforming DID
   advertises one, so this binding always exists. "SMTP without the SMTP tax."
 - **SMTP (recommended).** Deliver the opaque payload as a minimal email with the payload as a single
   attachment of media type **`application/atsms-envelope`** (base64 transfer-encoded), to a `mailto:`
@@ -153,7 +159,7 @@ Code receiving at a per-DID `at.atsms.inbox` destination is where the "helpfulne
    (§3) and is the default choice, `mailto:` where that is what the address gives. This is what makes
    multi-homing work without the sender enumerating every device.
 
-A non-welcome envelope is already per-device (the engine seals one per recipient device, sealed-sender §11);
+An in-conversation envelope is already per-device (the engine seals one per recipient device, sealed-sender §11);
 such a destination receives one envelope for its device(s) and stores it — devices trial-decrypt by tag
 (sealed-sender §11.3). A welcome, addressed per-DID, is fanned to devices here.
 

@@ -28,8 +28,8 @@ export interface FrameExt {
   /** Per-epoch application high-water — highest generation emitted (ordering-auth §8.1). */
   appHW?: Array<{ epochId: Uint8Array; hiGen: number }>;
   /**
-   * In-band non-welcome delivery endpoint (sealed-sender §12): where this device
-   * wants its non-welcome envelopes dropped. A self-authored, signed, last-writer-
+   * The device's conversation address (sealed-sender §12): where this device
+   * wants its in-conversation envelopes dropped. A self-authored, signed, last-writer-
    * wins advert — the exact shape as `rotation`, a URL instead of a pubkey. v1 is
    * a single `https://…` URL per device (reuse policy); a per-group token is a
    * later device-side policy with no wire change.

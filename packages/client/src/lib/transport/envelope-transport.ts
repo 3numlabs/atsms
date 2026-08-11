@@ -4,7 +4,7 @@
  *
  * - **outbound**: anonymous `POST { envelope: base64 }` — to a DID's public
  *   `at.atsms.inbox` `https:` endpoint (welcome channel / first contact) or to
- *   an in-band advertised URL (non-welcome, sealed-sender §12). The transport
+ *   an in-band advertised URL (the conversation address, sealed-sender §12). The transport
  *   never learns what an envelope is; it addresses *destinations*.
  * - **inbound**: this device's per-certificate worker inbox — JWT-authed
  *   `?type=atsms-envelope` backfill plus WebSocket push; each envelope is

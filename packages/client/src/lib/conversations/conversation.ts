@@ -522,7 +522,7 @@ export class Conversation {
     return this.session.update();
   }
 
-  /** Advertise this device's non-welcome delivery endpoint in-band (§12). */
+  /** Advertise this device's conversation address in-band (§12). */
   advertiseEndpoint(url: string): Promise<void> {
     return this.session.advertiseEndpoint(url);
   }
