@@ -160,8 +160,9 @@ crypto sealed. The relay contract for DCGKA traffic ([Node] — changes to `atsm
 ## 8. What the provider still learns (documented, accepted)
 
 Per envelope: target mailbox, arrival time, size bucket, pusher IP (absent Tor). Across envelopes:
-mailbox traffic volume and burst patterns; for the optional group drop-point profile, co-membership of
-pullers (spec v1.1 §9 profile 2 — that profile's mitigations live there). The provider never learns:
+mailbox traffic volume and burst patterns. (A group drop point would additionally expose co-membership
+of its pullers; it is a proposal, and that trade is stated there —
+[proposals/0001](../proposals/0001-group-drop-point.md).) The provider never learns:
 sender identity, message class beyond bucket, group structure (baseline profile), or any content.
 
 ## 9. Envelope-layer forward secrecy (bounded, documented)
@@ -277,76 +278,16 @@ and tags rotate together on each update; more tag-table churn, no protocol chang
   material — `PathChange` secret stores included — rides only *inside* signed frames inside envelopes,
   with no cleartext identity fields anywhere in the envelope layer.
 
-### 11.6 Relation to the drop-point profile
+### 11.6 The shared-ciphertext variant (proposed, not part of this spec)
 
-The reserved `atsms-seal:v1:group` label (wire-format §7) and the drop-point profile (spec v1.1 §9
-profile 2) remain deferred; when scheduled, that profile will reuse this section's derivation machinery
-with a deliberately *shared* ciphertext — accepting exactly the cross-puller correlation this section's
-per-recipient rules exist to avoid. Documented trade, not an accident.
+A **group drop point** — one shared ciphertext left at a single location and collected by every member,
+rather than a sealed copy per recipient — would reuse this section's derivation machinery with a
+deliberately *shared* ciphertext, accepting exactly the cross-puller correlation §11.3's per-recipient
+tags, nonces and re-encryption exist to prevent. The `atsms-seal:v1:group` label
+([`wire-format.md`](./wire-format.md) §7) is reserved for it.
 
-**Scope: the drop point is a sealing change, not a delivery change.** §12's endpoint slot is already
-per-(device, group), so a group that adopts a drop point simply has each device advertise a conversation
-address at that host, and §5 of [`inbound-delivery.md`](./inbound-delivery.md) already collapses a
-sender's fan-out by destination host. No new addressing machinery is required. What the profile needs is
-the shared ciphertext above. Do not scope it as a transport project.
-
-**Collection is by pull (normative, when the profile lands).** A drop point MUST NOT push the shared
-ciphertext to members' conversation addresses. The ciphertext is identical for every member by
-construction, so pushing it would place byte-identical envelopes in *n* different mailboxes, letting any
-two of those receivers correlate their users as co-members — the linkage §11.3's per-recipient tags,
-nonces and re-encryption exist to prevent. A drop point holds no keys and cannot re-seal on the way out.
-Under pull, the correlation stays at the one host the group chose, which is the trade the group made
-knowingly.
-
-#### 11.6.1 Waking a device that cannot hold a subscription
-
-Pull assumes a device can subscribe or poll. Phones cannot, so a device MAY register a **callback** with
-the drop point.
-
-- **The callback is an opaque URL, one per (device, group), carrying no payload.** Calling it means "this
-  group has something." The URL *is* the message, so no group identifier travels in the clear, and the
-  token contains no DID and no mailbox. A distinct token per group also denies two drop points the
-  ability to correlate one device across its groups — the same unlinkability §12 reaches for with
-  per-group tokens.
-- **The callback need not be hosted by the device's own relay.** It can be any endpoint that can wake the
-  device. Keep the protocol agnostic about it.
-- **The device sets the nudge policy; the drop point MUST NOT infer it.** Every efficient policy an
-  implementer will reach for — "only if they have not collected", "only when they are offline" — requires
-  linking a token to a collector, which destroys the opacity that made the token worth having. Instead a
-  device MAY register a minimum interval, and MAY declare a pause with a short TTL that lapses on its own
-  rather than requiring a clean disconnect.
-- **Coalescing is free, not a tradeoff.** A contentless nudge is idempotent: one and fifty carry identical
-  information. There is no missed-message risk in debouncing, because the nudge was never the message.
-
-**Normative requirements on a drop point that accepts callbacks.**
-
-1. **`https:` only, with private address ranges refused.** Accepting a callback makes the drop point an
-   HTTP client, and an unfiltered one is a request proxy into whatever it can reach.
-2. **Rate-limit per token.** An unauthenticated wake-up URL is a battery attack on whoever holds it.
-3. **Expire tokens; require periodic re-registration.** A forcibly removed member never deregisters, and
-   the drop point cannot detect this — it cannot read group state. Without expiry it holds live wake-up
-   URLs for non-members indefinitely. Expiry also bounds a leaked token.
-4. **Back off, then expire, when a token is nudged repeatedly and nothing is collected.**
-5. The **sender is nudged for its own message**; sealed sender means the drop point cannot identify or
-   exclude them. Harmless — the device recognises its own content — but stated so it is not read as a bug.
-
-**Residual exposure, documented rather than fixed.** Nudge frequency at the callback host traces group
-activity to anyone watching it; debouncing blunts this and jitter would blunt it further, but neither
-removes it. And a device's own relay sees which hosts nudge it, so it can infer which hosts carry the
-groups that device belongs to — weaker than a correspondent graph, the same shape, and accumulating at
-the party that already knows who the device is.
-
-**Rejected alternative — nudge by sealed one-shot (considered 2026-08-11).** Rather than a callback, the
-drop point could send each member a sealed one-shot as the nudge. Its one genuine advantage: a one-shot
-arrives as an ordinary envelope in an ordinary inbox, so the member's own relay sees only traffic it
-already sees, whereas a callback needs a distinct endpoint that its host can always recognise. Rejected
-because (a) sending one-shots requires each member's DID, prekey and inbox record, converting the drop
-point's knowledge from a set of anonymous pullers into a **named roster** that is publicly linkable and
-worth compelling; (b) the only address the drop point can discover is the introduction address, so every
-nudge would land on the one address deliberately kept public and quiet, inverting §12's rationale; (c)
-one-shots authenticate their sender, so the drop point would need an identity, making it a named protocol
-actor contrary to [`inbound-delivery.md`](./inbound-delivery.md) §1; and (d) it recreates the *n* fan-out
-the profile exists to remove, with asymmetric crypto per recipient, where a callback is *n* plain POSTs.
+**It is a proposal, not a deferred part of this specification.** The sealing is undesigned, and nothing
+here depends on it: [`proposals/0001-group-drop-point.md`](../proposals/0001-group-drop-point.md).
 
 ## 12. The conversation address — in-band delivery addressing (decided 2026-07-25, user sign-off)
 
@@ -487,10 +428,10 @@ only delayed.
 - ~~Non-welcome delivery addressing~~ **decided 2026-07-25 (user sign-off)**: advertised **in-band** in
   the signed frame `ext` (§12), not a public record; welcome stays the only public address
   (`at.atsms.inbox`, singleton `self`; its transport floor later inverted to `https:` by D15). "Provider" dropped as a protocol concept.
-- **Group drop-point sealing** (spec v1.1 §9 profile 2, optional post-v1 mode): deferred; will build on
-  §11's derivation machinery. The *delivery* half is now specified (§11.6: pull, callback nudges, and the
-  requirements on a drop point that accepts them); what remains open is the shared-ciphertext sealing
-  itself.
+- ~~**Group drop-point sealing**~~ — moved out of this spec 2026-08-11. It was carried here as a
+  "deferred profile" while being defined only in a superseded document, which is how a proposal ends up
+  looking decided. It is now [`proposals/0001`](../proposals/0001-group-drop-point.md), status DRAFT, and
+  nothing in this specification depends on it.
 - ~~Symmetric envelope mode~~ **decided 2026-07-20 (user sign-off)**: `sealed-sym` for all
   in-conversation traffic (§11); asym reserved for bootstrap-class. Per-recipient PRF tags, full-width
   (mod-P truncation dial considered and rejected for simplicity); per-recipient fresh-nonce re-encryption

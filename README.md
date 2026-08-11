@@ -64,6 +64,7 @@ map of the layers.
 | [`packages/client`](./packages/client) | **`@atsms/client`** — the TypeScript SDK an application uses: `send()`, `conversations`, storage adapters, transport, AT Protocol plumbing |
 | [`packages/dcgka`](./packages/dcgka) | **`@atsms/dcgka`** — the group key agreement engine the client builds on |
 | [`lexicons/`](./lexicons/) | The three AT Protocol record schemas the protocol defines: `at.atsms.x509` (a device's endpoint certificate), `at.atsms.prekey` (its bootstrap key), `at.atsms.inbox` (where to reach an identity) |
+| [`proposals/`](./proposals/) | Protocol ideas that are **not yet the protocol**. Nothing in `spec/` depends on them. Currently [0001 — group drop point](./proposals/0001-group-drop-point.md) |
 | [`docs/history/`](./docs/history/) | How the design was arrived at: the BeeKEM decision, the two gate spikes, the alternatives rejected, and the earlier plans. Not normative |
 
 ## Two things worth knowing before you read the specs

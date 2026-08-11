@@ -119,7 +119,8 @@ key. Nothing else is trusted for confidentiality or authenticity — relays and 
     which makes it the binding constraint rather than the occasional re-key. The maximum sits just
     under a measured step at 130 devices where the re-key frame changes padding bucket and the
     sender's fan-out doubles (2.0 → 4.0 MiB).
-  - **Profile 2 (group drop point): no size-driven limit in the range we test.** The sender uploads
+  - **With a group drop point (PROPOSED — [proposals/0001](../proposals/0001-group-drop-point.md), not
+    part of this spec): no size-driven limit in the range we test.** The sender uploads
     once, so group size stops driving sender cost. The update frame still grows (~0.11 KiB per device
     unhealed) and reaches the largest padding bucket near 560 devices. **Specified, not built.**
   - Neither figure is a hard protocol limit; both are cost thresholds, and they belong to the profile
@@ -202,8 +203,8 @@ ops, `rootCommit`, per-sender chains, coverage, eviction, checkpoints (beekem-co
 DGM (dgm.md), the ordering/auth layer incl. repair (ordering-auth), sealed envelopes with padding
 (sealed-sender), the wire formats and test-vector suite (wire-format), the baseline HTTPS mailbox
 transport profile + per-recipient fan-out + blob offload (spec v1.1 §7/§9 profiles 1 + 3), and the
-identity/record model (identity-devices). OPTIONAL: WebSocket push, P2P transports, Tor, the group
-drop-point profile (post-v1 design).
+identity/record model (identity-devices). OPTIONAL: WebSocket push, P2P transports, Tor. A group drop
+point is **proposed, not optional-but-specified** — [proposals/0001](../proposals/0001-group-drop-point.md).
 
 ## 8. Conventions used across the spec set
 

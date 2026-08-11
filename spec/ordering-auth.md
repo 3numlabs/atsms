@@ -168,8 +168,9 @@ ready message. A message unresolvable for `T_REPAIR_GIVEUP = 30 d` MAY be droppe
 - **Non-normative optimization (decided 2026-07-16)**: baseline-profile mailbox providers MAY retain
   delivered envelopes (suggested 30 d, aligned with `T_REPAIR_GIVEUP`) so a client that lost local state
   can re-pull its own copies before issuing member repair requests — note each envelope is sealed
-  per-recipient, so a relay can only ever re-serve a device's *own* copies; the group drop-point profile
-  (spec v1.1 §9) has re-fetch inherently. Retention length is an operator policy trade-off (longer = more
+  per-recipient, so a relay can only ever re-serve a device's *own* copies. (A group drop point would
+  have re-fetch inherently, but it is a proposal and repair against a shared object is one of its open
+  questions — [proposals/0001](../proposals/0001-group-drop-point.md).) Retention length is an operator policy trade-off (longer = more
   provider-side correlation surface); protocol correctness never depends on it — member-served repair
   remains the only normative mechanism.
 
