@@ -366,6 +366,23 @@ only delayed.
   Note that a larger bucket does **not** fix welcome growth: welcomes grow monotonically, so a bigger
   ceiling buys rounds, not a solution. Checkpointing is the fix; this is about whether the ceiling is
   in the right place for content that is legitimately large.
+- **A smaller bottom bucket** — deferred, decide alongside the above; **the recommendation is not to**.
+  The floor is measured: an app frame with an *empty* body is **267 B** and `"ok"` is **269 B** — a
+  32-byte group id, the sender DID and its 32-byte fingerprint, a 32-byte dep hash, a 64-byte signature,
+  the counters, and the sealed body. Content is almost none of it; 500 characters still fits in 770 B.
+  So **512 B is the smallest bucket that could exist**, and 256 B cannot hold even an empty message.
+  The saving would be real — 1081 B on the wire becomes 569 B, and under profile 1 that is multiplied by
+  every recipient device (a 25-device group: 25.3 KiB per message down to ~13.3 KiB).
+  The reason not to is §5's own argument. The 1 KiB floor was chosen *because* it is large enough to
+  swallow several classes at once: acks (~300 B), reactions (~270 B), short texts, and repair requests
+  are today one indistinguishable size on the wire. A 512 B bucket splits that set — reactions and acks
+  fall below it, ordinary texts above — and the class it exposes is the worst one to expose. Acks follow
+  every membership operation as a burst of n−1 envelopes, which §5 names as the classifier padding
+  exists to defeat; make them identifiable by size and an observer reads "the group just changed, and
+  here is how big it is" out of traffic it cannot decrypt.
+  If this is ever revisited, the question to answer first is whether acks can be made to land in the
+  same bucket as short texts by some other means — that, not the bucket boundary, is the property worth
+  preserving.
 - **Ingress quotas** (§7): 600 envelopes / 20 MB per mailbox-hour are PROPOSED operator defaults.
 - **Unlinkable sender tokens** (§7): post-v1 hardening — design not started; revisit after v1 alpha
   traffic data exists.
