@@ -280,14 +280,15 @@ and tags rotate together on each update; more tag-table churn, no protocol chang
 
 ### 11.6 The shared-ciphertext variant (proposed, not part of this spec)
 
-A **group drop point** — one shared ciphertext left at a single location and collected by every member,
-rather than a sealed copy per recipient — would reuse this section's derivation machinery with a
-deliberately *shared* ciphertext, accepting exactly the cross-puller correlation §11.3's per-recipient
-tags, nonces and re-encryption exist to prevent. The `atsms-seal:v1:group` label
-([`wire-format.md`](./wire-format.md) §7) is reserved for it.
+The per-recipient fan-out of §11.3 is an **anti-correlation measure, not member confidentiality**:
+`envKey` (§11.2) is derived from the epoch secret and the sender alone, so every member can derive every
+member's key and open any copy. The distinct tag and nonce per copy exist to deny a relay cross-mailbox
+correlation — a purpose that does not apply at a location the group has knowingly chosen to share.
 
-**It is a proposal, not a deferred part of this specification.** The sealing is undesigned, and nothing
-here depends on it: [`proposals/0001-group-drop-point.md`](../proposals/0001-group-drop-point.md).
+A **group drop point** — one ciphertext, collected by every member — would therefore change the key
+derivation, not the trust model between members. The `atsms-seal:v1:group` label
+([`wire-format.md`](./wire-format.md) §7) is reserved for it. It remains a proposal, and nothing in this
+specification depends on it: [`proposals/0001-group-drop-point.md`](../proposals/0001-group-drop-point.md).
 
 ## 12. The conversation address — in-band delivery addressing (decided 2026-07-25, user sign-off)
 

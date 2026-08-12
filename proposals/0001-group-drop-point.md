@@ -29,6 +29,15 @@ with the group.
 
 ## Design sketch
 
+### The sealing is a re-derivation, not new cryptography
+
+Members already share the keys. `spec/sealed-sender.md` §11.2's `envKey` is derivable by every member —
+it depends only on the epoch secret and the sender — and the per-recipient tag and nonce protect against
+relay correlation, not against other members. The variant derives **one key per epoch** under the
+reserved `atsms-seal:v1:group` label (`spec/wire-format.md` §7) instead of one per sender. Forward
+secrecy and post-compromise security are epoch-scoped today and stay epoch-scoped: the epoch closes and
+is evicted the same way either way.
+
 ### Addressing needs nothing new
 
 `spec/sealed-sender.md` §12's conversation address is already per-(device, group). A group that adopts a
@@ -110,9 +119,13 @@ accumulating at the party that already knows who the device is.
 
 Answer these before this could be ACCEPTED.
 
-1. **The sealing itself.** This is the whole substance and it is not designed. What derives the shared
-   epoch key, how it relates to §11.2's derivation, and what forward secrecy and post-compromise
-   properties survive when every member can open the same ciphertext.
+1. **Verify the sealing, rather than design it.** We believe the change is small — see the design
+   sketch — and a reviewer should attack the belief. Specifically: (a) multi-sender nonce hygiene, since
+   many senders would encrypt under one shared key with random 24-byte nonces, where today each sender
+   holds its own key; (b) the receive path's tag table assumes per-recipient tags and is load-bearing (a
+   stale one caused a live injection bug), so what replaces it; (c) §11.3's per-sender streams disappear —
+   confirm nothing but observer stream-counting depended on them; (d) welcomes stay per-device
+   sealed-asym, so a drop point carries sym traffic only — state the boundary.
 2. **Does epoch rotation buy anything real,** or is it defeated by client-IP continuity and pull timing?
    Measure before claiming.
 3. **Who chooses the drop point, and how does a group move?** Changing a conversation address is a
