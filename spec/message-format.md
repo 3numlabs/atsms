@@ -159,6 +159,28 @@ surreptitious forwarding and to let receivers verify the derived `convoId`. On t
 group's membership is authoritative and this key is absent. (This retires v1's dual-meaning
 `recipientIds` field.)
 
+**SMS-dialect extensions** (provisional tstr keys — private-use form until int assignment at the
+v1 registry freeze; live in the telnyx-messaging gateway + demo since 2026-08-18; design:
+umbrella `docs/plans/agent-config-and-screening.md` §6a as amended by
+`gateway-identity-and-transport.md`):
+
+| Key (tstr) | Carried by | Value |
+|---|---|---|
+| `legacyOrigin` | bridged inbound SMS/MMS | map: `dialect` ("sms"), `from` (+E.164), `recipient` (the member's receiving +E.164 — anchors the per-number trust check), `receivedAt` (ms), `? to` (group participants, §8.9) |
+| `smsTo` | member→gateway outbound one-shots | +E.164 destination |
+| `screeningVerdict` | opt-in triage (unbuilt) | map: `class`, `? spam`, `? summary` — advisory, never gating |
+
+**Trust rule for `legacyOrigin`** (the §6a amendment): render legacy provenance as verified only
+when the sealing DID equals the `registrar` in the recipient's own `at.atsms.e164` consent record
+*for the number in `recipient`*, AND the sealing certificate carries the **gateway role** EKU
+(`at.atsms.x509` profile, OID `2.25.84017644`). Anything else renders as an unverified bridge.
+
+**Threading**: all one-shots between a member and a registrar share one derived `convoId`, so
+dialects thread within it via `topicId`: bridged SMS sets
+`topicId = SHA-256("atsms-sms-topic:v1:" ‖ canonical sorted participant E.164s)` (one number for
+1:1; the full set for group MMS); replies reuse the thread's `topicId`; receipts use `inReplyTo`.
+Clients thread on `(convoId, topicId)`.
+
 Notably absent, on purpose: **`senderId` and `id` are not in the content.** The sender is whatever
 the seal layer cryptographically proves (the CMS signer certificate resolved via `at.atsms.x509`,
 or the DCGKA frame signature) — carrying a copy invited the v1 cross-check-or-trust confusion.

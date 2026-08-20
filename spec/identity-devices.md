@@ -30,6 +30,12 @@
 
 ## 2. Device model
 
+- **Certificate roles** (2026-08-18, `gateway-identity-and-transport.md`): a cert may carry a role
+  as a private EKU. Registered: **gateway** — OID `2.25.84017644` (31-bit truncation of UUID
+  0a0403d8-0a2f-4a50-ac2a-3bff558bb39b under the UUID arc; encoder-limited, revisit at PEN
+  registration) — authorizes asserting legacy (PSTN/SMS) provenance. Minting a role cert is an
+  account-authority act; plain device certs assert nothing. Operators keep role-bearing identities
+  machine-only.
 - **The device identity IS the endpoint-certificate keypair** (`at.atsms.x509`, P-256 — kept for
   S/MIME/WebCrypto interop). No separate device keypair, no `device_id`.
 - **Device fingerprint** (lowercase hex, 32 bytes) = **SHA-256 of the endpoint cert's public-key point** —
