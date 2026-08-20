@@ -13,6 +13,18 @@ import {
 } from "@peculiar/x509";
 
 import { cryptoProvider } from "../crypto-provider";
+
+/**
+ * ATSMS certificate roles (docs/plans/gateway-identity-and-transport.md §2): an EKU OID under the
+ * registration-free UUID arc, minted 2026-08-18 and FIXED FOREVER. A cert carrying it is authorized
+ * by the account authority to assert legacy (PSTN/SMS) provenance — clients render "SMS from +N"
+ * only when the sealing DID matches the consent registrar AND the sealing cert carries this role.
+ * Publishing a role cert requires the account credential; a plain device cert asserts nothing.
+ * Arc note: 31-bit truncation of UUID 0a0403d8-0a2f-4a50-ac2a-3bff558bb39b under the UUID arc —
+ * the ASN.1 encoder in @peculiar brace-hexes arcs past 32 bits, so the full form won't round-trip.
+ * Collision-safe enough for a single-purpose private EKU. Revisit if 3NUM registers a PEN.
+ */
+export const ATSMS_GATEWAY_ROLE_OID = "2.25.84017644";
 import type { ATSMSCertificateType } from "../types";
 import { ATSMSCertificate } from "./certificate";
 import { computeATSMSEmail, generateSerialNumber } from "./san-utils";
@@ -34,6 +46,12 @@ async function deviceFingerprintOf(publicKey: CryptoKey): Promise<string> {
 }
 
 export class ATSMSEndpointCertificate extends ATSMSCertificate {
+  /** True when this cert carries the gateway role EKU — authorized to assert legacy provenance. */
+  hasGatewayRole(): boolean {
+    const eku = this.getExtension(ExtendedKeyUsageExtension);
+    return eku !== null && eku.usages.includes(ATSMS_GATEWAY_ROLE_OID);
+  }
+
   /**
    * Generate a new self-signed P-256 endpoint certificate
    * Uses ECDSA with P-256 curve for signing
@@ -178,6 +196,7 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
     domain: string,
     emailDomain: string,
     validityDays = 3652,
+    role?: "gateway",
   ): Promise<ATSMSEndpointCertificate> {
     // Validate parameters
     if (typeof did !== "string" || !did.startsWith("did:")) {
@@ -239,6 +258,7 @@ export class ATSMSEndpointCertificate extends ATSMSCertificate {
               "1.3.6.1.5.5.7.3.1",
               "1.3.6.1.5.5.7.3.2",
               "1.3.6.1.5.5.7.3.4",
+              ...(role === "gateway" ? [ATSMS_GATEWAY_ROLE_OID] : []),
             ],
             false,
           ),

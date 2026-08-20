@@ -6,7 +6,7 @@
  */
 
 export { ATSMSCertificate } from "./certificate";
-export { ATSMSEndpointCertificate } from "./p256-endpoint-certificate";
+export { ATSMSEndpointCertificate, ATSMS_GATEWAY_ROLE_OID } from "./p256-endpoint-certificate";
 
 import { ATSMSEndpointCertificate } from "./p256-endpoint-certificate";
 

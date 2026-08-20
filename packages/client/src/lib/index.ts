@@ -19,6 +19,7 @@ export * from "./storage/types";
 export {
   ATSMSCertificate,
   ATSMSEndpointCertificate,
+  ATSMS_GATEWAY_ROLE_OID,
   generateEndpointCertificate,
   loadEndpointCertificate,
   loadEndpointCertificateWithKey,
